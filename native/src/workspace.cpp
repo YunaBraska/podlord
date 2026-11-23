@@ -487,6 +487,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (mapPreviewNeeded()) emit mapPreviewRequested(id);
     } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+        if (workspacePage() == "map" && mapOverview()) refreshMapContexts(false);
         if (runtime_->owners.value(id) == this) {
             const auto context = sessionConfiguration(id).value("contextId").toString();
             runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
@@ -495,9 +496,80 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
     });
+    connect(&client_, &ResourceClient::managedKubeconfigReceived, this,
+        [this](const QString& id, const QString& uid, const QString& endpoint, const QByteArray& yaml) {
+            if (runtime_->owners.value(id) != this) return;
+            const auto rows = client_.rows(id);
+            const bool current = std::any_of(rows.cbegin(), rows.cend(), [&](const auto& value) {
+                const auto row = value.toObject(), location = row["controlPlaneEndpoint"].toObject();
+                return row["uid"] == uid && location["host"].toString().toLower() + ':'
+                    + QString::number(location["port"].toInt()) == endpoint;
+            });
+            if (!current) return;
+            auto pending = std::find_if(managedImports_.begin(), managedImports_.end(), [&](const auto& entry) {
+                return entry.session == id && entry.uid == uid;
+            });
+            if (pending == managedImports_.end()) managedImports_.append({id, uid, endpoint, yaml});
+            else { pending->endpoint = endpoint; pending->yaml = yaml; }
+            importNextManagedKubeconfig();
+        });
+    connect(&client_, &ResourceClient::managedKubeconfigFailed, this,
+        [this](const QString& id, const QString&, const QString& reason) {
+            if (runtime_->owners.value(id) != this) return;
+            sourceImportError_ = reason;
+            emit changed();
+        });
+    connect(this, &Workspace::sourceImportFinished, this, [this] {
+        if (!managedImportInFlight_) return;
+        managedImportInFlight_ = false;
+        QMetaObject::invokeMethod(this, [this] { importNextManagedKubeconfig(); }, Qt::QueuedConnection);
+    });
+    connect(this, &Workspace::changed, this, [this] {
+        if (!busy_ && !managedImportInFlight_ && !managedImports_.isEmpty())
+            QMetaObject::invokeMethod(this, [this] { importNextManagedKubeconfig(); }, Qt::QueuedConnection);
+    });
     connect(&client_, &ResourceClient::collectionAccepted, this, [this](const QString& id) {
         if (id==active_) { pendingMapPreview_=id; if (mapPreviewNeeded()) emit mapPreviewRequested(id); }
+        if (runtime_->owners.value(id) == this)
+            for (const auto& value : client_.rows(id)) client_.requestManagedKubeconfig(id, value.toObject());
     });
+    connect(&client_, &ResourceClient::managedClustersObserved, this,
+        [this](const QString& id, const QStringList& observed, const QStringList& removed, bool complete) {
+            if (runtime_->owners.value(id) != this || busy_ || !sourceRemoval_.isEmpty()) return;
+            const auto connection = client_.connection(id);
+            if (!connection) return;
+            const auto managementContext = sources_.replacements.value(connection->contextId, connection->contextId);
+            QString managementSource, managementName;
+            for (const auto& source : sources_.sources) for (const auto& context : source.contexts)
+                if (context.id == managementContext) { managementSource = source.sourcePath; managementName = context.name; }
+            const auto sample = managedKubeconfigOrigin(managementSource, managementName, "cluster");
+            if (!std::holds_alternative<QString>(sample)) return;
+            const auto& origin = std::get<QString>(sample);
+            const auto prefix = origin.left(origin.lastIndexOf('/') + 1);
+            const auto clusterRows = client_.rows(id);
+            for (const auto& source : sources_.sources) {
+                if (!source.current || !source.sourcePath.startsWith(prefix) || source.contexts.isEmpty()
+                    || sources_.replacements.contains(source.contexts.first().id)) continue;
+                const auto uid = source.sourcePath.mid(prefix.size());
+                if ((complete && observed.contains(uid)) || (!complete && !removed.contains(uid))) continue;
+                const QUrl server(source.contexts.first().server);
+                const auto endpoint = server.host().toLower() + ':' + QString::number(server.port(443));
+                const bool stillObserved = std::any_of(clusterRows.cbegin(), clusterRows.cend(), [&](const auto& value) {
+                    const auto row = value.toObject(), target = row["controlPlaneEndpoint"].toObject();
+                    return row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/")
+                        && target["host"].toString().toLower() + ':' + QString::number(target["port"].toInt()) == endpoint;
+                });
+                if (stillObserved) continue;
+                const auto affected = managedRetirementContextIds(sources_, source.contexts.first().id);
+                QStringList sessions;
+                for (const auto& session : catalog_.sessions)
+                    if (affected.contains(session.config.contextId)) sessions.append(sessionId(session.id));
+                sourceRemoval_ = {{"contextId", source.contexts.first().id}, {"contextIds", affected},
+                    {"sessionIds", sessions}, {"managedRetirement", true}};
+                if (!confirmSourceRemoval()) sourceRemoval_.clear();
+                break;
+            }
+        });
     sourceTable_.setSourceModel(&sourceRows_);
     sourceTable_.setSortCaseSensitivity(Qt::CaseInsensitive);
     connect(this, &Workspace::tableLayoutChanged, this, &Workspace::resourceColumnsChanged);
@@ -534,7 +606,8 @@ QVariantList Workspace::contexts() const {
             if (sources_.replacements.contains(context.id)) continue;
             if (replacedNames.contains(source.sourcePath + QChar::Null + context.name)
                 && !sources_.pinned.contains(context.id)) continue;
-            result.append(QVariantMap{{"id", context.id}, {"name", context.displayName}, {"context", context.name}, {"source", source.sourcePath},
+            result.append(QVariantMap{{"id", context.id}, {"name", context.displayName}, {"context", context.name},
+                {"source", source.sourcePath.startsWith("managed://capi/") ? QStringLiteral("Cluster API") : source.sourcePath},
                 {"auth", context.authType}, {"usable", context.brokenReferences.isEmpty()}, {"cluster",context.cluster}, {"user",context.user},
                 {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")},
                 {"current",source.current || sources_.pinned.contains(context.id)}});
@@ -1607,11 +1680,58 @@ bool Workspace::importText(QString originPath, const QString& yaml) {
         return SourceImportReport{{std::get<SourceSnapshot>(result)}, {}};
     });
 }
+void Workspace::importNextManagedKubeconfig() {
+    if (busy_ || managedImportInFlight_ || managedImports_.isEmpty()) return;
+    const auto next = managedImports_.takeFirst();
+    const auto connection = client_.connection(next.session);
+    if (!connection || !client_.sessionOpen(next.session)) return;
+    const auto managementContext = sources_.replacements.value(connection->contextId, connection->contextId);
+    QString managementSource, managementName;
+    for (const auto& source : sources_.sources) for (const auto& context : source.contexts)
+        if (context.id == managementContext) { managementSource = source.sourcePath; managementName = context.name; }
+    if (managementSource.isEmpty()) return;
+    managedImportInFlight_ = true;
+    if (importSource([managementContext, managementSource, managementName, uid = next.uid, endpoint = next.endpoint, yaml = next.yaml]
+        (const KubeconfigStore& store) -> Result<SourceImportReport> {
+        const auto listed = store.list();
+        if (const auto* failure = std::get_if<Failure>(&listed)) return *failure;
+        const auto& before = std::get<SourceCatalog>(listed);
+        QStringList matching;
+        for (const auto& source : before.sources) {
+            if (!source.current) continue;
+            for (const auto& context : source.contexts) {
+                if (context.id == managementContext || before.replacements.contains(context.id)) continue;
+                const QUrl server(context.server);
+                if (server.scheme() == "https" && server.host().toLower() + ':'
+                    + QString::number(server.port(443)) == endpoint) matching.append(context.id);
+            }
+        }
+        if (matching.size() > 1)
+            return Failure{StoreError::Conflict, "Several existing contexts use this workload endpoint. Automatic update was skipped."};
+        const auto imported = store.importManagedKubeconfig(managementSource, managementName, uid, endpoint, yaml);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        const auto& source = std::get<SourceSnapshot>(imported);
+        const auto target = std::find_if(before.sources.cbegin(), before.sources.cend(), [&](const auto& prior) {
+            return prior.current && prior.sourcePath == source.sourcePath;
+        });
+        const auto oldId = target != before.sources.cend() && !target->contexts.isEmpty()
+            ? target->contexts.front().id : matching.isEmpty() ? QString{} : matching.front();
+        if (!oldId.isEmpty() && oldId != source.contexts.front().id) {
+            const auto replaced = store.replaceManagedContext(oldId, source.contexts.front().id);
+            if (const auto* failure = std::get_if<Failure>(&replaced)) return *failure;
+        }
+        if (target != before.sources.cend() && target->id == source.id && oldId == source.contexts.front().id)
+            return SourceImportReport{};
+        return SourceImportReport{{source}, {}};
+    }, false, {}, SourceReload::IfChanged)) return;
+    managedImportInFlight_ = false;
+    managedImports_.prepend(next);
+}
 bool Workspace::refreshSources() {
     if (appStore()) return false;
     QStringList paths;
     for (const auto& source : sources_.sources)
-        paths.append(source.sourcePath);
+        if (!source.sourcePath.startsWith("managed://")) paths.append(source.sourcePath);
     paths.removeDuplicates();
     if (paths.isEmpty()) { sourceImportError_ = "No imported source files to refresh."; emit changed(); return false; }
     return importSource([paths](const KubeconfigStore& store) -> Result<SourceImportReport> {
@@ -1661,6 +1781,7 @@ bool Workspace::confirmSourceRemoval() {
     if (busy_ || pendingLeave_ || sourceRemoval_.isEmpty()) return false;
     const auto contextId = sourceRemoval_["contextId"].toString();
     const auto contextIds = sourceRemoval_["contextIds"].toStringList();
+    const bool managedRetirement = sourceRemoval_["managedRetirement"].toBool();
     if ((viewSaving_ && contextIds.contains(viewSaveContext_))
         || std::any_of(contextIds.cbegin(), contextIds.cend(), [&](const auto& id) { return pendingViews_.contains(id); })) {
         sourceImportError_ = "Wait for the context settings to finish saving."; emit changed(); return false;
@@ -1686,7 +1807,7 @@ bool Workspace::confirmSourceRemoval() {
         if (owner->sourceInspection_ && contextIds.contains(owner->sourceInspection_->metadata.value("contextId").toString()))
             emit owner->sourceInspectionChanged();
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
-    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, contextIds, ids] {
+    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, contextIds, ids, managedRetirement] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         const auto* failure = std::get_if<Failure>(&result);
         if (failure && failure->code!=StoreError::CleanupFailed)
@@ -1726,10 +1847,17 @@ bool Workspace::confirmSourceRemoval() {
             runtime_->contextViews.remove(affected); savedViews_.remove(affected);
             pendingViews_.remove(affected); viewStateErrors_.remove(affected);
         }
+        if (managedRetirement) for (auto replacement = sources_.replacements.begin(); replacement != sources_.replacements.end(); )
+            replacement = contextIds.contains(replacement.value()) ? sources_.replacements.erase(replacement) : ++replacement;
         reconcileMapPreviews();
         const auto& catalog = std::get<SessionCatalog>(result);
         if (viewsLoaded_) select(catalog);
         else catalog_ = catalog;
+        for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_
+            && !other->reloadCatalogs(true)) {
+            other->pendingCatalogReload_ = true;
+            other->pendingCatalogReconnect_ = true;
+        }
         sourceRemoval_.clear();
         sourceImportNotice_.clear();
         sourceImportError_.clear();
@@ -1737,7 +1865,10 @@ bool Workspace::confirmSourceRemoval() {
         if (!viewsLoaded_) reloadCatalogs(false);
     });
     const auto profile = profile_;
-    sessionMutationFuture_ = QtConcurrent::run([profile, contextId, ids] { return KubeconfigStore(profile).removeContext(contextId, ids); });
+    sessionMutationFuture_ = QtConcurrent::run([profile, contextId, ids, managedRetirement] {
+        return managedRetirement ? KubeconfigStore(profile).retireManagedContext(contextId, ids)
+            : KubeconfigStore(profile).removeContext(contextId, ids);
+    });
     watcher->setFuture(sessionMutationFuture_);
     return true;
 }
@@ -1756,15 +1887,18 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
         }
         else {
             const auto& report = std::get<SourceImportReport>(result);
+            if (reload == SourceReload::IfChanged && report.sources.isEmpty() && report.errors.isEmpty()) {
+                emit changed(); emit sourceImportFinished(true); return;
+            }
             ++runtime_->contextCatalogRevision;
             sourceImportError_.clear(); sourceImportIssues_.clear();
             sourceImportNotice_ = report.errors.isEmpty() ? QString{} : uiText().value("settings.importSkipped").toString();
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
             if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
             credentialImportContext_ = credentialContext;
-            if (!reloadCatalogs(reload == SourceReload::Configuration)) credentialImportContext_.clear();
+            if (!reloadCatalogs(reload != SourceReload::MetadataOnly)) credentialImportContext_.clear();
             for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) {
-                const bool reconnect = reload == SourceReload::Configuration;
+                const bool reconnect = reload != SourceReload::MetadataOnly;
                 if (!other->reloadCatalogs(reconnect)) {
                     other->pendingCatalogReload_ = true;
                     other->pendingCatalogReconnect_ = other->pendingCatalogReconnect_ || reconnect;

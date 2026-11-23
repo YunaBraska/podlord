@@ -869,6 +869,10 @@ private:
     bool mapOverview_ = true;
     QVariantList mapContexts_;
     void refreshMapContexts(bool reorder);
+    struct ManagedImport final { QString session, uid, endpoint; QByteArray yaml; };
+    QList<ManagedImport> managedImports_;
+    bool managedImportInFlight_ = false;
+    void importNextManagedKubeconfig();
     bool restoringMap_ = false;
     QString pendingMapPreview_;
     qint64 cachePayloadBytes_ = 0;
@@ -919,7 +923,7 @@ private:
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SourceSnapshot>> sourceEditFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    enum class SourceReload { Configuration, MetadataOnly };
+    enum class SourceReload { Configuration, MetadataOnly, IfChanged };
     bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false,
         const QString& credentialContext = {}, SourceReload reload = SourceReload::Configuration);
     bool contextUsable(const QString& id) const;

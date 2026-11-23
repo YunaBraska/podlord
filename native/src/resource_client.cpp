@@ -116,6 +116,11 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
         {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
+    if (version.startsWith("cluster.x-k8s.io/") && kind == "Cluster") {
+        const auto endpoint = spec["controlPlaneEndpoint"].toObject();
+        if (!endpoint["host"].toString().isEmpty() && endpoint["port"].toInt() > 0)
+            result["controlPlaneEndpoint"] = QJsonObject{{"host", endpoint["host"]}, {"port", endpoint["port"]}};
+    }
     QJsonArray conditions;
     for (const auto& value : state["conditions"].toArray()) {
         const auto condition = value.toObject();
@@ -890,6 +895,36 @@ bool ResourceClient::containsResource(const QString& id, const QString& path) co
     const auto state = states_.constFind(id);
     return state != states_.cend() && state->resources.contains(path);
 }
+bool ResourceClient::requestManagedKubeconfig(const QString& id, const QJsonObject& cluster) {
+    auto state = states_.find(id);
+    if (state == states_.end() || !state->open || state->suspended || !wanted(id)
+        || cluster["kind"] != "Cluster" || !cluster["apiVersion"].toString().startsWith("cluster.x-k8s.io/")) return false;
+    const auto name = cluster["name"].toString(), nameSpace = cluster["namespace"].toString();
+    const auto uid = cluster["uid"].toString();
+    const auto endpoint = cluster["controlPlaneEndpoint"].toObject();
+    const auto host = endpoint["host"].toString().toLower();
+    const int port = endpoint["port"].toInt();
+    static const QRegularExpression clusterUid("\\A[A-Za-z0-9-]{1,128}\\z");
+    const auto current = state->resources.value(cluster["path"].toString()).value;
+    if (!segment(name) || !segment(nameSpace) || !clusterUid.match(uid).hasMatch()
+        || host.isEmpty() || port < 1 || port > 65535 || !state->resources.contains(cluster["path"].toString())
+        || current["uid"] != uid || current["controlPlaneEndpoint"] != endpoint
+        || (state->connection.server.host().compare(host, Qt::CaseInsensitive) == 0
+            && state->connection.server.port(state->connection.server.scheme() == "https" ? 443 : 80) == port)) return false;
+    const auto now = now_();
+    const auto check = state->managedKubeconfigChecks.value(uid);
+    const auto location = host + ':' + QString::number(port);
+    if (check.first == location && check.second.isValid() && check.second.secsTo(now) < 900) return false;
+    Task task;
+    task.id = id;
+    task.path = "/api/v1/namespaces/" + nameSpace + "/secrets/" + name + "-kubeconfig";
+    task.read = Read::ManagedKubeconfig;
+    task.managedUid = uid;
+    task.managedEndpoint = location;
+    if (!enqueue(std::move(task))) return false;
+    states_[id].managedKubeconfigChecks.insert(uid, {location, now});
+    return true;
+}
 QString ResourceClient::failureStatus(const QString& id) const {
     const auto it = states_.constFind(id);
     if (it == states_.cend()) return {};
@@ -951,7 +986,7 @@ bool ResourceClient::initialSyncComplete(const QString& id) const {
     return state != states_.cend() && state->initialized;
 }
 bool ResourceClient::collectionRead(Read read) { return read == Read::Core || read == Read::Groups || read == Read::Discovery || read == Read::List; }
-bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail || task.read == Read::Linked || task.read == Read::Probe); }
+bool ResourceClient::parallelRead(const Task& task) { return !task.change && task.forwardToken.isEmpty() && (collectionRead(task.read) || task.read == Read::Detail || task.read == Read::Linked || task.read == Read::Probe || task.read == Read::ManagedKubeconfig); }
 void ResourceClient::updateProgress(const QString& id) {
     auto& state = states_[id];
     if (!state.syncTotal) return;
@@ -1212,14 +1247,14 @@ bool ResourceClient::enqueue(Task task) {
     if (!enabled_ || (task.forwardToken.isEmpty() && task.terminalToken.isEmpty() && task.fileToken.isEmpty()
         ? (task.read != Read::Verify && task.read != Read::VerifyDelete && !wanted(task.id)) : !state.open) || state.suspended
         || ((task.read == Read::Detail || task.read == Read::Delete) && !isVisible(task.id)) || (!task.foreground && state.blocked.contains(task.path))) return false;
-    if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken && running_->fileToken == task.fileToken)
+    if (running_ && running_->read == task.read && running_->id == task.id && running_->path == task.path && running_->continuation == task.continuation && running_->logKey == task.logKey && running_->forwardToken == task.forwardToken && running_->streamToken == task.streamToken && running_->terminalToken == task.terminalToken && running_->fileToken == task.fileToken && running_->managedUid == task.managedUid && running_->managedEndpoint == task.managedEndpoint)
         return task.read != Read::Apply && task.read != Read::Delete && (!task.change || (running_->change && running_->change->token == task.change->token));
-    for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation
+    for (auto& active : reads_) if (active.read == task.read && active.id == task.id && active.path == task.path && active.continuation == task.continuation && active.managedUid == task.managedUid && active.managedEndpoint == task.managedEndpoint
         && (task.read != Read::Detail || active.revision == state.revision)) {
         active.foreground = active.foreground || task.foreground; return true;
     }
     for (auto& waiting : queue_) {
-        if (waiting.read == task.read && waiting.id == task.id && waiting.path == task.path && waiting.continuation == task.continuation && waiting.logKey == task.logKey && waiting.forwardToken == task.forwardToken && waiting.streamToken == task.streamToken && waiting.terminalToken == task.terminalToken && waiting.fileToken == task.fileToken) {
+        if (waiting.read == task.read && waiting.id == task.id && waiting.path == task.path && waiting.continuation == task.continuation && waiting.logKey == task.logKey && waiting.forwardToken == task.forwardToken && waiting.streamToken == task.streamToken && waiting.terminalToken == task.terminalToken && waiting.fileToken == task.fileToken && waiting.managedUid == task.managedUid && waiting.managedEndpoint == task.managedEndpoint) {
             if (task.change) return waiting.change && waiting.change->token == task.change->token && task.read != Read::Apply && task.read != Read::Delete;
             waiting.foreground = waiting.foreground || task.foreground;
             return true;
@@ -1356,6 +1391,13 @@ void ResourceClient::dispatch() {
     if (task.read == Read::Log) {
         reply->setReadBufferSize(65536);
         connect(reply, &QNetworkReply::readyRead, this, [this, reply, payload] { payload->append(reply->readAll(), static_cast<qint64>(settings_.logLimitMb) * 1000000); });
+    } else if (task.read == Read::ManagedKubeconfig) {
+        reply->setReadBufferSize(65536);
+        connect(reply, &QNetworkReply::readyRead, this, [reply, payload] {
+            const auto chunk = reply->readAll();
+            if (payload->bytes.size() + chunk.size() > 24 * 1024 * 1024) { payload->limited = true; reply->abort(); }
+            else payload->bytes.append(chunk);
+        });
     }
     connect(reply, &QNetworkReply::finished, this, [this, reply, task, payload, tlsErrors, parallel, url, authorization = connection.authorization] {
         Task completion = task; completion.foreground = parallel ? reads_.value(reply).foreground : running_->foreground;
@@ -1367,12 +1409,15 @@ void ResourceClient::dispatch() {
             return;
         }
         const auto remaining = reply->readAll();
+        if (task.read == Read::ManagedKubeconfig && !payload->limited) payload->bytes.append(remaining);
+        const auto& received = task.read == Read::ManagedKubeconfig ? payload->bytes : remaining;
         const auto http = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         bool lengthKnown = false;
         // Qt removes Content-Length when automatically decompressing the response.
         const auto length = reply->header(QNetworkRequest::ContentLengthHeader).toLongLong(&lengthKnown);
-        const bool incomplete = task.read != Read::Log && lengthKnown && length != remaining.size();
-        const bool transportError = incomplete || (reply->error() != QNetworkReply::NoError
+        const bool incomplete = task.read != Read::Log && lengthKnown && length != received.size();
+        const bool transportError = incomplete || (task.read == Read::ManagedKubeconfig && payload->limited)
+            || (reply->error() != QNetworkReply::NoError
             && !(http == 404 && reply->error() == QNetworkReply::ContentNotFoundError));
         if (task.read == Read::Log) {
             payload->append(remaining, static_cast<qint64>(settings_.logLimitMb) * 1000000);
@@ -1399,7 +1444,7 @@ void ResourceClient::dispatch() {
             transportDetail = message + "\nQt network error " + QString::number(static_cast<int>(reply->error())) + ": " + detail;
             if (!tlsErrors->isEmpty()) transportDetail += "\n" + tlsErrors->join("; ");
         }
-        finish(completion, http, task.read == Read::Log ? payload->bytes : remaining,
+        finish(completion, http, task.read == Read::Log || task.read == Read::ManagedKubeconfig ? payload->bytes : remaining,
             transportError, reply->rawHeader("Retry-After"), transportDetail);
         reply->deleteLater();
         if (parallel) reads_.remove(reply); else running_.reset();
@@ -1418,6 +1463,35 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     --state.pending;
     if (task.read == Read::Log) --state.logs[task.logKey].pending;
     else --state.resourcePending;
+    if (task.read == Read::ManagedKubeconfig) {
+        if (http == 401) suspend(state.connection.credentialId, "Authentication failed. Confirm a new authentication attempt to retry.");
+        if (http == 429) {
+            bool valid = false;
+            const auto seconds = retryAfter.toLongLong(&valid);
+            backoffUntil_ = std::max(backoffUntil_, clock_.elapsed() + (valid && seconds >= 0 ? std::min<qint64>(seconds, 3600) * 1000 : 30000));
+        }
+        if (http == 200 && !transportError && bytes.size() <= 24 * 1024 * 1024) {
+            QJsonParseError error;
+            const auto document = QJsonDocument::fromJson(bytes, &error);
+            const auto secret = document.object(), metadata = secret["metadata"].toObject();
+            const auto data = secret["data"].toObject()["value"].toString();
+            const auto decoded = QByteArray::fromBase64Encoding(data.toLatin1(), QByteArray::AbortOnBase64DecodingErrors);
+            if (error.error == QJsonParseError::NoError && document.isObject() && secret["kind"] == "Secret"
+                && secret["type"] == "cluster.x-k8s.io/secret"
+                && metadata["namespace"] == task.path.section('/', 4, 4)
+                && metadata["name"] == task.path.section('/', 6, 6)
+                && !data.isEmpty() && QString::fromLatin1(data.toLatin1()) == data
+                && decoded && !decoded.decoded.isEmpty() && decoded.decoded.size() <= 16 * 1024 * 1024)
+                emit managedKubeconfigReceived(task.id, task.managedUid, task.managedEndpoint, decoded.decoded);
+            else emit managedKubeconfigFailed(task.id, task.managedUid, "Management cluster returned an invalid kubeconfig Secret.");
+        } else if (http != 404) emit managedKubeconfigFailed(task.id, task.managedUid,
+            http == 403 ? "Management cluster cannot read the kubeconfig Secret." :
+            http == 429 ? "Management cluster limited kubeconfig reads." :
+            http == 401 ? "Management cluster authentication failed." :
+            transportError ? "Management cluster kubeconfig read failed." : "Management cluster returned an unavailable kubeconfig Secret.");
+        updateProgress(task.id);
+        return;
+    }
     if (collectionRead(task.read)) { --state.syncPending; ++state.syncCompleted; }
     if (http == 401) {
         fail(task, "Authentication failed. Confirm a new authentication attempt to retry.");
@@ -1612,6 +1686,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
         } else {
             const auto previousList = state.collections.constFind(task.collection);
             const bool known = previousList != state.collections.cend();
+            const QJsonArray priorPage = known ? previousList->rows : QJsonArray{};
             const bool different = known ? previousList->rows != next.page : !next.page.isEmpty();
             const int stableReads = known && !different ? std::min(previousList->stableReads + 1, 5) : 0;
             if (known && different) {
@@ -1652,6 +1727,17 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document) {
                 *entry = {row, next.received};
             }
             if (different || canonicalChanged || retiredCollection) publishRows(task.id);
+            if (task.kind == "Cluster" && task.collection.startsWith("/apis/cluster.x-k8s.io/")
+                && task.collection.endsWith("/clusters")) {
+                QStringList observed, removed;
+                for (const auto& value : next.page) observed.append(value.toObject()["uid"].toString());
+                if (known) for (const auto& value : priorPage) {
+                    const auto uid = value.toObject()["uid"].toString();
+                    if (!uid.isEmpty() && !observed.contains(uid)) removed.append(uid);
+                }
+                const bool complete = !task.collection.contains("/namespaces/");
+                if (complete || !removed.isEmpty()) emit managedClustersObserved(task.id, observed, removed, complete);
+            }
             emit collectionAccepted(task.id);
         }
     } else {

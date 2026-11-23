@@ -116,6 +116,9 @@ public:
     bool prematureDisconnect = false;
     bool refuseCollections = false;
     bool newApiKind = false;
+    int managedSecretVersion = 1;
+    bool managedClusterPresent = true;
+    QString managedClusterUid = "uid-workload";
     explicit KubernetesBoundary(QString value) : scenario(std::move(value)) {
         clock.start();
         connect(this, &QTcpServer::newConnection, this, [this] {
@@ -144,7 +147,9 @@ public:
                         if (scenario == "malformed") raw = "{bad JSON: secret-value-must-not-appear";
                         if (scenario == "invalid_discovery") document = {{"versions", QJsonArray{"../escape"}}};
                     } else if (path == "/apis") {
-                        document = {{"groups", QJsonArray{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "example.test/v1"}}}}}}};
+                        QJsonArray groups{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "example.test/v1"}}}}};
+                        if (scenario.startsWith("map_auto_")) groups.append(QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "cluster.x-k8s.io/v1beta1"}}}});
+                        document = {{"groups", groups}};
                     } else if (path == "/api/v1") {
                         document = {{"resources", QJsonArray{
                             QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
@@ -154,6 +159,25 @@ public:
                         QJsonArray resources{QJsonObject{{"name", "widgets"}, {"kind", "Widget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}};
                         if (newApiKind) resources.append(QJsonObject{{"name", "gadgets"}, {"kind", "Gadget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}});
                         document = {{"resources", resources}};
+                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1") {
+                        document = {{"resources", QJsonArray{QJsonObject{{"name", "clusters"}, {"kind", "Cluster"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1/clusters") {
+                        auto cluster = pod("workload", "Cluster", "cluster.x-k8s.io/v1beta1");
+                        auto metadata = cluster["metadata"].toObject(); metadata["uid"] = managedClusterUid; cluster["metadata"] = metadata;
+                        cluster["spec"] = QJsonObject{{"controlPlaneEndpoint", QJsonObject{{"host", "wlc.example"}, {"port", 6443}}}};
+                        document = {{"metadata", QJsonObject{}}, {"items", managedClusterPresent ? QJsonArray{cluster} : QJsonArray{}}};
+                    } else if (path == "/api/v1/namespaces/default/secrets/workload-kubeconfig"
+                        && (scenario.startsWith("map_auto_import") || scenario.startsWith("map_auto_retire") || scenario == "map_auto_uid_rotation")) {
+                        if (scenario == "map_auto_import_forbidden") status = 403;
+                        const QByteArray user = scenario == "map_auto_import_invalid"
+                            ? "exec: {command: /bin/echo, apiVersion: client.authentication.k8s.io/v1beta1}"
+                            : "token: managed-test-token-" + QByteArray::number(managedSecretVersion);
+                        const QByteArray url = scenario == "map_auto_import_mismatch" ? "https://other.example:6443" : "https://wlc.example:6443";
+                        const QByteArray yaml = "apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: " + url + "}\nusers:\n- name: managed\n  user: {"
+                            + user + "}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: managed}\n";
+                        document = {{"apiVersion", "v1"}, {"kind", "Secret"}, {"type", "cluster.x-k8s.io/secret"},
+                            {"metadata", QJsonObject{{"name", "workload-kubeconfig"}, {"namespace", "default"}, {"uid", "secret-workload"}}},
+                            {"data", QJsonObject{{"value", QString::fromLatin1(yaml.toBase64())}}}};
                     } else if (path == "/api/v1/events") {
                         status = scenario == "forbidden" ? 403 : 200;
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{}}};
@@ -1231,6 +1255,240 @@ bool execute(const QString& requestedScenario) {
         std::fprintf(stderr,"Imported context unavailable: %s\n",qPrintable(workspace.error())); return false;
     }
     if (scenario.startsWith("map_") && !click(window,item(window,"mapWorkspaceButton"))) return false;
+    if (scenario == "map_auto_group" || scenario == "map_auto_group_phone") {
+        if (scenario == "map_auto_group_phone") window->resize(320, 640);
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        const auto origin = temporary.filePath("workload.config");
+        const auto importWorkload = [&](const QByteArray& serverUrl) {
+            const auto content = QByteArray("apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: ")
+                + serverUrl + "}\nusers:\n- name: workload\n  user: {token: local-workload-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: workload}\n";
+            return workspace.importText(origin, QString::fromUtf8(content))
+                && waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; });
+        };
+        if (!importWorkload("https://wlc.example:6443") || !workspace.mapContexts().last().toMap().value("groupId").toString().isEmpty()) return false;
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() >= 4; }, 15000)
+            || !workspace.showMapOverview()) return false;
+        const auto grouped = [&] {
+            const auto rows = workspace.mapContexts();
+            const auto group = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "management";
+            });
+            if (group == rows.cend()) return false;
+            const auto groupId = group->toMap().value("groupId").toString();
+            return std::count_if(rows.cbegin(), rows.cend(), [&](const auto& value) {
+                return value.toMap().value("groupId").toString() == groupId;
+            }) == 4;
+        };
+        const auto groupId = [&] { for (const auto& value : workspace.mapContexts())
+            if (value.toMap().value("groupRole") == "management") return value.toMap().value("groupId").toString();
+            return QString{};
+        };
+        if (!waitFor([&] { return grouped() && item(window, "contextGroup_" + groupId())
+            && item(window, "contextMapCards")->property("count").toInt() >= 3; })) return false;
+        if (!importWorkload("https://other.example:6443")
+            || !waitFor([&] { const auto rows = workspace.mapContexts(); return std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return !value.toMap().value("groupId").toString().isEmpty();
+            }); })) return false;
+        const bool ready = importWorkload("https://wlc.example:6443") && waitFor([&] {
+            auto* group = item(window, "contextGroup_" + groupId());
+            auto* grid = item(window, "contextMapCards");
+            return grouped() && group && group->isVisible() && grid && grid->property("count").toInt() >= 3
+                && (scenario != "map_auto_group_phone" || (grid->width() <= 320 && grid->property("contentHeight").toReal() > grid->height()
+                    && displayedWithin(window->contentItem(), group)));
+        });
+        if (!ready) {
+            auto* grid = item(window, "contextMapCards");
+            auto* group = item(window, "contextGroup_" + groupId());
+            std::fprintf(stderr, "Group layout: width=%g height=%g content=%g y=%g groupY=%g\n",
+                grid ? grid->width() : -1, grid ? grid->height() : -1,
+                grid ? grid->property("contentHeight").toReal() : -1, grid ? grid->property("contentY").toReal() : -1,
+                group ? group->mapToScene(QPointF{}).y() : -1);
+        }
+        return ready && saveShellFrame(window,scenario,item(window,"contextMapCards"));
+    }
+    if (scenario == "map_auto_import_new" || scenario == "map_auto_retire_new") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; }, 15000)) return false;
+        const auto rows = workspace.contexts();
+        const auto workload = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "workload";
+        });
+        if (workload == rows.cend() || workload->toMap().value("source") != "Cluster API") return false;
+        const auto connected = podlord::KubeconfigStore(profile).connection(workload->toMap().value("id").toString());
+        const bool imported = std::holds_alternative<podlord::ClusterConnection>(connected)
+            && std::get<podlord::ClusterConnection>(connected).authorization == "Bearer managed-test-token-1"
+            && workspace.showMapOverview() && waitFor([&] { const auto rows = workspace.mapContexts(); return std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            }); });
+        if (!imported || scenario == "map_auto_import_new") return imported;
+        const auto catalog = podlord::KubeconfigStore(profile).list();
+        if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
+        QStringList owned;
+        for (const auto& source : std::get<podlord::SourceCatalog>(catalog).sources)
+            if (source.sourcePath.startsWith("managed://capi/")) owned.append(source.ownedPath);
+        if (owned.isEmpty()) return false;
+        server.managedClusterPresent = false;
+        reference = reference.addSecs(901);
+        return workspace.activate(workspace.currentSession()) && workspace.refresh() && waitFor([&] { const auto rows = workspace.contexts(); return !workspace.busy() && rows.size() == 3
+            && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("source") == "Cluster API";
+            }); }, 15000) && std::all_of(owned.cbegin(), owned.cend(), [](const auto& path) { return !QFileInfo::exists(path); });
+    }
+    if (scenario == "map_auto_import" || scenario == "map_auto_retire" || scenario == "map_auto_uid_rotation" || scenario == "map_auto_import_invalid"
+        || scenario == "map_auto_import_forbidden" || scenario == "map_auto_import_mismatch") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        const auto manual = QByteArray("apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: https://wlc.example:6443}\nusers:\n- name: manual\n  user: {token: local-workload-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: manual}\n");
+        if (!workspace.importText(temporary.filePath("workload.config"), QString::fromUtf8(manual))
+            || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; })) return false;
+        const auto manualContext = [&] {
+            const auto rows = workspace.contexts();
+            const auto found = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "workload";
+            });
+            return found == rows.cend() ? QVariantMap{} : found->toMap();
+        };
+        const auto original = manualContext().value("id").toString();
+        if (original.isEmpty()) return false;
+        if (!workspace.renameSourceContext(original, "My workload")
+            || !waitFor([&] { return !workspace.busy() && manualContext().value("name") == "My workload"; })) return false;
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() >= 4; }, 15000)) return false;
+        const auto secretPath = QString("/api/v1/namespaces/default/secrets/workload-kubeconfig");
+        if (!waitFor([&] { return std::any_of(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+            return path.startsWith(secretPath);
+        }); }, 15000)) return false;
+        if (scenario != "map_auto_import" && scenario != "map_auto_retire" && scenario != "map_auto_uid_rotation") {
+            if (!waitFor([&] { return !workspace.sourceImportError().isEmpty(); })) return false;
+            return workspace.contexts().size() == 4 && manualContext().value("id") == original
+                && !workspace.sourceImportError().contains("/bin/echo") && !server.requests.join('\n').contains("managed-test-token");
+        }
+        if (!waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4
+            && manualContext().value("id") != original
+            && manualContext().value("name") == "My workload"; }, 15000)) {
+            std::fprintf(stderr, "Managed import state: busy=%d count=%lld error=%s sourceError=%s idChanged=%d alias=%s\n",
+                workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                qPrintable(workspace.sourceImportError()), manualContext().value("id") != original,
+                qPrintable(manualContext().value("name").toString()));
+            for (const auto& value : workspace.contexts()) {
+                const auto row = value.toMap();
+                std::fprintf(stderr, "Context: %s %s %s current=%d\n", qPrintable(row.value("id").toString()),
+                    qPrintable(row.value("name").toString()), qPrintable(row.value("source").toString()), row.value("current").toBool());
+            }
+            return false;
+        }
+        const auto connected = podlord::KubeconfigStore(profile).connection(original);
+        if (const auto* failure = std::get_if<podlord::Failure>(&connected)) {
+            std::fprintf(stderr, "Managed context did not replace the previous credentials: %s\n", qPrintable(failure->message)); return false;
+        }
+        if (std::get<podlord::ClusterConnection>(connected).authorization != "Bearer managed-test-token-1"
+            || server.requests.join('\n').contains("managed-test-token")) return false;
+        if (scenario == "map_auto_uid_rotation") {
+            server.managedClusterUid = "uid-workload-rotated";
+            server.managedSecretVersion = 2;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto current = podlord::KubeconfigStore(profile).connection(original);
+                return !workspace.busy() && workspace.contexts().size() == 4
+                    && manualContext().value("name") == "My workload"
+                    && std::holds_alternative<podlord::ClusterConnection>(current)
+                    && std::get<podlord::ClusterConnection>(current).authorization == "Bearer managed-test-token-2";
+            }, 15000)) return false;
+            const auto catalog = podlord::KubeconfigStore(profile).list();
+            if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
+            QStringList owned;
+            for (const auto& source : std::get<podlord::SourceCatalog>(catalog).sources)
+                if (source.sourcePath.startsWith("managed://capi/")) owned.append(source.ownedPath);
+            if (owned.size() < 2) return false;
+            server.managedClusterPresent = false;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto rows = workspace.contexts();
+                return !workspace.busy() && rows.size() == 4 && manualContext().value("id") == original
+                    && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                        return value.toMap().value("source") == "Cluster API";
+                    });
+            }, 15000)) return false;
+            const auto restored = podlord::KubeconfigStore(profile).connection(original);
+            return std::holds_alternative<podlord::ClusterConnection>(restored)
+                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token"
+                && std::all_of(owned.cbegin(), owned.cend(), [](const auto& path) { return !QFileInfo::exists(path); });
+        }
+        if (scenario == "map_auto_retire") {
+            server.managedClusterPresent = false;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto rows = workspace.contexts();
+                return !workspace.busy() && rows.size() == 4 && manualContext().value("id") == original
+                    && manualContext().value("name") == "My workload"
+                    && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                        return value.toMap().value("source") == "Cluster API";
+                    });
+            }, 15000)) return false;
+            const auto restored = podlord::KubeconfigStore(profile).connection(original);
+            return std::holds_alternative<podlord::ClusterConnection>(restored)
+                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token";
+        }
+        server.managedSecretVersion = 2;
+        reference = reference.addSecs(901);
+        if (!workspace.refresh() || !waitFor([&] {
+            const auto refreshed = podlord::KubeconfigStore(profile).connection(original);
+            return std::holds_alternative<podlord::ClusterConnection>(refreshed)
+                && std::get<podlord::ClusterConnection>(refreshed).authorization == "Bearer managed-test-token-2";
+        }, 15000)) {
+            std::fprintf(stderr, "Managed rotation unavailable: secretReads=%lld busy=%d error=%s sourceError=%s\n",
+                static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                    return path.startsWith(secretPath);
+                })), workspace.busy(), qPrintable(workspace.error()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        auto changedManagement = yaml;
+        changedManagement.replace("local-test-token", "rotated-management-token");
+        if (!waitFor([&] { return !workspace.busy(); }, 15000)
+            || !workspace.importText(source, QString::fromUtf8(changedManagement))
+            || !waitFor([&] {
+                return !workspace.busy() && workspace.contexts().size() == 4
+                    && std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                        return path.startsWith(secretPath);
+                    }) >= 3;
+            }, 15000)) {
+            std::fprintf(stderr, "Management credential refresh: secretReads=%lld count=%lld busy=%d error=%s\n",
+                static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                    return path.startsWith(secretPath);
+                })), static_cast<long long>(workspace.contexts().size()), workspace.busy(), qPrintable(workspace.error()));
+            return false;
+        }
+        const bool stable = waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4
+            && manualContext().value("name") == "My workload"; }, 15000)
+            && workspace.showMapOverview() && waitFor([&] { const auto rows = workspace.mapContexts(); return std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            }); })
+            && saveShellFrame(window, scenario, item(window,"contextMapCards"));
+        const auto mapRows = workspace.mapContexts();
+        if (!stable) std::fprintf(stderr, "Managed final state: busy=%d count=%lld alias=%s grouped=%d map=%d\n",
+            workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(manualContext().value("name").toString()),
+            int(std::any_of(mapRows.cbegin(), mapRows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            })), workspace.mapOverview());
+        return stable;
+    }
+    if (scenario == "map_card_close") {
+        const auto context = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(context) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && !workspace.currentSession().isEmpty(); }, 15000)
+            || !workspace.showMapOverview()) { std::fprintf(stderr, "Card close setup: busy=%d loading=%d session=%s map=%d\n",
+                workspace.busy(), workspace.loading(), qPrintable(workspace.currentSession()), workspace.mapOverview()); return false; }
+        auto* card = item(window, "contextMapCard_" + context);
+        auto* close = item(window, "closeMapContext_" + context);
+        if (!card || !close || !close->isVisible() || card->property("openSessionId").toString().isEmpty()
+            || !saveShellFrame(window, scenario)) { std::fprintf(stderr, "Card close state: card=%p close=%p visible=%d tab=%s count=%lld\n",
+                static_cast<void*>(card), static_cast<void*>(close), close && close->isVisible(),
+                qPrintable(card ? card->property("openSessionId").toString() : QString{}), static_cast<long long>(workspace.tabs().size())); return false; }
+        const bool closed = click(window, close) && waitFor([&] {
+            auto* button = item(window, "closeMapContext_" + context);
+            return workspace.tabs().isEmpty() && button && !button->isVisible();
+        });
+        if (!closed) std::fprintf(stderr, "Card close action: busy=%d tabs=%lld error=%s\n", workspace.busy(),
+            static_cast<long long>(workspace.tabs().size()), qPrintable(workspace.error()));
+        return closed;
+    }
     if (scenario=="map_overview" || scenario=="map_alias" || scenario=="map_phone" || scenario=="map_landscape") {
         if (!waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })) return false;
         if (scenario=="map_phone") window->resize(320,640);
@@ -1241,14 +1499,15 @@ bool execute(const QString& requestedScenario) {
                 && card && displayedWithin(window->contentItem(),card); })) return false;
         if (scenario=="map_landscape") {
             if (!waitFor([&] { return window->contentItem()->width()==640 && window->contentItem()->height()==320; }) || window->grabWindow().isNull()) return false;
-            auto* cards=item(window,"contextMapCards"); auto* rename=item(window,"renameMapContext_"+first["id"].toString());
+            auto* cards=item(window,"contextMapCards"); auto* rename=item(window,"openMapContextOptions_"+first["id"].toString());
             const QRectF viewport(cards->mapToScene(QPointF{}),cards->size());
             if (!rename || !viewport.contains(rename->mapRectToScene(rename->boundingRect()))) {
                 saveShellFrame(window,scenario); std::fprintf(stderr,"Landscape context caption/action clipped: viewport=%gx%g\n",cards->width(),cards->height()); return false;
             }
         }
         if (scenario=="map_alias") {
-            if (!click(window,item(window,"renameMapContext_"+first["id"].toString()))
+            if (!click(window,item(window,"openMapContextOptions_"+first["id"].toString()))
+                || !click(window,item(window,"renameMapContext_"+first["id"].toString()))
                 || !waitFor([&] { return item(window,"sourceAliasName") && item(window,"sourceAliasName")->isVisible(); })
                 || !type(window,item(window,"sourceAliasName"),"My development")
                 || !click(window,item(window,"saveSourceAlias"))
@@ -1287,7 +1546,8 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] { return !workspace.busy() && !workspace.loading() && !workspace.currentSession().isEmpty()
                 && workspace.workspacePage() == "map" && !workspace.mapOverview() && workspace.totalResourceCount() == 3; });
         }
-        if (!click(window, item(window, "renameMapContext_" + context))
+        if (!click(window, item(window, "openMapContextOptions_" + context))
+            || !click(window, item(window, "renameMapContext_" + context))
             || !waitFor([&] { return item(window, "sourceAliasName")->isVisible(); })) return false;
         auto* card = item(window, "contextMapCard_" + context);
         const auto point = card->mapToScene(QPointF(12, 12)).toPoint();
@@ -1432,12 +1692,14 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario=="map_menu_remove") {
             if (!workspace.showMapOverview()
+                || !click(window,item(window,"openMapContextOptions_"+context))
                 || !waitFor([&] { return item(window,"removeMapContext_"+context); })
                 || !click(window,item(window,"removeMapContext_"+context))
                 || !waitFor([&] { auto* dialog=window->findChild<QObject*>("sourceRemovalDialog"); return dialog && dialog->property("opened").toBool(); })
                 || workspace.sourceRemoval().value("contextId")!=context
                 || !click(window,item(window,"cancelSourceRemoval"))) return false;
             if (!workspace.sourceRemoval().isEmpty() || workspace.contexts().size()!=3
+                || !click(window,item(window,"openMapContextOptions_"+context))
                 || !click(window,item(window,"removeMapContext_"+context))
                 || !click(window,item(window,"confirmSourceRemoval"))) return false;
             return waitFor([&] { return !workspace.busy() && workspace.contexts().size()==2 && workspace.tabs().isEmpty(); })

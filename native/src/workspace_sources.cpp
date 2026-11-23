@@ -12,7 +12,9 @@ QVariantMap sourceInspectionMetadata(const SourceSnapshot& source, const SourceC
     QVariantList fields;
     for (const auto& entry : QList<QPair<QString,QString>>{
         {"Name",context.displayName},{"Context",context.name},{"Cluster",context.cluster},{"Server",context.server},
-        {"User",context.user},{"Authentication",context.authType},{"Source",source.sourcePath},{"Owned copy",source.ownedPath},
+        {"User",context.user},{"Authentication",context.authType},
+        {"Source",source.sourcePath.startsWith("managed://capi/") ? QStringLiteral("Cluster API") : source.sourcePath},
+        {"Owned copy",source.ownedPath},
         {"Imported",QLocale::system().toString(source.importedAt.toLocalTime(),QLocale::ShortFormat)},{"Hash",source.contentHash},{"Context ID",context.id},
         {"Detail",context.brokenReferences.join(", ")}})
         fields.append(QVariantMap{{"label",entry.first},{"value",entry.second.isEmpty() ? QStringLiteral("-") : entry.second}});

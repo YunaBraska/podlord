@@ -273,6 +273,14 @@ an accessible name. The context card menu includes local rename and removal.
 Removal uses the same application-level confirmation from Map and Sources. It
 never deletes a remote cluster or changes the original kubeconfig.
 
+When an opened cluster exposes Cluster API `Cluster` objects with control-plane
+endpoints, Map derives management/workload groups from those observations and
+the imported context server addresses. Multiple contexts for the same
+management endpoint share one group. Existing WLC contexts join it regardless
+of their source. Groups disappear when no matching WLC context remains. This
+presentation is derived from cached resources and catalog entries, with no
+group setting or persisted relationship.
+
 On windows at least 1000 logical pixels wide, mouse-hover details appear next to
 the resource and remain within the window. They do not reserve layout space or
 cover the resource point. Constrained layouts retain the existing filter-area or

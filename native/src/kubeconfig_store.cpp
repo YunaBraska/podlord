@@ -27,6 +27,7 @@ constexpr qint64 maximumKubeconfigBytes = 16 * 1024 * 1024;
 bool contentSource(const QString& path) {
     return path.startsWith("content://", Qt::CaseInsensitive);
 }
+bool managedSource(const QString& path) { return path.startsWith("managed://", Qt::CaseInsensitive); }
 QString hash(const QByteArray& bytes) {
     return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
 }
@@ -36,6 +37,11 @@ QString snapshotId(const QString& path, const QString& contentHash) {
 Result<QString> sourcePath(QString path) {
     if (path.trimmed().isEmpty() || path.contains(QChar::Null))
         return Failure{StoreError::InvalidInput, "A source path is required."};
+    if (managedSource(path)) {
+        static const QRegularExpression origin("\\Amanaged://capi/[0-9a-f]{64}/[A-Za-z0-9-]{1,128}\\z");
+        if (!origin.match(path).hasMatch()) return Failure{StoreError::InvalidInput, "Invalid managed kubeconfig origin."};
+        return path;
+    }
     if (contentSource(path)) {
         const QUrl url(path, QUrl::StrictMode);
         if (!url.isValid() || url.scheme().compare("content", Qt::CaseInsensitive) != 0
@@ -86,6 +92,27 @@ NamedEntries entries(const YAML::Node& root, const char* key, const char* payloa
         result.values.insert(name, value);
     }
     return result;
+}
+Result<bool> embeddedManagedCredentials(const QByteArray& bytes) {
+    try {
+        const auto documents = YAML::LoadAll(bytes.toStdString());
+        if (documents.size() != 1 || !documents.front().IsMap())
+            return Failure{StoreError::InvalidData, "Managed kubeconfig must contain one mapping document."};
+        const auto& root = documents.front();
+        for (const auto& entry : root["clusters"]) {
+            const auto cluster = entry["cluster"];
+            if (cluster["certificate-authority"] || cluster["proxy-url"])
+                return Failure{StoreError::InvalidData, "Managed kubeconfig must embed certificates and cannot use a proxy."};
+        }
+        for (const auto& entry : root["users"]) {
+            const auto user = entry["user"];
+            if (user["client-certificate"] || user["client-key"] || user["tokenFile"] || user["exec"] || user["auth-provider"])
+                return Failure{StoreError::InvalidData, "Managed kubeconfig must embed credentials and cannot execute a login command."};
+        }
+        return true;
+    } catch (const YAML::Exception&) {
+        return Failure{StoreError::InvalidData, "Invalid managed kubeconfig YAML."};
+    }
 }
 Result<SourceSnapshot> parse(QString path, const QByteArray& bytes, QDateTime importedAt) {
     if (bytes.size() > maximumKubeconfigBytes)
@@ -460,10 +487,34 @@ QStringList removalContextIds(const SourceCatalog& catalog, const QString& conte
     ids.sort();
     return ids;
 }
+QStringList managedRetirementContextIds(const SourceCatalog& catalog, const QString& contextId) {
+    QSet<QString> paths;
+    for (const auto& source : catalog.sources) if (source.sourcePath.startsWith("managed://capi/"))
+        for (const auto& context : source.contexts) if (context.id == contextId) paths.insert(source.sourcePath);
+    if (paths.isEmpty()) return {};
+    QSet<QString> affected;
+    bool added;
+    do {
+        added = false;
+        for (const auto& source : catalog.sources) if (paths.contains(source.sourcePath))
+            for (const auto& context : source.contexts) affected.insert(context.id);
+        for (auto replacement = catalog.replacements.cbegin(); replacement != catalog.replacements.cend(); ++replacement) {
+            if (!affected.contains(replacement.value())) continue;
+            for (const auto& source : catalog.sources) if (source.sourcePath.startsWith("managed://capi/")
+                && !paths.contains(source.sourcePath)
+                && std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) {
+                    return context.id == replacement.key();
+                })) { paths.insert(source.sourcePath); added = true; }
+        }
+    } while (added);
+    auto ids = affected.values(); ids.sort();
+    return ids;
+}
 Result<SourceSnapshot> KubeconfigStore::importFile(QString path, const QString& expectedContentHash) const {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     path = std::get<QString>(normalized);
+    if (managedSource(path)) return Failure{StoreError::InvalidInput, "Managed kubeconfigs refresh from their management cluster."};
     if (!contentSource(path) && !QFileInfo(path).isFile()) return Failure{StoreError::ReadFailed, "Source must be a readable regular kubeconfig file.", true};
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
@@ -482,6 +533,32 @@ Result<SourceSnapshot> KubeconfigStore::importText(QString originPath, const QSt
     const auto normalized = sourcePath(std::move(originPath));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return *failure;
     return importContent(std::get<QString>(normalized), yaml.toUtf8());
+}
+Result<QString> managedKubeconfigOrigin(const QString& managementSource, const QString& managementContext,
+    const QString& clusterUid) {
+    static const QRegularExpression uid("\\A[A-Za-z0-9-]{1,128}\\z");
+    const auto originPath = sourcePath(managementSource);
+    if (const auto* failure = std::get_if<Failure>(&originPath)) return *failure;
+    if (managementContext.isEmpty() || managementContext.size() > 253 || managementContext.contains(QChar::Null)
+        || !uid.match(clusterUid).hasMatch())
+        return Failure{StoreError::InvalidInput, "Invalid management context or Cluster identity."};
+    return "managed://capi/" + hash(std::get<QString>(originPath).toUtf8() + '\0' + managementContext.toUtf8()) + '/' + clusterUid;
+}
+Result<SourceSnapshot> KubeconfigStore::importManagedKubeconfig(const QString& managementSource,
+    const QString& managementContext, const QString& clusterUid, const QString& endpoint, const QByteArray& yaml) const {
+    const auto origin = managedKubeconfigOrigin(managementSource, managementContext, clusterUid);
+    if (const auto* failure = std::get_if<Failure>(&origin)) return *failure;
+    if (yaml.isEmpty() || yaml.size() > maximumKubeconfigBytes)
+        return Failure{StoreError::InvalidData, "Managed kubeconfig exceeds the 16 MiB import limit."};
+    const auto preview = parse(std::get<QString>(origin), yaml, QDateTime::currentDateTimeUtc());
+    if (const auto* failure = std::get_if<Failure>(&preview)) return *failure;
+    const auto& contexts = std::get<SourceSnapshot>(preview).contexts;
+    if (contexts.size() != 1 || !contexts.front().brokenReferences.isEmpty())
+        return Failure{StoreError::InvalidData, "Managed kubeconfig must contain one complete context."};
+    const QUrl server(contexts.front().server);
+    if (server.scheme() != "https" || server.host().toLower() + ':' + QString::number(server.port(443)) != endpoint)
+        return Failure{StoreError::InvalidData, "Managed kubeconfig server does not match the observed Cluster endpoint."};
+    return importContent(std::get<QString>(origin), yaml);
 }
 Result<SourceSnapshot> KubeconfigStore::importOciCredentials(const QString& contextId, QString configPath, QString keyPath) const {
     static const QRegularExpression identifier("\\Actx:[0-9a-f]{64}\\z");
@@ -697,6 +774,10 @@ Result<bool> KubeconfigStore::hasGkeServiceAccount(const QString& contextId) con
     return credential.exists();
 }
 Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteArray& bytes) const {
+    if (managedSource(path)) {
+        const auto embedded = embeddedManagedCredentials(bytes);
+        if (const auto* failure = std::get_if<Failure>(&embedded)) return *failure;
+    }
     auto parsed = parse(path, bytes, QDateTime::currentDateTimeUtc());
     if (auto* failure = std::get_if<Failure>(&parsed)) { failure->sourceInput = true; return parsed; }
     const auto directory = sourceDirectory(profile_, true);
@@ -778,6 +859,12 @@ Result<SourceSnapshot> KubeconfigStore::renameContext(const QString& contextId, 
     return Failure{StoreError::NotFound, "Source context is unavailable; existing data was retained."};
 }
 Result<SourceSnapshot> KubeconfigStore::replaceContext(const QString& oldContextId, const QString& newContextId) const {
+    return rebindContext(oldContextId, newContextId, false);
+}
+Result<SourceSnapshot> KubeconfigStore::replaceManagedContext(const QString& oldContextId, const QString& newContextId) const {
+    return rebindContext(oldContextId, newContextId, true);
+}
+Result<SourceSnapshot> KubeconfigStore::rebindContext(const QString& oldContextId, const QString& newContextId, bool managed) const {
     if (oldContextId.isEmpty() || newContextId.isEmpty() || oldContextId == newContextId)
         return Failure{StoreError::InvalidInput, "Choose two different imported contexts."};
     const auto directory = sourceDirectory(profile_, false);
@@ -796,7 +883,15 @@ Result<SourceSnapshot> KubeconfigStore::replaceContext(const QString& oldContext
         if (context.id == oldContextId) { oldContext = &context; oldPath = source.sourcePath; }
         if (context.id == newContextId) { newSource = &source; newContext = &context; }
     }
-    if (!oldContext || !newSource || !newContext || oldContext->name != newContext->name
+    const auto oldServer = QUrl(oldContext ? oldContext->server : QString{});
+    const auto newServer = QUrl(newContext ? newContext->server : QString{});
+    const bool sameEndpoint = !oldServer.host().isEmpty() && !newServer.host().isEmpty()
+        && oldServer.scheme() == newServer.scheme() && oldServer.host().compare(newServer.host(), Qt::CaseInsensitive) == 0
+        && oldServer.port(oldServer.scheme() == "https" ? 443 : 80) == newServer.port(newServer.scheme() == "https" ? 443 : 80);
+    const bool managedMatch = managed && newSource && managedSource(newSource->sourcePath)
+        && (oldPath == newSource->sourcePath || sameEndpoint);
+    if (!oldContext || !newSource || !newContext || (oldContext->name != newContext->name && !managedMatch)
+        || (managed && !managedMatch)
         || std::get<SourceCatalog>(loaded).replacements.contains(oldContextId)
         || (std::get<SourceCatalog>(loaded).replacements.contains(newContextId)
             && std::get<SourceCatalog>(loaded).replacements.value(newContextId) != oldContextId))
@@ -852,6 +947,12 @@ Result<bool> KubeconfigStore::keepContext(const QString& contextId) const {
     return writeContextCatalog(profile_, catalog);
 }
 Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, QStringList expectedSessions) const {
+    return removeContext(contextId, std::move(expectedSessions), false);
+}
+Result<SessionCatalog> KubeconfigStore::retireManagedContext(const QString& contextId, QStringList expectedSessions) const {
+    return removeContext(contextId, std::move(expectedSessions), true);
+}
+Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, QStringList expectedSessions, bool managedRetirement) const {
     static const QRegularExpression identifier("\\Actx:[0-9a-f]{64}\\z");
     if (!identifier.match(contextId).hasMatch()) return Failure{StoreError::InvalidInput, "Select a valid imported context."};
     for (const auto& id : expectedSessions)
@@ -877,7 +978,23 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
         "Cannot lock owned kubeconfigs; context and sessions were retained."};
     const auto catalog = list();
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
-    const auto affected = removalContextIds(std::get<SourceCatalog>(catalog), contextId);
+    QString managedPath;
+    for (const auto& source : std::get<SourceCatalog>(catalog).sources) for (const auto& context : source.contexts)
+        if (context.id == contextId) managedPath = source.sourcePath;
+    if (managedRetirement && !managedPath.startsWith("managed://capi/"))
+        return Failure{StoreError::InvalidInput, "Only an automatically imported workload can be retired."};
+    QStringList affected = managedRetirement ? managedRetirementContextIds(std::get<SourceCatalog>(catalog), contextId)
+        : removalContextIds(std::get<SourceCatalog>(catalog), contextId);
+    if (managedRetirement && affected.isEmpty())
+        return Failure{StoreError::NotFound, "Managed context is unavailable."};
+    QSet<QString> managedPaths;
+    if (managedRetirement) {
+        for (const auto& source : std::get<SourceCatalog>(catalog).sources)
+            if (std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) {
+                return affected.contains(context.id);
+            })) managedPaths.insert(source.sourcePath);
+    }
+    affected.removeDuplicates();
     for (const auto& source : std::get<SourceCatalog>(catalog).sources)
         if (std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; })) {
             const auto preferences = QDir(profile_).filePath("views");
@@ -898,6 +1015,8 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
             for (const auto& owned : std::get<SourceCatalog>(catalog).sources) for (const auto& context : owned.contexts)
                 if (affected.contains(context.id)) entries.sources[owned.id].removeAll(context.id);
             for (const auto& id : affected) entries.replacements.remove(id);
+            if (managedRetirement) for (auto replacement = entries.replacements.begin(); replacement != entries.replacements.end(); )
+                replacement = affected.contains(replacement.value()) ? entries.replacements.erase(replacement) : ++replacement;
             for (const auto& id : affected) entries.pinned.remove(id);
             const auto removed = SessionStore(profile_).removeContext(affected, expectedSessions,
                 [&] { return writeContextCatalog(profile_, entries); });
@@ -908,6 +1027,8 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
                 for (const auto& id : affected) paths.append({QDir(preferences).filePath(contextViewName(id)),
                     ociCredentialPath(std::get<QString>(directory), id), gkeCredentialPath(std::get<QString>(directory), id),
                     awsCredentialPath(std::get<QString>(directory), id)});
+                if (managedRetirement) for (const auto& source : std::get<SourceCatalog>(catalog).sources)
+                    if (managedPaths.contains(source.sourcePath)) paths.append(source.ownedPath);
                 for (const auto& path : paths) {
                     const QFileInfo credential(path);
                     if ((credential.exists() || credential.isSymLink()) && !QFile::remove(path)) deleted = false;
@@ -926,6 +1047,7 @@ Result<SourceImportReport> KubeconfigStore::scanPath(QString path, bool preview)
     if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     if (const auto failure = profileFailure(profile_)) return *failure;
     path = std::get<QString>(normalized);
+    if (managedSource(path)) return Failure{StoreError::InvalidInput, "Managed kubeconfigs refresh from their management cluster."};
     const QFileInfo root(path);
 #ifdef PODLORD_MAC_APP_STORE
     if (root.isDir()) return Failure{StoreError::UnsupportedVersion, "The App Store build imports individual selected files or pasted kubeconfigs, not folders."};
@@ -1076,6 +1198,10 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
             QByteArray original;
             const auto owned = readOwned(source.ownedPath, &original);
             if (const auto* failure = std::get_if<Failure>(&owned)) return *failure;
+            if (managedSource(source.sourcePath)) {
+                const auto embedded = embeddedManagedCredentials(original);
+                if (const auto* failure = std::get_if<Failure>(&embedded)) return *failure;
+            }
             try {
                 const auto root = YAML::Load(original.toStdString());
                 QStringList warnings;

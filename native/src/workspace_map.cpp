@@ -13,6 +13,79 @@ namespace podlord {
 void Workspace::refreshMapContexts(bool reorder) {
     QVariantList next;
     for (const auto& value : contexts()) if (value.toMap().value("current").toBool()) next.append(value);
+    QHash<QString, QString> managerByEndpoint;
+    QSet<QString> ambiguousEndpoints;
+    QHash<QString, QString> managerNames;
+    QSet<QString> contextIds, importedEndpoints;
+    QHash<QString, QString> endpointByContext;
+    for (const auto& value : next) {
+        const auto context = value.toMap();
+        contextIds.insert(context.value("id").toString());
+    }
+    for (const auto& source : sources_.sources) for (const auto& context : source.contexts) {
+        if (!contextIds.contains(context.id)) continue;
+        const QUrl server(context.server);
+        if (server.host().isEmpty()) continue;
+        const auto endpoint = server.host().toLower() + ':' + QString::number(server.port(server.scheme() == "https" ? 443 : 80));
+        endpointByContext.insert(context.id, endpoint);
+        importedEndpoints.insert(endpoint);
+        if (!managerNames.contains(endpoint)) managerNames.insert(endpoint, context.cluster.isEmpty() ? context.displayName : context.cluster);
+    }
+    for (const auto& session : catalog_.sessions) {
+        const auto connection = client_.connection(session.id.toString(QUuid::WithoutBraces));
+        if (!connection) continue;
+        const auto server = connection->server;
+        const auto manager = server.host().toLower() + ':' + QString::number(server.port(server.scheme() == "https" ? 443 : 80));
+        if (!importedEndpoints.contains(manager)) continue;
+        for (const auto& value : client_.rows(session.id.toString(QUuid::WithoutBraces))) {
+            const auto row = value.toObject();
+            if (row.value("kind") != "Cluster" || !row.value("apiVersion").toString().startsWith("cluster.x-k8s.io/")) continue;
+            const auto endpoint = row.value("controlPlaneEndpoint").toObject();
+            const auto host = endpoint.value("host").toString().toLower();
+            const auto port = endpoint.value("port").toInt();
+            if (host.isEmpty() || port <= 0) continue;
+            const auto key = host + ':' + QString::number(port);
+            const auto previous = managerByEndpoint.value(key);
+            if (!previous.isEmpty() && previous != manager) ambiguousEndpoints.insert(key);
+            else managerByEndpoint.insert(key, manager);
+        }
+    }
+    QSet<QString> managersWithChildren;
+    for (auto& value : next) {
+        auto context = value.toMap();
+        const auto id = context.value("id").toString();
+        const auto endpoint = endpointByContext.value(id);
+        const auto manager = managerByEndpoint.value(endpoint);
+        if (manager.isEmpty() || manager == endpoint || ambiguousEndpoints.contains(endpoint)) continue;
+        context.insert("groupId", manager);
+        context.insert("groupName", managerNames.value(manager, manager));
+        context.insert("groupRole", "workload");
+        managersWithChildren.insert(manager);
+        value = context;
+    }
+    for (auto& value : next) {
+        auto context = value.toMap();
+        const auto id = context.value("id").toString();
+        const auto endpoint = endpointByContext.value(id);
+        if (!managersWithChildren.contains(endpoint)) continue;
+        context.insert("groupId", endpoint);
+        context.insert("groupName", managerNames.value(endpoint, endpoint));
+        context.insert("groupRole", "management");
+        value = context;
+    }
+    QHash<QString, QString> opened;
+    for (const auto& session : catalog_.sessions) {
+        if (!session.open) continue;
+        const auto id = session.id.toString(QUuid::WithoutBraces);
+        const auto context = sources_.replacements.value(session.config.contextId, session.config.contextId);
+        if (!opened.contains(context) || id == active_) opened.insert(context, id);
+    }
+    for (auto& value : next) {
+        auto context = value.toMap();
+        const auto session = opened.value(context.value("id").toString());
+        if (!session.isEmpty()) context.insert("openSessionId", session);
+        value = context;
+    }
     QHash<QString, qsizetype> positions;
     for (qsizetype index = 0; index < mapContexts_.size(); ++index)
         positions.insert(mapContexts_[index].toMap().value("id").toString(), index);
