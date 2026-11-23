@@ -563,7 +563,7 @@ if(BUILD_TESTING)
     add_executable(window-host-test tests/window_host_test.cpp)
     target_link_libraries(window-host-test PRIVATE podlord_workspace Qt6::Test Qt6::GuiPrivate)
     foreach(style Basic Fusion)
-        foreach(scenario active background background_dirty context_window context_window_overview new_context_window menu_window reopen nested focus cross_focus
+        foreach(scenario active background background_dirty context_window context_window_overview new_context_window menu_window reopen nested focus cross_focus source_rebind_windows
             handoff handoff_grow handoff_shrink handoff_events handoff_sort snapshot_latest snapshot_hidden snapshot_detach snapshot_close_window
             filter rename settings preset columns alerts alerts_initial source source_dirty logs terminal forward close close_locked close_terminal
             close_isolation main_close root_restore application_quit application_quit_wait application_quit_stay application_quit_discard

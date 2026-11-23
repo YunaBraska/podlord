@@ -213,6 +213,7 @@ layout document to version 4 without discarding Resources/Events preferences.
 | SES-002 | Rename a session to `Production`, change its source configuration, and explicitly reimport the source. | The same tab remains named `Production` and uses the new credentials. | Planned check; implementation review pending. |
 | SES-002 | Keep an automatically assigned name `dev`, change its source configuration, and explicitly reimport twice. | The same tab remains named `dev` and each successful import replaces its active connection. | Planned check; implementation review pending. |
 | SES-002 | Remove the active context name from a reimported source file. | The tab remains visible, stops requests using old credentials, and shows an error. | Passing native `management.source_manage_refresh_removed` Basic/Fusion. |
+| SES-002 | Reimport changed credentials while matching tabs are open in two windows. | Both windows keep their tabs and use the new credentials for further requests. | Passing native `window.source_rebind_windows` Basic/Fusion. |
 | SES-003 | Reimport unchanged source content. | No new snapshot or session is created. | Passing native `management.source_manage_refresh_repeat` Basic/Fusion. |
 
 ### Open Decisions
