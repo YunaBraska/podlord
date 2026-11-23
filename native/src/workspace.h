@@ -175,6 +175,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool authenticationRunning READ authenticationRunning NOTIFY changed)
     Q_PROPERTY(QString authenticationPrompt READ authenticationPrompt NOTIFY changed)
     Q_PROPERTY(QString authenticationInstruction READ authenticationInstruction NOTIFY changed)
+    Q_PROPERTY(bool authenticationBrowserAvailable READ authenticationBrowserAvailable NOTIFY changed)
     Q_PROPERTY(QVariantMap authenticationChallenge READ authenticationChallenge NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
@@ -446,6 +447,7 @@ public:
     bool authenticationRunning() const;
     QString authenticationPrompt() const;
     QString authenticationInstruction() const;
+    bool authenticationBrowserAvailable() const;
     QVariantMap authenticationChallenge() const;
     Q_INVOKABLE bool submitAuthenticationCode(const QString& challengeId, const QString& code);
     QString error() const;
@@ -761,6 +763,7 @@ public:
     Q_INVOKABLE bool close(const QString& id);
     Q_INVOKABLE bool refresh(bool confirmedAuthentication = false);
     Q_INVOKABLE bool cancelAuthentication();
+    Q_INVOKABLE bool openAuthenticationBrowser();
     Q_INVOKABLE bool filter(const QString& text);
     Q_INVOKABLE bool sortColumn(int column);
     Q_INVOKABLE bool inspectRow(int row);

@@ -3,6 +3,7 @@
 #include "background_http.h"
 #include <QJsonObject>
 #include <QPointer>
+#include <QTcpServer>
 #include <QTimer>
 #include <functional>
 
@@ -24,6 +25,8 @@ public:
     void start();
     void cancel();
     QString instruction() const;
+    bool browserAvailable() const;
+    bool openBrowser() const;
 signals:
     void instructionChanged();
     void completed(Result<ClusterConnection> result);
@@ -40,8 +43,11 @@ private:
     PlatformNetworkAccessManager network_;
     QPointer<QNetworkReply> pending_;
     QTimer timer_;
+    QTcpServer callbackServer_;
     QUrl tokenEndpoint_;
     QUrl jwksEndpoint_;
+    QUrl browserUrl_;
+    QUrl redirectUri_;
     QString deviceCode_, instruction_, state_, nonce_, codeVerifier_;
     QDateTime deadline_;
     int interval_ = 5;

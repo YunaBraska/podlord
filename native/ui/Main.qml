@@ -916,7 +916,12 @@ ApplicationWindow {
             FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
-        SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== "" && !workspace.authenticationChallenge.id; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: workspace.authenticationInstruction !== "" && !workspace.authenticationChallenge.id
+            SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            IconButton { objectName: "openAuthenticationBrowser"; glyph: "External"; text: "Open sign-in page"; visible: workspace.authenticationBrowserAvailable; onClicked: workspace.openAuthenticationBrowser() }
+        }
         Loader {
             id: mfaForm
             Layout.fillWidth: true

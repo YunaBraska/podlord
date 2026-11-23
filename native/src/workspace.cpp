@@ -655,6 +655,10 @@ QString Workspace::authenticationInstruction() const {
     const auto connection = client_.connection(active_);
     return connection ? credentials_.instruction(connection->credentialId) : QString{};
 }
+bool Workspace::authenticationBrowserAvailable() const {
+    const auto connection = client_.connection(active_);
+    return connection && credentials_.browserAvailable(connection->credentialId);
+}
 QVariantMap Workspace::authenticationChallenge() const {
     const auto connection = client_.connection(active_);
     const auto challenge = connection ? credentials_.challenge(connection->credentialId) : std::optional<AwsMfaChallenge>{};
@@ -2068,6 +2072,10 @@ bool Workspace::refresh(bool confirmedAuthentication) {
 bool Workspace::cancelAuthentication() {
     const auto connection = client_.connection(active_);
     return connection && credentials_.cancel(connection->credentialId);
+}
+bool Workspace::openAuthenticationBrowser() {
+    const auto connection = client_.connection(active_);
+    return connection && credentials_.openBrowser(connection->credentialId);
 }
 bool Workspace::filter(const QString& text) {
     if (currentNavigation().filter == text) return true;

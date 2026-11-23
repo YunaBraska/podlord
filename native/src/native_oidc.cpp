@@ -9,6 +9,8 @@
 #include <QNetworkRequest>
 #include <QRandomGenerator>
 #include <QRegularExpression>
+#include <QSet>
+#include <QTcpSocket>
 #include <QTimeZone>
 #include <QUrlQuery>
 #include <algorithm>
@@ -186,6 +188,7 @@ Result<std::optional<OidcLogin>> nativeOidc(const ExecCommand& command) {
         if (command.arguments[i] == "--oidc-issuer-url" || command.arguments[i].startsWith("--oidc-issuer-url=")) hasIssuer = true;
     if (!hasIssuer) return std::optional<OidcLogin>{};
     OidcLogin login;
+    login.redirectUri = QUrl("http://localhost");
     QString grant = "auto";
     for (int i = first; i < command.arguments.size(); ++i) {
         const auto argument = command.arguments[i];
@@ -262,10 +265,13 @@ NativeOidcLogin::NativeOidcLogin(ClusterConnection connection, Flow flow, QObjec
     });
 }
 QString NativeOidcLogin::instruction() const { return instruction_; }
+bool NativeOidcLogin::browserAvailable() const { return !done_ && !browserUrl_.isEmpty(); }
+bool NativeOidcLogin::openBrowser() const { return browserAvailable() && QDesktopServices::openUrl(browserUrl_); }
 void NativeOidcLogin::finish(Result<ClusterConnection> result) {
     if (done_) return;
     done_ = true; timer_.stop();
-    state_.clear(); nonce_.clear(); codeVerifier_.clear();
+    state_.clear(); nonce_.clear(); codeVerifier_.clear(); browserUrl_.clear();
+    callbackServer_.close();
     if (pending_) { auto* reply = pending_.data(); pending_ = nullptr; reply->abort(); reply->deleteLater(); }
     emit completed(std::move(result));
 }
@@ -301,9 +307,60 @@ void NativeOidcLogin::start() {
     if (!connection_.exec || !connection_.exec->oidc || done_) { finish(invalidLogin()); return; }
     if (flow_ == Flow::Browser) {
         const auto& redirect = connection_.exec->oidc->redirectUri;
-        if (!redirect.isValid() || !redirect.scheme().contains('.') || !redirect.authority().isEmpty()
-            || redirect.path() != "/oauth2redirect" || redirect.hasQuery() || redirect.hasFragment()) {
+        const bool local = redirect.scheme() == "http" && localHost(redirect.host())
+            && redirect.userInfo().isEmpty() && (redirect.path().isEmpty() || redirect.path() == "/")
+            && (redirect.port() == -1 || redirect.port() > 0);
+        const bool custom = redirect.scheme().contains('.') && redirect.authority().isEmpty()
+            && redirect.path() == "/oauth2redirect";
+        if (!redirect.isValid() || (!local && !custom) || redirect.hasQuery() || redirect.hasFragment()) {
             finish(invalidLogin()); return;
+        }
+        redirectUri_ = redirect;
+        if (local) {
+            const QList<quint16> ports = redirect.port() == -1 ? QList<quint16>{8000, 18000}
+                : QList<quint16>{quint16(redirect.port())};
+            bool listening = false;
+            for (const auto port : ports) if (callbackServer_.listen(QHostAddress::LocalHost, port)) { listening = true; break; }
+            if (!listening) {
+                finish(Failure{StoreError::ReadFailed, "The local OIDC callback port is unavailable."}); return;
+            }
+            redirectUri_.setPort(callbackServer_.serverPort());
+            connect(&callbackServer_, &QTcpServer::newConnection, this, [this] {
+                while (auto* socket = callbackServer_.nextPendingConnection()) {
+                    auto bytes = std::make_shared<QByteArray>();
+                    connect(socket, &QTcpSocket::readyRead, this, [this, socket, bytes] {
+                        bytes->append(socket->readAll());
+                        if (bytes->size() > 8192) { socket->disconnectFromHost(); return; }
+                        const auto end = bytes->indexOf("\r\n\r\n");
+                        if (end < 0) return;
+                        const auto lines = bytes->left(end).split('\n');
+                        const auto first = lines.value(0).trimmed().split(' ');
+                        const auto host = QByteArray("host: ") + redirectUri_.host().toLatin1()
+                            + ':' + QByteArray::number(redirectUri_.port());
+                        const bool validHost = std::any_of(lines.cbegin() + 1, lines.cend(), [&host](QByteArray line) {
+                            return line.trimmed().toLower() == host;
+                        });
+                        const auto target = first.value(1);
+                        const bool valid = first.size() == 3 && first[0] == "GET" && first[2] == "HTTP/1.1"
+                            && target.startsWith("/?") && validHost;
+                        QUrl callback = redirectUri_;
+                        if (valid) callback.setQuery(QString::fromLatin1(target.mid(2)));
+                        const QUrlQuery query(callback);
+                        const auto states = query.allQueryItemValues("state", QUrl::FullyDecoded);
+                        const auto codes = query.allQueryItemValues("code", QUrl::FullyDecoded);
+                        const auto errors = query.allQueryItemValues("error", QUrl::FullyDecoded);
+                        const bool accepted = valid && !state_.isEmpty() && states.size() == 1 && states.front() == state_
+                            && ((codes.size() == 1 && !codes.front().isEmpty() && errors.isEmpty())
+                                || (errors.size() == 1 && codes.isEmpty()));
+                        const QByteArray body = accepted ? "Sign-in received. Return to PodLord." : "Invalid sign-in response.";
+                        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Length: "
+                            + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+                        socket->disconnectFromHost();
+                        if (accepted) handleRedirect(callback);
+                    });
+                    connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
+                }
+            });
         }
     }
     auto discovery = connection_.exec->oidc->issuer;
@@ -348,10 +405,11 @@ void NativeOidcLogin::requestDevice(const QUrl& endpoint) {
         }
         deviceCode_ = code; interval_ = std::max(5, interval);
         deadline_ = QDateTime::currentDateTimeUtc().addSecs(lifetime);
+        browserUrl_ = complete.isEmpty() ? verification : complete;
         instruction_ = "Open " + verification.toString() + " in your browser and enter code " + userCode + ".";
         emit instructionChanged();
         if (done_) return;
-        QDesktopServices::openUrl(complete.isEmpty() ? verification : complete);
+        openBrowser();
         if (!done_) timer_.start(interval_ * 1000);
     });
 }
@@ -363,7 +421,7 @@ void NativeOidcLogin::requestBrowser(const QUrl& endpoint) {
     QUrlQuery query(authorization);
     query.addQueryItem("response_type", "code");
     query.addQueryItem("client_id", oidc.clientId);
-    query.addQueryItem("redirect_uri", oidc.redirectUri.toString());
+    query.addQueryItem("redirect_uri", redirectUri_.toString());
     query.addQueryItem("scope", scopes.join(' '));
     query.addQueryItem("state", state_);
     query.addQueryItem("nonce", nonce_);
@@ -371,7 +429,9 @@ void NativeOidcLogin::requestBrowser(const QUrl& endpoint) {
         .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)));
     query.addQueryItem("code_challenge_method", "S256");
     authorization.setQuery(query);
-    connect(redirectRouter(oidc.redirectUri.scheme()), &OidcRedirectRouter::received, this, &NativeOidcLogin::handleRedirect);
+    if (redirectUri_.scheme() != "http")
+        connect(redirectRouter(redirectUri_.scheme()), &OidcRedirectRouter::received, this, &NativeOidcLogin::handleRedirect);
+    browserUrl_ = authorization;
     instruction_ = "Complete sign-in in your browser.";
     emit instructionChanged();
     if (done_) return;
@@ -381,11 +441,11 @@ void NativeOidcLogin::requestBrowser(const QUrl& endpoint) {
 }
 void NativeOidcLogin::handleRedirect(const QUrl& url) {
     if (done_ || flow_ != Flow::Browser || state_.isEmpty() || url.hasFragment()
-        || url.adjusted(QUrl::RemoveQuery) != connection_.exec->oidc->redirectUri) return;
+        || url.adjusted(QUrl::RemoveQuery) != redirectUri_) return;
     const QUrlQuery query(url);
     const auto states = query.allQueryItemValues("state", QUrl::FullyDecoded);
     if (states.size() != 1 || states.front() != state_) return;
-    state_.clear(); timer_.stop();
+    state_.clear(); timer_.stop(); callbackServer_.close();
     const auto codes = query.allQueryItemValues("code", QUrl::FullyDecoded);
     const auto errors = query.allQueryItemValues("error", QUrl::FullyDecoded);
     if (errors.size() == 1 && codes.isEmpty()) {
@@ -397,7 +457,7 @@ void NativeOidcLogin::handleRedirect(const QUrl& url) {
     }
     const auto& oidc = *connection_.exec->oidc;
     QList<QPair<QString, QString>> fields{{"grant_type", "authorization_code"}, {"code", codes.front()},
-        {"redirect_uri", oidc.redirectUri.toString()}, {"client_id", oidc.clientId}, {"code_verifier", codeVerifier_}};
+        {"redirect_uri", redirectUri_.toString()}, {"client_id", oidc.clientId}, {"code_verifier", codeVerifier_}};
     if (!oidc.clientSecret.isEmpty()) fields.append({"client_secret", oidc.clientSecret});
     codeVerifier_.clear();
     send(tokenEndpoint_, form(fields), [this](int status, const QJsonObject& object) { acceptToken(status, object); });
@@ -417,7 +477,16 @@ void NativeOidcLogin::poll() {
                 if (error == "slow_down") interval_ = std::min(600, interval_ + 5);
                 timer_.start(interval_ * 1000); return;
             }
-            finish(Failure{StoreError::ReadFailed, "OIDC sign-in was denied or expired. Confirm another attempt to retry."}); return;
+            if (error == "access_denied") {
+                finish(Failure{StoreError::ReadFailed, "OIDC sign-in was denied."}); return;
+            }
+            if (error == "expired_token") {
+                finish(Failure{StoreError::ReadFailed, "OIDC sign-in code expired."}); return;
+            }
+            static const QSet<QString> knownErrors{"invalid_client", "invalid_grant", "invalid_request",
+                "invalid_scope", "unauthorized_client", "unsupported_grant_type"};
+            finish(Failure{StoreError::ReadFailed, knownErrors.contains(error)
+                ? "OIDC token request failed (" + error + ")." : "OIDC token request failed (HTTP 400)."}); return;
         }
         acceptToken(status, object);
     });

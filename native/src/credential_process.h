@@ -21,6 +21,8 @@ public:
     bool revoke(const QString& credential);
     bool running(const QString& credential) const;
     QString instruction(const QString& credential) const;
+    bool browserAvailable(const QString& credential) const;
+    bool openBrowser(const QString& credential) const;
     std::optional<AwsMfaChallenge> challenge(const QString& credential) const;
     bool submitMfa(const QString& credential, const QString& challengeId, const QString& code);
     std::optional<ClusterConnection> cached(const QString& credential) const;

@@ -1159,7 +1159,7 @@ if(BUILD_TESTING)
     foreach(scenario before_start missing_exec valid future near_expiry stderr invalid_json invalid_utf8 array wrong_kind
         wrong_version missing_status token_number empty_status token_space token_control bad_certificate expired
         bad_expiry invalid_date nonzero oversized missing_program cancel repeat gke_unavailable gke_service_missing
-        eks oci_bad_key oidc_invalid oidc_cancel revoke_ready revoke_running revoke_oidc)
+        eks oci_bad_key oidc_invalid oidc_cancel oidc_browser_selection revoke_ready revoke_running revoke_oidc)
         add_test(NAME native.authentication.exec_${scenario} COMMAND credential-process-test ${scenario})
         set_tests_properties(native.authentication.exec_${scenario} PROPERTIES TIMEOUT 15)
     endforeach()
@@ -1246,11 +1246,11 @@ if(BUILD_TESTING)
     set(oidc_scenarios parse aks_device aks_browser aks_missing_client aks_bad_tenant aks_cli_mode aks_unknown_flag aks_sovereign aks_duplicate aks_other_program
         aks_missing_tenant aks_missing_server aks_bad_client aks_empty_value aks_option_as_value aks_equals aks_short_login
         start_missing_exec start_missing_oidc start_invalid_issuer start_repeat start_cancel_pending
-        success pinned_device cancel wrong_issuer malformed denied pending slow_down unsigned_id_token device_with_secret
+        success reopen_browser pinned_device cancel wrong_issuer malformed denied pending slow_down unsigned_id_token device_with_secret
         discovery_bad_token_url discovery_missing_device discovery_wrong_status discovery_server_error discovery_bad_json discovery_oversized
         device_no_code device_no_user device_bad_uri device_bad_complete device_zero_lifetime device_long_lifetime
         device_negative_interval device_long_interval device_wrong_status device_expired token_missing token_space token_short_lifetime
-        token_long_lifetime token_wrong_status token_server_error token_bad_json)
+        token_long_lifetime token_wrong_status token_server_error token_bad_json token_invalid_client token_private_error)
     if(APPLE AND NOT IOS)
         target_link_libraries(native-oidc-test PRIVATE OpenSSL::Crypto)
     endif()
@@ -1261,7 +1261,7 @@ if(BUILD_TESTING)
             signed_short_signature signed_jwks_non_object signed_jwks_empty signed_jwks_long_modulus
             signed_jwks_long_exponent signed_jwks_zero_exponent signed_jwks_bad_exponent signed_jwks_empty_exponent
             signed_jwks_leading_zero)
-        list(APPEND oidc_scenarios browser_valid browser_bad_state browser_bad_nonce browser_denied browser_replay
+        list(APPEND oidc_scenarios browser_valid browser_loopback_success browser_bad_state browser_bad_nonce browser_denied browser_replay
             browser_access_token browser_cancel browser_missing_auth browser_jwks_server_error browser_jwks_bad_json
             browser_missing_id_token browser_missing_access_token browser_short_lifetime browser_long_lifetime
             browser_with_secret browser_wrong_path browser_fragment browser_empty_code browser_control_code browser_duplicate_error

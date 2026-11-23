@@ -89,9 +89,12 @@ public:
                         if (mode_ == "device_expired") response["expires_in"] = 1;
                     } else if (path == "/token") {
                         ++tokenRequests;
-                        if (mode_ == "denied" || ((mode_ == "pending" || mode_ == "slow_down") && tokenRequests == 1)) {
+                        if (mode_ == "denied" || mode_ == "token_invalid_client" || mode_ == "token_private_error"
+                            || ((mode_ == "pending" || mode_ == "slow_down") && tokenRequests == 1)) {
                             status = 400;
                             response = {{"error", mode_ == "denied" ? "access_denied"
+                                : mode_ == "token_invalid_client" ? "invalid_client"
+                                : mode_ == "token_private_error" ? "private-secret-value"
                                 : mode_ == "slow_down" ? "slow_down" : "authorization_pending"}};
                         }
                         else if (mode_.startsWith("signed_")) response = {{"id_token", signedToken()}};
@@ -305,7 +308,8 @@ bool parse() {
                 : login && login->has_value() && login->value().issuer == QUrl("https://issuer.example")
                     && login->value().clientId == "podlord-client" && login->value().useAccessToken == row.accessToken
                     && login->value().scopes == row.scopes && login->value().clientSecret == row.clientSecret
-                    && login->value().deviceCodeGrant == row.deviceCodeGrant;
+                    && login->value().deviceCodeGrant == row.deviceCodeGrant
+                    && login->value().redirectUri == QUrl("http://localhost");
         if (!matched) {
             std::fprintf(stderr, "OIDC parser case failed: %s\n", row.name);
             return false;
@@ -372,14 +376,18 @@ bool deviceFlow(const QString& scenario) {
     QObject::connect(&login, &podlord::NativeOidcLogin::completed, &login,
         [&](podlord::Result<podlord::ClusterConnection> value) { result = std::move(value); });
     if (scenario == "cancel") QObject::connect(&login, &podlord::NativeOidcLogin::instructionChanged, &login, [&] { login.cancel(); });
+    if (scenario == "reopen_browser") QObject::connect(&login, &podlord::NativeOidcLogin::instructionChanged, &login,
+        [&] { if (login.browserAvailable()) login.openBrowser(); });
+    if (login.browserAvailable() || login.openBrowser()) return false;
     login.start();
     if (!waitFor([&] { return result.has_value(); }, scenario == "slow_down" ? 22000 : 16000)) return false;
-    if (scenario == "success" || scenario == "pending" || scenario == "slow_down"
+    if (scenario == "success" || scenario == "reopen_browser" || scenario == "pending" || scenario == "slow_down"
         || scenario == "pinned_device" || scenario == "device_with_secret") {
         const auto* ready = std::get_if<podlord::ClusterConnection>(&*result);
         return ready && ready->authorization == "Bearer private-access-token" && ready->credentialReady
             && ready->expiresAt > QDateTime::currentDateTimeUtc().addSecs(30)
-            && browser.opened == 1 && identity.tokenRequests == (scenario == "pending" || scenario == "slow_down" ? 2 : 1);
+            && browser.opened == (scenario == "reopen_browser" ? 2 : 1)
+            && identity.tokenRequests == (scenario == "pending" || scenario == "slow_down" ? 2 : 1);
     }
     if (scenario == "signed_valid" || scenario == "signed_single_key_no_kid" || scenario == "signed_audience_array") {
         const auto* ready = std::get_if<podlord::ClusterConnection>(&*result);
@@ -388,6 +396,8 @@ bool deviceFlow(const QString& scenario) {
             && browser.opened == 1 && identity.tokenRequests == 1 && identity.jwksRequests == 1;
     }
     if (!std::holds_alternative<podlord::Failure>(*result)) return false;
+    if (scenario == "token_invalid_client") return std::get<podlord::Failure>(*result).message.contains("invalid_client");
+    if (scenario == "token_private_error") return !std::get<podlord::Failure>(*result).message.contains("private-secret-value");
     if (scenario == "unsigned_id_token") {
         const auto failure = std::get<podlord::Failure>(*result);
         return failure.code == podlord::StoreError::InvalidData && browser.opened == 1
@@ -419,7 +429,12 @@ bool browserFlow(const QString& scenario) {
     if (scenario == "browser_with_secret") connection.exec->oidc->clientSecret = "private-secret";
     const bool google = scenario.startsWith("browser_google_");
     const bool invalidRedirect = scenario.startsWith("browser_redirect_");
-    const QString redirectUri = google ? "com.googleusercontent.apps.123456-podlord:/oauth2redirect" : "berlin.yuna.podlord:/oauth2redirect";
+    QTcpServer portReservation;
+    const bool loopback = scenario.startsWith("browser_loopback_");
+    if (loopback && !portReservation.listen(QHostAddress::LocalHost, 0)) return false;
+    const QString redirectUri = loopback ? QString("http://localhost:%1").arg(portReservation.serverPort())
+        : google ? "com.googleusercontent.apps.123456-podlord:/oauth2redirect" : "berlin.yuna.podlord:/oauth2redirect";
+    portReservation.close();
     connection.exec->oidc->redirectUri = QUrl(redirectUri);
     identity.expectedRedirect = redirectUri;
     if (scenario == "browser_redirect_http") connection.exec->oidc->redirectUri = QUrl("https://login.example/oauth2redirect");
@@ -479,7 +494,16 @@ bool browserFlow(const QString& scenario) {
         QTest::qWait(50);
         if (result.has_value() || identity.tokenRequests != 0) return false;
     }
-    if (!QDesktopServices::openUrl(redirect)) return false;
+    if (loopback) {
+        QTcpSocket socket;
+        socket.connectToHost(QHostAddress::LocalHost, redirect.port());
+        if (!waitFor([&] { return socket.state() == QAbstractSocket::ConnectedState; })) return false;
+        const auto target = QByteArray("/?") + redirect.query(QUrl::FullyEncoded).toUtf8();
+        socket.write("GET " + target + " HTTP/1.1\r\nHost: localhost:" + QByteArray::number(redirect.port())
+            + "\r\nConnection: close\r\n\r\n");
+        socket.flush();
+        if (!waitFor([&] { return socket.bytesAvailable() > 0; }) || !socket.readAll().startsWith("HTTP/1.1 200")) return false;
+    } else if (!QDesktopServices::openUrl(redirect)) return false;
     if (scenario == "browser_bad_state" || scenario == "browser_duplicate_state") {
         QTest::qWait(50);
         if (result.has_value() || identity.tokenRequests != 0) return false;
@@ -536,13 +560,13 @@ int main(int argc, char** argv) {
         : scenario.startsWith("start_") ? invalidStart(scenario)
         : scenario.startsWith("aks_") ? aksParse(scenario)
         : scenario.startsWith("browser_") ? browserFlow(scenario)
-        : QStringList{"success", "pinned_device", "cancel", "wrong_issuer", "malformed", "denied", "pending", "slow_down", "unsigned_id_token",
+        : QStringList{"success", "reopen_browser", "pinned_device", "cancel", "wrong_issuer", "malformed", "denied", "pending", "slow_down", "unsigned_id_token",
             "discovery_bad_token_url", "discovery_bad_jwks", "discovery_missing_device", "discovery_wrong_status",
             "discovery_server_error", "discovery_bad_json", "discovery_oversized", "device_with_secret",
             "device_no_code", "device_no_user", "device_bad_uri",
             "device_bad_complete", "device_zero_lifetime", "device_long_lifetime", "device_negative_interval",
             "device_long_interval", "device_wrong_status", "device_expired", "token_missing", "token_space", "token_short_lifetime",
-            "token_long_lifetime", "token_wrong_status", "token_server_error", "token_bad_json",
+            "token_long_lifetime", "token_wrong_status", "token_server_error", "token_bad_json", "token_invalid_client", "token_private_error",
             "signed_valid", "signed_bad_signature", "signed_wrong_issuer", "signed_expired",
             "signed_malformed_token", "signed_empty_part", "signed_bad_base64", "signed_bad_claims_base64",
             "signed_bad_signature_base64", "signed_bad_kid_type",
