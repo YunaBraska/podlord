@@ -598,8 +598,8 @@ Result<SourceSnapshot> KubeconfigStore::importOciCredentials(const QString& cont
                 command.arguments.append(QString::fromStdString(arg.as<std::string>()));
             }
             const auto env = exec["env"];
-            if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, "OCI exec environment is invalid."};
-            if (env) for (const auto& item : env) command.environment.insert(text(item, "name"), text(item, "value"));
+            if (env && !env.IsNull() && !env.IsSequence()) return Failure{StoreError::InvalidData, "OCI exec environment is invalid."};
+            if (env && !env.IsNull()) for (const auto& item : env) command.environment.insert(text(item, "name"), text(item, "value"));
             const auto selected = prepareImportedOci(command);
             if (const auto* failure = std::get_if<Failure>(&selected)) return *failure;
             const auto fields = parseOciConfig(std::get<QByteArray>(config), std::get<QString>(selected));
@@ -660,12 +660,12 @@ Result<SourceSnapshot> KubeconfigStore::importAwsProfile(const QString& contextI
             ExecCommand command;
             command.program = text(exec, "command");
             const auto args = exec["args"], env = exec["env"];
-            if (!args || !args.IsSequence() || (env && !env.IsSequence())) return Failure{StoreError::InvalidData, "AWS exec configuration is invalid."};
+            if (!args || !args.IsSequence() || (env && !env.IsNull() && !env.IsSequence())) return Failure{StoreError::InvalidData, "AWS exec configuration is invalid."};
             for (const auto& arg : args) {
                 if (!arg.IsScalar()) return Failure{StoreError::InvalidData, "AWS exec arguments are invalid."};
                 command.arguments.append(QString::fromStdString(arg.as<std::string>()));
             }
-            if (env) for (const auto& item : env) {
+            if (env && !env.IsNull()) for (const auto& item : env) {
                 const auto name = text(item, "name");
                 if (name.isEmpty() || command.environment.contains(name)) return Failure{StoreError::InvalidData, "AWS exec environment is invalid."};
                 command.environment.insert(name, text(item, "value"));
@@ -1323,9 +1323,9 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.arguments.append(value);
                     }
                     const auto env = node["env"];
-                    if (env && !env.IsSequence()) return Failure{StoreError::InvalidData, kubeconfigExecEnvMessage};
+                    if (env && !env.IsNull() && !env.IsSequence()) return Failure{StoreError::InvalidData, kubeconfigExecEnvMessage};
                     QSet<QString> names;
-                    if (env) for (const auto& entry : env) {
+                    if (env && !env.IsNull()) for (const auto& entry : env) {
                         const auto name = text(entry, "name");
                         const auto value = text(entry, "value");
 #ifdef Q_OS_WIN

@@ -753,6 +753,28 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         write(first, config());
+        if (scenario == "exec_null_env" || scenario == "exec_invalid_env") {
+            const QByteArray yaml = "apiVersion: v1\nkind: Config\n"
+                "clusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:9\n"
+                "users:\n- name: local\n  user:\n    exec:\n"
+                "      apiVersion: client.authentication.k8s.io/v1\n"
+                "      command: kubectl\n      interactiveMode: Never\n"
+                "      args: [oidc-login, get-token, --oidc-issuer-url=https://issuer.example.test, --oidc-client-id=podlord-store]\n"
+                "      env: "
+                + QByteArray(scenario == "exec_null_env" ? "null\n" : "{EXAMPLE: value}\n")
+                + "contexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n";
+            write(first, yaml);
+            const podlord::KubeconfigStore store(profile);
+            const auto imported = store.importFile(first);
+            require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Exec kubeconfig import failed");
+            const auto connection = store.connection(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
+            if (scenario == "exec_invalid_env") require(std::holds_alternative<podlord::Failure>(connection)
+                && std::get<podlord::Failure>(connection).message.contains("exec.env"), "Invalid exec.env was accepted");
+            else require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                && std::get<podlord::ClusterConnection>(connection).exec.has_value()
+                && std::get<podlord::ClusterConnection>(connection).exec->environment.isEmpty(), "Null exec.env was rejected");
+            return 0;
+        }
         if (scenario.startsWith("layout_")) return ui(profile, directory, false, scenario.mid(7).toInt()) ? 0 : 1;
         if (scenario == "nested") write(directory + "/deep/more/other.yml", config("https://127.0.0.1:10"));
         if (scenario == "partial" || scenario == "ui_partial") write(directory + "/broken.yml", "contexts: [\n");

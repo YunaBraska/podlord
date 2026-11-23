@@ -47,7 +47,7 @@ Pane {
         MenuItem {
             objectName: "removeMapContext_" + contextOpenMenu.contextId
             text: workspace.uiText["settings.remove"]
-            contentItem: Label { text: parent.text; color: workspace.appearanceColors.danger; font: parent.font; leftPadding: 12; rightPadding: 12; verticalAlignment: Text.AlignVCenter }
+            contentItem: Label { text: parent.text; color: workspace.appearanceColors.danger; font: parent.font; verticalAlignment: Text.AlignVCenter }
             onTriggered: workspace.requestSourceRemoval(contextOpenMenu.contextId)
         }
     }
