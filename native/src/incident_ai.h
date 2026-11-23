@@ -44,8 +44,10 @@ public:
     QStringList reasoningOptions() const { return provider_ == "ollama" ? reasoningOptions_ : QStringList{}; }
     QString reasoning() const { return provider_ == "ollama" ? reasoning_ : QString{}; }
     bool setReasoning(const QString& reasoning);
-    QString status(const QString& context = {}) const {
-        return !status_.isEmpty() ? status_ : !contextStatus_.value(context).isEmpty() ? contextStatus_.value(context) :
+    QString status(const QString& context = {}, const QString& path = {}) const {
+        const auto contextMessage = contextStatus_.value(context);
+        return !status_.isEmpty() ? status_ : (!contextMessage.text.isEmpty()
+            && (path.isEmpty() || contextMessage.path == path)) ? contextMessage.text :
             provider_ == "chatgpt" ? (!chatgpt_.status().isEmpty() ? chatgpt_.status()
                 : !chatgpt_.connected() ? "Connect a ChatGPT account with plan permission first."
                 : chatgptModel_.isEmpty() ? "Choose a ChatGPT model in AI settings." : QString{})
@@ -90,6 +92,7 @@ private:
         QJsonArray evidence;
     };
     struct Record final { QJsonObject answer; QDateTime created; };
+    struct ContextStatus final { QString path, text; };
     bool save();
     qsizetype evidenceBudgetBytes(const QString& language, const QString& kind, const QString& code, const QStringList& related) const;
     void dispatch();
@@ -110,7 +113,7 @@ private:
     qint64 ollamaContextTokens_ = 0;
     QStringList reasoningOptions_{"auto"};
     QString provider_ = "ollama", model_, chatgptModel_, claudeModel_, openrouterModel_, reasoning_ = "auto", status_;
-    QMap<QString, QString> contextStatus_;
+    QMap<QString, ContextStatus> contextStatus_;
     QJsonValue thinkValue_{QJsonValue::Undefined};
     bool modelReady_ = false;
     QMap<QString, Record> records_;

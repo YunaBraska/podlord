@@ -17,6 +17,7 @@
 #include <QUuid>
 #include <algorithm>
 #include <array>
+#include <utility>
 
 namespace podlord {
 namespace {
@@ -408,16 +409,31 @@ void ChatGptClient::refreshModels() {
     });
 }
 void ChatGptClient::cancelAnalysis() {
-    if (analysisReply_) analysisReply_->abort();
+    if (!analysisDone_) return;
+    ++analysisGeneration_;
+    if (analysisReply_) {
+        auto* reply = analysisReply_.data();
+        analysisReply_ = nullptr;
+        reply->abort();
+    }
+    auto done = std::exchange(analysisDone_, {});
+    QTimer::singleShot(0, this, [done = std::move(done)]() mutable { done({}, "ChatGPT analysis canceled."); });
 }
 void ChatGptClient::analyze(const QString& model, const QString& instructions, const QString& input,
     std::function<void(QString, QString)> done) {
-    if (analysisReply_ || model.isEmpty()) { done({}, "ChatGPT analysis is already running or no model was selected."); return; }
+    if (analysisDone_ || model.isEmpty()) { done({}, "ChatGPT analysis is already running or no model was selected."); return; }
     bool listed = false;
     for (const auto& choice : models_) if (choice.toMap().value("slug") == model) listed = true;
     if (!listed) { done({}, "Selected ChatGPT model is unavailable for this account."); return; }
-    ensureAccess([this, model, instructions, input, done = std::move(done)](bool ready) mutable {
-        if (!ready || !active()) { done({}, status_); return; }
+    analysisDone_ = std::move(done);
+    const auto generation = ++analysisGeneration_;
+    ensureAccess([this, model, instructions, input, generation](bool ready) {
+        if (generation != analysisGeneration_) return;
+        if (!ready || !active()) {
+            auto finished = std::exchange(analysisDone_, {});
+            finished({}, status_);
+            return;
+        }
         auto req = request(apiBase_.resolved(QUrl("/v1/responses")), active()->accessToken.toUtf8());
         req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         req.setTransferTimeout(180000);
@@ -427,12 +443,14 @@ void ChatGptClient::analyze(const QString& model, const QString& instructions, c
         emit analysisSent(active()->subject);
         auto* reply = analysisReply_.data();
         limitReply(reply, 1024 * 1024);
-        connect(reply, &QNetworkReply::finished, this, [this, reply, done = std::move(done)] {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, generation] {
+            if (generation != analysisGeneration_) { reply->deleteLater(); return; }
             const bool ok = goodReply(reply);
             const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             const auto requestId = reply->rawHeader("openai-request-id").isEmpty()
                 ? reply->rawHeader("x-request-id") : reply->rawHeader("openai-request-id");
             auto bytes = reply->read(1024 * 1024 + 1); reply->deleteLater(); analysisReply_ = nullptr;
+            auto done = std::exchange(analysisDone_, {});
             if (!ok || bytes.size() > 1024 * 1024) {
                 const auto detail = QJsonDocument::fromJson(bytes).object();
                 const auto code = detail.value("error").toObject().value("code").toString();

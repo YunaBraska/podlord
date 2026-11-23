@@ -61,7 +61,8 @@ public:
                         const QUrlQuery fields(QString::fromUtf8(body));
                         if (fields.queryItemValue("grant_type") == "refresh_token"
                             && fields.queryItemValue("client_id") == "oaiapp_test"
-                            && fields.queryItemValue("refresh_token") == "private-refresh"
+                            && (fields.queryItemValue("refresh_token") == "private-refresh"
+                                || fields.queryItemValue("refresh_token") == "private-refresh-2")
                             && fields.queryItemValue("resource") == "https://api.openai.com/v1") {
                             ++refreshes;
                             if (refreshFailure == "temporary") {
@@ -70,7 +71,7 @@ public:
                                 code = 400; payload = R"({"error":"invalid_grant"})";
                             } else payload = QJsonDocument(QJsonObject{{"access_token", "private-access-2"},
                                 {"refresh_token", "private-refresh-2"}, {"scope", "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"},
-                                {"token_type", "Bearer"}, {"expires_in", 3600}}).toJson(QJsonDocument::Compact);
+                                {"token_type", "Bearer"}, {"expires_in", shortLived && refreshes == 1 ? 60 : 3600}}).toJson(QJsonDocument::Compact);
                         } else if (fields.queryItemValue("grant_type") != "authorization_code"
                             || fields.queryItemValue("client_id") != "oaiapp_test"
                             || fields.queryItemValue("code") != "one-time-code"
@@ -99,6 +100,16 @@ public:
                         contentType = "text/event-stream";
                         payload = "data: " + response + "\n\n";
                     } else { code = 404; payload = "{}"; }
+                    if (line.startsWith("POST /api/accounts/oauth/token ") && holdRefresh
+                        && QUrlQuery(QString::fromUtf8(body)).queryItemValue("grant_type") == "refresh_token") {
+                        heldRefresh = socket;
+                        heldRefreshPayload = payload;
+                        return;
+                    }
+                    if (line.startsWith("POST /v1/responses ") && holdResponse) {
+                        heldResponse = socket;
+                        return;
+                    }
                     socket->write("HTTP/1.1 " + QByteArray::number(code) + (code == 200 ? " OK" : " Error")
                         + "\r\nContent-Type: " + contentType + "\r\nContent-Length: " + QByteArray::number(payload.size())
                         + "\r\nConnection: close\r\n\r\n" + payload);
@@ -113,6 +124,11 @@ public:
     QByteArray submitted;
     bool wrongNonce = false;
     bool shortLived = false;
+    bool holdRefresh = false;
+    bool holdResponse = false;
+    QTcpSocket* heldRefresh = nullptr;
+    QTcpSocket* heldResponse = nullptr;
+    QByteArray heldRefreshPayload;
     bool missingDirectScope = false;
     QString refreshFailure;
     int refreshes = 0;
@@ -174,7 +190,8 @@ void scenario(const QString& name) {
     ChatGptBoundary boundary;
     require(boundary.listen(QHostAddress::LocalHost, 0), "Cannot start OAuth boundary");
     boundary.wrongNonce = name == "wrong_nonce";
-    boundary.shortLived = name == "refresh" || name == "refresh_transient" || name == "refresh_expired";
+    boundary.shortLived = name == "refresh" || name == "refresh_transient" || name == "refresh_expired"
+        || name == "cancel_during_refresh";
     if (name == "refresh_transient") boundary.refreshFailure = "temporary";
     if (name == "refresh_expired") boundary.refreshFailure = "expired";
     boundary.missingDirectScope = name == "reconsent";
@@ -276,6 +293,58 @@ void scenario(const QString& name) {
         "Wrong account or hidden model shown");
     require(client.models().first().toMap().value("contextTokens").toLongLong() == 9000,
         "Advertised ChatGPT context capacity was lost");
+    if (name == "cancel_during_refresh") {
+        boundary.holdRefresh = true;
+        QString cancelledAnswer, cancelledError;
+        client.analyze("gpt-test", "Return JSON", "Observed problem", [&](QString answer, QString error) {
+            cancelledAnswer = answer; cancelledError = error;
+        });
+        require(QTest::qWaitFor([&] { return boundary.heldRefresh != nullptr; }, 2000),
+            "Analysis did not wait for a renewed session");
+        client.cancelAnalysis();
+        require(QTest::qWaitFor([&] { return !cancelledError.isEmpty(); }, 2000)
+            && cancelledAnswer.isEmpty() && boundary.submitted.isEmpty(),
+            "Cancel during session renewal left the analysis pending");
+        boundary.heldRefresh->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+            + QByteArray::number(boundary.heldRefreshPayload.size()) + "\r\nConnection: close\r\n\r\n"
+            + boundary.heldRefreshPayload);
+        boundary.heldRefresh->disconnectFromHost();
+        QTest::qWait(100);
+        require(boundary.submitted.isEmpty(), "Canceled analysis was sent after renewal");
+        QString answer, error;
+        client.analyze("gpt-test", "Return JSON", "New request", [&](QString value, QString failure) {
+            answer = value; error = failure;
+        });
+        const bool completed = QTest::qWaitFor([&] { return !answer.isEmpty() || !error.isEmpty(); }, 2000);
+        if (!completed || !error.isEmpty() || boundary.submitted.isEmpty())
+            std::fprintf(stderr, "Renewed analysis: completed=%d error=%s status=%s refreshes=%d submitted=%lld\n",
+                completed, qPrintable(error), qPrintable(client.status()), boundary.refreshes,
+                static_cast<long long>(boundary.submitted.size()));
+        require(completed && error.isEmpty() && !boundary.submitted.isEmpty(),
+            "A new analysis could not run after cancellation");
+        return;
+    }
+    if (name == "cancel_during_response") {
+        boundary.holdResponse = true;
+        int completions = 0;
+        QString cancelledError;
+        client.analyze("gpt-test", "Return JSON", "Observed problem", [&](QString, QString error) {
+            ++completions; cancelledError = error;
+        });
+        require(QTest::qWaitFor([&] { return boundary.heldResponse != nullptr; }, 2000),
+            "Response was not held at the provider boundary");
+        client.cancelAnalysis();
+        require(QTest::qWaitFor([&] { return completions == 1; }, 2000)
+            && !cancelledError.isEmpty(), "Cancel did not complete the active request once");
+        boundary.holdResponse = false;
+        QString answer, error;
+        client.analyze("gpt-test", "Return JSON", "New request", [&](QString value, QString failure) {
+            answer = value; error = failure;
+        });
+        require(QTest::qWaitFor([&] { return !answer.isEmpty() || !error.isEmpty(); }, 2000)
+            && error.isEmpty() && completions == 1, "Canceled response prevented a new analysis");
+        return;
+    }
     const auto credentialPath = QDir(directory.filePath("profile")).filePath("chatgpt-auth.json");
     require(!QFile::exists(credentialPath)
         && credentials.read(directory.filePath("profile"), "chatgpt").found,

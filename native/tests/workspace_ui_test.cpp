@@ -571,6 +571,7 @@ public:
                         || ((scenario == "coalesce" || scenario == "detail_expiry") && path.startsWith("/api/v1/namespaces/default/pods/"))
                         || ((scenario == "hidden_followup" || scenario == "shutdown_pending") && path == "/api") ? 400 : 0;
                     if (scenario=="map_preview_deferred" && path=="/api/v1/pods" && url.query().contains("continue=") && authorization=="Bearer inactive-token") delay=1800;
+                    if (scenario=="initial_load_navigation" && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
                     QTimer::singleShot(delay, this, [this, live, response, delay] {
                         if (live && live->state() == QAbstractSocket::ConnectedState) {
                             const bool accepted = live->write(response) == response.size();
@@ -739,7 +740,7 @@ bool execute(const QString& requestedScenario) {
     bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
-    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
+    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "initial_load_navigation" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     KubernetesBoundary server(scenario == "shell_metric_zero" ? "radar_quick_info" : scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario.startsWith("view_restore_event_") ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
@@ -1563,6 +1564,19 @@ bool execute(const QString& requestedScenario) {
     if (!workspace.setWorkspacePage("map")) return false;
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
+    if (scenario == "initial_load_navigation") {
+        const auto first = workspace.currentSession();
+        if (!waitFor([&] { return workspace.loading() && server.requests.contains("/api"); })
+            || !click(window, item(window, "settingsWorkspaceButton"))
+            || workspace.workspacePage() != "settings") return false;
+        if (!workspace.openContext(workspace.contexts().last().toMap()["id"].toString())
+            || !waitFor([&] { return !workspace.busy() && workspace.currentSession() != first
+                && workspace.totalResourceCount() > 0 && server.authorizations.contains("Bearer inactive-token"); }, 15000)) return false;
+        if (!click(window, item(window, "activateSession_" + first))) return false;
+        return waitFor([&] { return !workspace.busy() && workspace.currentSession() == first
+            && workspace.workspacePage() == "settings" && workspace.totalResourceCount() > 0
+            && server.authorizations.contains("Bearer local-test-token"); }, 15000);
+    }
     if (scenario == "hidden_followup") {
         if (!waitFor([&] { return server.requests.contains("/api"); })) return false;
         if (!click(window,item(window,"closeCurrentSession"))

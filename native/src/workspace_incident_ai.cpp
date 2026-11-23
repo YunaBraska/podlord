@@ -28,7 +28,7 @@ QStringList Workspace::incidentAiReasoningOptions() const { return runtime_->inc
 QString Workspace::incidentAiReasoning() const { return runtime_->incidentAi.reasoning(); }
 QString Workspace::incidentAiStatus() const {
     if (incidentAiResult().contains("summary")) return {};
-    return localizedAiStatus(runtime_->incidentAi.status(sessionConfiguration(active_).value("contextId").toString()), settings_.language);
+    return localizedAiStatus(runtime_->incidentAi.status(sessionConfiguration(active_).value("contextId").toString(), inspectorPath()), settings_.language);
 }
 QVariantMap Workspace::incidentAiResult() const {
     const auto contextId = sessionConfiguration(active_).value("contextId").toString();

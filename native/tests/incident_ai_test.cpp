@@ -97,7 +97,7 @@ void scenario(const QString& name) {
     require(server.listen(QHostAddress::LocalHost, 0), "Cannot start local Ollama boundary");
     const QUrl endpoint(QString("http://127.0.0.1:%1").arg(server.serverPort()));
     const auto profile = directory.filePath("profile");
-    server.hold = name == "cancel" || name == "close" || name == "resolve";
+    server.hold = name == "cancel" || name == "close" || name == "resolve" || name == "status_isolated";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
     if (name == "uuid_node_name") {
@@ -808,6 +808,12 @@ void scenario(const QString& name) {
             && !server.submitted.contains("registry-token")
             && server.submitted.contains("ImagePullBackOff") && server.submitted.contains("de"), "AI payload exposed untrusted data or omitted evidence");
         require(QJsonDocument::fromJson(server.submitted).object()["think"] == "medium", "Automatic reasoning did not choose the advertised medium level");
+        if (name == "status_isolated") {
+            const auto path = rows().at(2).toObject()["path"].toString();
+            require(ai.status("context", path).contains("Analyzing") && ai.status("context", "/unrelated").isEmpty(),
+                "An unrelated resource inherited another analysis status");
+            return;
+        }
         if (name == "success")
             require(QTest::qWaitFor([&] { return ai.result("context", rows().at(2).toObject()["path"].toString()).value("cause") == "Ursache unbekannt."; }, 2000),
                 "Structured cause did not reach the public result");

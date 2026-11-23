@@ -1464,10 +1464,10 @@ void IncidentAi::dispatch() {
     while (!deferred.isEmpty()) queue_.enqueue(deferred.dequeue());
     if (!found) { if (waitMs > 0) dispatchTimer_.start(int(waitMs)); return; }
     inFlight_ = incident.key; inFlightContext_ = incident.context; lastRequest_ = now;
-    contextStatus_[incident.context] = incident.provider == "chatgpt" ? "Analyzing a cluster problem with ChatGPT…"
+    contextStatus_[incident.context] = {incident.path, incident.provider == "chatgpt" ? "Analyzing a cluster problem with ChatGPT…"
         : incident.provider == "claude" ? "Analyzing a cluster problem with Claude…"
         : incident.provider == "openrouter" ? "Analyzing a cluster problem with OpenRouter…"
-        : "Analyzing a cluster problem with local Ollama…";
+        : "Analyzing a cluster problem with local Ollama…"};
     emit changed();
     const auto system = analysisSystemText(incident.path == "diagnostic/exec-env");
     const auto input = incident.path == "diagnostic/exec-env"
@@ -1578,9 +1578,9 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     } else {
         retryAfter_.insert(incident.key, QDateTime::currentDateTimeUtc().addSecs(900));
         serviceRetryAfterByProvider_.insert(incident.provider, QDateTime::currentDateTimeUtc().addSecs(900));
-        contextStatus_[incident.context] = error.isEmpty()
+        contextStatus_[incident.context] = {incident.path, error.isEmpty()
             ? "AI analysis failed: invalid answer. Retry later or choose another model."
-            : error;
+            : error};
     }
     emit changed();
     if (accepted && incident.path != "diagnostic/exec-env") emit analysisCompleted(incident.context, incident.path);
