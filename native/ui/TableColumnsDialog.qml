@@ -65,6 +65,9 @@ ModalDialog {
                     delegate: GridLayout {
                         required property var model
                         readonly property var modelData: model
+                        readonly property string columnTitle: surfaceDialog.tableType === "inspectorLink" && modelData.id === "message"
+                            ? workspace.uiText["inspector.messages"] : surfaceDialog.tableType === "inspectorLink" && modelData.id === "resource"
+                            ? workspace.uiText["inspector.resource"] : modelData.title
                         required property int index
                         readonly property int layoutColumns: width >= 480 ? 6 : 3
                         Layout.fillWidth: true
@@ -72,9 +75,9 @@ ModalDialog {
                         columnSpacing: 8
                         rowSpacing: 4
                         enabled: !workspace.tableLayoutSaving
-                        Label { Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; elide: Text.ElideRight }
-                        IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "visible", checked) }
-                        IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + modelData.title; Accessible.name: text; onClicked: surfaceDialog.change(index, "pinned", checked) }
+                        Label { Layout.fillWidth: true; text: columnTitle; textFormat: Text.PlainText; elide: Text.ElideRight }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + columnTitle; Accessible.name: text; onClicked: surfaceDialog.change(index, "visible", checked) }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + columnTitle; Accessible.name: text; onClicked: surfaceDialog.change(index, "pinned", checked) }
                         TextField {
                             objectName: surfaceDialog.tableType + "ColumnWidth_" + modelData.id
                             Layout.preferredWidth: 92
@@ -83,7 +86,7 @@ ModalDialog {
                             text: modelData.widthText
                             validator: IntValidator { bottom: 1; top: 2147483647 }
                             inputMethodHints: Qt.ImhDigitsOnly
-                            Accessible.name: modelData.title + " width in pixels"
+                            Accessible.name: columnTitle + " width in pixels"
                             ToolTip.text: Accessible.name
                             ToolTip.visible: hovered || activeFocus
                             onTextEdited: surfaceDialog.change(index, "widthText", text)

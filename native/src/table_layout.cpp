@@ -96,8 +96,14 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
         }
         if (table.key() == "inspectorEvent" || table.key() == "inspectorLink") {
             const QMap<QString, int> widths{{"time",180},{"type",110},{"reason",180},{"count",110},{"message",480},
-                {"from",240},{"relation",110},{"to",240},{"namespace",160},{"status",160}};
+                {"resource",240},{"from",200},{"relation",110},{"to",200},{"namespace",150},{"status",140}};
             for (auto& column : result[table.key()]) column.width = widths.value(column.id,170);
+            if (table.key() == "inspectorLink") {
+                const QStringList order{"resource", "relation", "message", "status", "namespace", "from", "to"};
+                std::stable_sort(result[table.key()].begin(), result[table.key()].end(), [&](const auto& a, const auto& b) {
+                    return order.indexOf(a.id) < order.indexOf(b.id);
+                });
+            }
         }
     }
     return result;
@@ -122,7 +128,12 @@ Result<TableLayouts> TableLayoutStore::load() const {
     for (const auto& key : values.keys()) if (!schemas_.contains(key)) return Failure{StoreError::InvalidData, "Unsupported table layout type. The file was left unchanged."};
     TableLayouts result;
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
-        const auto layout = decode(values.value(table.key()), table.value());
+        auto layout = decode(values.value(table.key()), table.value());
+        if (!layout && table.key() == "inspectorLink" && table.value().contains("resource") && table.value().contains("message")) {
+            // Preserve widths, visibility, pins and relative order from older Links layouts.
+            layout = decode(values.value(table.key()), {"from", "relation", "to", "namespace", "status"});
+            if (layout) { layout->prepend({"message", true, false, 480}); layout->prepend({"resource", true, false, 240}); }
+        }
         if (!layout) return Failure{StoreError::InvalidData, "Invalid table columns. The file was left unchanged."};
         result.insert(table.key(), *layout);
     }

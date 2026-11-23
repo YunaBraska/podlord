@@ -720,7 +720,10 @@ if(BUILD_TESTING)
     endforeach()
     target_link_libraries(port-forward-ui-test PRIVATE podlord_workspace Qt6::Test Qt6::WebSockets)
     foreach(surface events links)
-        foreach(operation sort sortrestore copy context keyboard invalid find hide pin width restore narrow)
+        foreach(operation sort sortrestore copy context keyboard invalid find hide pin width restore narrow messages fill)
+            if(surface STREQUAL "events" AND (operation STREQUAL "messages" OR operation STREQUAL "fill"))
+                continue()
+            endif()
             foreach(style Basic Fusion)
                 set(scenario "inspector_related_table_${surface}_${operation}")
                 add_test(NAME native.inspector_table.${surface}_${operation}_${style} COMMAND workspace_ui_test ${scenario})
@@ -1583,7 +1586,7 @@ foreach(scenario hide reveal pin order width cancel reset restart isolation conf
 endforeach()
 add_executable(table_layout_test tests/table_layout_test.cpp)
 target_link_libraries(table_layout_test PRIVATE podlord_workspace)
-set(table_layout_cases missing empty_profile relative_profile unknown_table profile_file parent_file
+set(table_layout_cases missing inspector_link_upgrade empty_profile relative_profile unknown_table profile_file parent_file
     hide pin order width maximum_width repeat conflict other_table concurrent read_during_save
     busy lock_directory file_directory version extra_root layout_type unknown_key missing_table array_layout malformed empty array_root oversized)
 foreach(boundary input stored)

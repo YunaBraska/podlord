@@ -363,7 +363,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     portRows_(nullptr, {"endpoint", "name", "kind", "namespace", "remotePort", "resolvedPort", "status"},
         {"Connection", "Name", "Kind", "Namespace", "Remote", "Resolved", "Status"}, "id"),
     inspectorEventRows_(nullptr, {"time", "type", "reason", "count", "message"}, {"Last observed", "Type", "Reason", "Count", "Message"}),
-    inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status"}, {"From", "Link", "To", "Namespace", "Status"}),
+    inspectorLinkRows_(nullptr, {"from", "relation", "to", "namespace", "status", "resource", "message"}, {"From", "Link", "To", "Namespace", "Status", "Resource", "Messages"}, "path", true),
     valueRows_(nullptr, {"name", "encoding", "preview", "copy", "reveal"}, {"Key", "Encoding", "Value", "Copy", "Reveal"}, "id"),
     diagnosticRows_(nullptr, {"label", "value", "description"}, {"Metric", "Value", "Description"}, "id", true),
     requestAuditRows_(nullptr, {"time", "method", "path", "priority", "status", "duration", "outcome"},
@@ -881,9 +881,56 @@ bool Workspace::publishRelated() {
         return true;
     }
     QVariantList events;
-    const auto links = graph.links(inspectorPath()).toVariantList();
+    QVariantList links;
     const auto selected = client_.resource(active_, inspectorPath());
     const auto uid = selected["uid"].toString();
+    QHash<QString, QStringList> warningsByUid;
+    for (int index = 0; index < rows_.rowCount(); ++index) {
+        const auto row = rows_.row(index);
+        if (!row["kubernetesEvent"].toBool() || row["eventType"] != "Warning") continue;
+        const auto targetUid = row["eventTargetUid"].toString();
+        if (targetUid.isEmpty()) continue;
+        const auto reason = row["eventReason"].toString(), message = row["eventMessage"].toString();
+        auto detail = reason.isEmpty() ? message : message.isEmpty() ? reason : reason + ": " + message;
+        const auto observed = QDateTime::fromString(row["eventTime"].toString(), Qt::ISODate);
+        if (!detail.isEmpty() && observed.isValid())
+            detail += " (" + QLocale::system().toString(observed.toLocalTime(), QLocale::ShortFormat) + ")";
+        if (!detail.isEmpty() && !warningsByUid[targetUid].contains(detail)) warningsByUid[targetUid].append(detail);
+    }
+    const auto messagesFor = [&](const QJsonObject& resource) {
+        QStringList messages;
+        if (!resource["issue"].toString().isEmpty()) messages.append(resource["issue"].toString());
+        for (const auto& value : resource["conditions"].toArray()) {
+            const auto condition = value.toObject();
+            if (condition["status"] != "False") continue;
+            const auto message = condition["message"].toString(), reason = condition["reason"].toString();
+            if (!message.isEmpty()) messages.append(reason.isEmpty() ? message : reason + ": " + message);
+        }
+        for (const auto& value : resource["containerStates"].toArray()) {
+            const auto state = value.toObject();
+            if (state["state"] != "waiting" && state["state"] != "terminated") continue;
+            const auto message = state["message"].toString();
+            if (!message.isEmpty()) messages.append(message);
+        }
+        messages.append(warningsByUid.value(resource["uid"].toString()));
+        messages.removeDuplicates();
+        return messages.join("\n");
+    };
+    if (!selected.isEmpty()) {
+        links.append(QVariantMap{{"path", inspectorPath()}, {"resource", selected["kind"].toString() + "/" + selected["name"].toString()},
+            {"from", selected["name"].toString()},
+            {"relation", QStringLiteral("●")}, {"to", QString{}}, {"namespace", selected["namespace"].toString()},
+            {"fromPath", inspectorPath()}, {"toPath", inspectorPath()},
+            {"status", selected["status"].toString()}, {"message", messagesFor(selected)}});
+        for (const auto& value : graph.links(inspectorPath())) {
+            auto link = value.toObject();
+            const auto target = client_.resource(active_, link["path"].toString());
+            link["resource"] = target["kind"].toString() + "/" + target["name"].toString();
+            link["status"] = target["status"];
+            link["message"] = messagesFor(target);
+            links.append(link.toVariantMap());
+        }
+    }
     if (!uid.isEmpty()) for (int index = 0; index < rows_.rowCount(); ++index) {
         const auto row = rows_.row(index);
         if (row["kubernetesEvent"].toBool() && row["eventTargetUid"] == uid)

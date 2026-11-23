@@ -152,12 +152,23 @@ ColumnLayout {
     function openFind() { findOpen = true; findInput.forceActiveFocus(); findInput.selectAll() }
     function openColumns() { columnsDialog.open() }
     readonly property var scrollingColumns: columns.filter(column => columnShown(column) && !column.pinned)
-    readonly property real scrollingWidth: scrollingColumns.reduce((width, column) => width + column.width, 0)
+    property int columnWidthRevision: 0
+    readonly property real scrollingWidth: {
+        columnWidthRevision
+        return scrollingColumns.reduce((width, column) => {
+            const index = visualOrder.indexOf(column.column)
+            const resized = index >= 0 ? table.explicitColumnWidth(index) : -1
+            return width + (resized >= 0 ? Math.max(48, resized) : column.width)
+        }, 0)
+    }
     readonly property var stretchColumn: scrollingColumns.find(column => ["name", "message", "reason"].includes(column.id))
         || scrollingColumns.find(column => !actionColumns.includes(column.column)) || scrollingColumns[0]
-    readonly property real extraColumnWidth: Math.max(0, table.width - scrollingWidth - 2)
+    readonly property real extraColumnWidth: Math.max(0, table.width - scrollingWidth)
     onExtraColumnWidthChanged: Qt.callLater(table.forceLayout)
-    readonly property real pinnedWidth: columns.filter(function(column) { return grid.columnShown(column) && column.pinned }).reduce(function(width, column) { return width + column.width }, 0)
+    readonly property var pinnedColumns: columns.filter(column => columnShown(column) && column.pinned)
+    readonly property real pinnedWidth: pinnedColumns.reduce((width, column) => width + column.width, 0)
+    readonly property real pinnedExtraWidth: hasScrollingColumns ? 0 : Math.max(0, pinnedTable.width - pinnedWidth)
+    onPinnedExtraWidthChanged: Qt.callLater(pinnedTable.forceLayout)
     readonly property bool hasScrollingColumns: columns.some(function(column) { return grid.columnShown(column) && !column.pinned })
     signal sortRequested(int column)
     signal inspectRequested(string path)
@@ -278,8 +289,10 @@ ColumnLayout {
             hoverEnabled: true
             readonly property bool pinned: TableView.view === pinnedHeader
             readonly property bool sortable: grid.sortableColumns < 0 || column < grid.sortableColumns
+            readonly property string heading: grid.prefix === "inspectorLink" && column === 5 ? workspace.uiText["inspector.resource"]
+                : grid.prefix === "inspectorLink" && column === 6 ? workspace.uiText["inspector.messages"] : model.display
             objectName: (pinned ? "pinnedHeader_" : grid.prefix === "resource" ? "header_" : grid.prefix + "Header_") + column
-            text: model.display
+            text: heading
             implicitWidth: 170
             implicitHeight: Math.max(38, Math.ceil(workspace.textSizes.body * 1.3) + 12)
             font.pixelSize: workspace.textSizes.body
@@ -298,11 +311,11 @@ ColumnLayout {
                     kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
                     fill: grid.colors.accent
                 }
-                Label { Layout.fillWidth: true; text: model.display; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
+                Label { Layout.fillWidth: true; text: heading; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
                 SelectableText { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus
-            Accessible.name: model.display + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
+            Accessible.name: heading + (sortable ? grid.sortColumn===column ? ", " + grid.sortDirection : ", unsorted" : ", action column")
             onClicked: if (sortable) grid.sortRequested(column)
             MouseArea {
                 anchors.top: parent.top
@@ -325,6 +338,7 @@ ColumnLayout {
                     if (!pressed) return
                     const width = originWidth + mapToItem(null, mouse.x, mouse.y).x - originX
                     table.setColumnWidth(visualColumn, Math.max(48, Math.min(width, 2000)))
+                    grid.columnWidthRevision++
                 }
             }
             ToolTip.visible: (hovered || activeFocus) && contentItem.implicitWidth > availableWidth
@@ -450,6 +464,8 @@ ColumnLayout {
         Accessible.ignored: grid.accessoryColumns.indexOf(column) >= 0 && !grid.accessibleAccessoryCells
         Accessible.role: grid.inspectable || (grid.actionColumns.indexOf(column) >= 0 && text !== "") ? Accessible.Button : Accessible.Cell
         Accessible.name: {
+            if (grid.prefix === "inspectorLink" && row === 0 && column === 1)
+                return workspace.uiText["inspector.selected"]
             const heading = grid.columns.find(state => state.column === column)
             const identity = resourceName || grid.tableModel.data(grid.tableModel.index(row, grid.identityColumn), Qt.DisplayRole) || resourcePath
             const action = grid.actionColumns.indexOf(column) >= 0 && text !== "" && text !== identity
@@ -553,7 +569,8 @@ ColumnLayout {
             visible: grid.prefix !== "resource" || workspace.currentSession !== ""
             ColumnLayout {
                 visible: grid.pinnedWidth > 0
-                Layout.preferredWidth: Math.min(grid.pinnedWidth, Math.max(0, grid.width - (grid.hasScrollingColumns ? 120 : 0)))
+                Layout.preferredWidth: grid.hasScrollingColumns
+                    ? Math.min(grid.pinnedWidth, Math.max(0, grid.width - 120)) : grid.width
                 Layout.fillHeight: true
                 spacing: 0
                 HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; resizableColumns: false; delegate: headerDelegate }
@@ -563,7 +580,7 @@ ColumnLayout {
                     activeFocusOnTab: true
                     objectName: grid.prefix + "PinnedTable"
                     Layout.fillWidth: true; Layout.fillHeight: true
-                    onWidthChanged: Qt.callLater(grid.revealFocusedCell)
+                    onWidthChanged: { Qt.callLater(grid.revealFocusedCell); Qt.callLater(pinnedTable.forceLayout) }
                     clip: true
                     model: grid.visible && grid.pinnedWidth > 0 ? grid.tableModel : null
                     selectionModel: model ? selection : null
@@ -571,7 +588,10 @@ ColumnLayout {
                     selectionMode: TableView.SingleSelection
                     syncView: grid.visible && grid.pinnedWidth > 0 ? table : null
                     syncDirection: Qt.Vertical
-                    columnWidthProvider: function(column) { const state = grid.stateAt(column); return grid.columnShown(state) && state.pinned ? state.width : 0 }
+                    columnWidthProvider: function(column) { const state = grid.stateAt(column)
+                        if (!grid.columnShown(state) || !state.pinned) return 0
+                        const last = grid.pinnedColumns[grid.pinnedColumns.length - 1]
+                        return state.width + (state.column === last?.column ? grid.pinnedExtraWidth : 0) }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.horizontal: ScrollBar {}
                     delegate: grid.cellAccessory ? accessoryCellDelegate : cellDelegate
@@ -580,6 +600,7 @@ ColumnLayout {
                 }
             }
             ColumnLayout {
+                visible: grid.hasScrollingColumns
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
                 HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; resizableColumns: false; delegate: headerDelegate }
@@ -598,13 +619,8 @@ ColumnLayout {
                     selectionMode: TableView.SingleSelection
                     columnWidthProvider: function(column) { const state = grid.stateAt(column); if (!grid.columnShown(state) || state.pinned) return 0
                         const resized = table.explicitColumnWidth(column)
-                        if (resized >= 0) return Math.max(48, resized)
-                        if (state.column !== grid.stretchColumn?.column || grid.extraColumnWidth <= 0) return state.width
-                        const hasManualWidths = grid.scrollingColumns.some(entry => {
-                            const index = grid.visualOrder.indexOf(entry.column)
-                            return index >= 0 && table.explicitColumnWidth(index) >= 0
-                        })
-                        return state.width + (hasManualWidths ? 0 : grid.extraColumnWidth) }
+                        const base = resized >= 0 ? Math.max(48, resized) : state.width
+                        return base + (state.column === grid.stretchColumn?.column ? grid.extraColumnWidth : 0) }
                     rowHeightProvider: function() { return grid.rowHeight }
                     ScrollBar.vertical: ScrollBar {}
                     ScrollBar.horizontal: ScrollBar { id: horizontalScroll }

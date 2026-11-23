@@ -96,6 +96,15 @@ private:
     Appearance appearance_;
     QString cluster_;
 };
+class InspectorLinkSortModel final : public QSortFilterProxyModel {
+protected:
+    bool lessThan(const QModelIndex& left, const QModelIndex& right) const override {
+        if (left.row() == right.row()) return false;
+        if (left.row() == 0 || right.row() == 0)
+            return sortOrder() == Qt::AscendingOrder ? left.row() == 0 : right.row() == 0;
+        return QSortFilterProxyModel::lessThan(left, right);
+    }
+};
 class ResourceFilter : public QSortFilterProxyModel {
     Q_OBJECT
     Q_PROPERTY(QString error READ error NOTIFY filterStateChanged)
@@ -932,7 +941,8 @@ private:
     ResourceTable portRows_;
     QSortFilterProxyModel ports_;
     ResourceTable inspectorEventRows_, inspectorLinkRows_;
-    QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
+    QSortFilterProxyModel inspectorEventsTable_;
+    InspectorLinkSortModel inspectorLinksTable_;
     ResourceTable valueRows_;
     QSortFilterProxyModel valuesTable_;
     ResourceTable sourceRows_{nullptr, {"name", "cluster", "user", "context", "auth", "source", "imported", "status", "rename", "remove"},

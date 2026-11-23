@@ -33,7 +33,7 @@ Click Map again to return to All Contexts. Context settings are shared when you 
 
 Select a resource to inspect its details, events, YAML, logs and supported actions. ConfigMap and Secret keys are listed separately. Secret values stay hidden until you explicitly reveal or copy them.
 
-The map highlights linked resources when the inspector is open. The highlight fades with each relationship. Use Links to open a related resource.
+The map highlights linked resources when the inspector is open. The highlight fades with each relationship. Links lists the selected resource first, then related resources with their known problems and messages. Open a row to inspect that resource.
 
 Wait for current YAML before editing. Applying YAML and deleting resources require confirmation. Changing a filter or column does not change the cluster.
 

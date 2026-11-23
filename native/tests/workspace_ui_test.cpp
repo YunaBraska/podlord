@@ -362,9 +362,22 @@ public:
                             auto event = pod("related-event", "Event");
                             event["involvedObject"] = QJsonObject{{"uid", scenario == "inspector_related_wrong_uid" || scenario == "inspector_related_event_missing" ? "replaced-alpha" : "uid-alpha"}, {"kind", "Pod"}, {"name", "alpha"}, {"namespace", "default"}};
                             event["reason"] = "Scheduled"; event["message"] = "Local event message"; event["type"] = "Normal"; event["count"] = 3;
+                            if (scenario == "inspector_related_table_links_messages") {
+                                event["type"] = "Warning"; event["reason"] = "FailedPull";
+                                event["message"] = "Image registry was unreachable";
+                            }
                             if (scenario.contains("_color_")) event["type"] = scenario.endsWith("normal") ? "Normal" : scenario.endsWith("warning") ? "Warning" : scenario.endsWith("empty") ? "" : "Unrecognized";
                             event["lastTimestamp"] = "2026-10-03T10:00:00Z";
                             document["items"] = QJsonArray{event};
+                            if (scenario == "inspector_related_table_links_messages") {
+                                auto ownerEvent = event;
+                                auto metadata = ownerEvent["metadata"].toObject();
+                                metadata["name"] = "owner-warning"; metadata["uid"] = "uid-owner-warning";
+                                ownerEvent["metadata"] = metadata;
+                                ownerEvent["involvedObject"] = QJsonObject{{"uid", "uid-custom-widget"}, {"kind", "Widget"}, {"name", "custom-widget"}, {"namespace", "default"}};
+                                ownerEvent["reason"] = "OwnerFailed"; ownerEvent["message"] = "Owner controller could not update";
+                                document["items"] = QJsonArray{event, ownerEvent};
+                            }
                             if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_")) {
                                 auto second = event; auto metadata = second["metadata"].toObject(); metadata["name"] = "related-event-second"; metadata["uid"] = "uid-related-event-second";
                                 second["metadata"] = metadata; second["count"] = 12; second["reason"] = "Started"; second["message"] = "Second event message";
@@ -376,6 +389,14 @@ public:
                             auto metadata = object["metadata"].toObject();
                             if (metadata["name"] == "alpha") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-custom-widget"}, {"name", "custom-widget"}, {"kind", "Widget"}, {"apiVersion", "example.test/v1"}}};
                             if (metadata["name"] == "bravo") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-alpha"}, {"name", "alpha"}, {"kind", "Pod"}, {"apiVersion", "v1"}}};
+                            if (scenario == "inspector_related_table_links_messages" && metadata["name"] == "alpha") {
+                                const QJsonObject waiting{{"reason", "ImagePullBackOff"}, {"message", "Registry token missing"}};
+                                const QJsonObject container{{"name", "main"}, {"ready", false}, {"state", QJsonObject{{"waiting", waiting}}}};
+                                object["status"] = QJsonObject{{"phase", "Pending"}, {"containerStatuses", QJsonArray{container}}};
+                            }
+                            if (scenario == "inspector_related_table_links_messages" && metadata["name"] == "custom-widget")
+                                object["status"] = QJsonObject{{"conditions", QJsonArray{QJsonObject{{"type", "Ready"}, {"status", "False"},
+                                    {"reason", "OwnerError"}, {"message", "Controller rejected spec"}}}}};
                             if (scenario == "inspector_related_files" && metadata["name"] == "alpha")
                                 object["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
                             object["metadata"] = metadata; return object;
@@ -2579,7 +2600,7 @@ bool execute(const QString& requestedScenario) {
         }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
         && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
@@ -5592,16 +5613,70 @@ bool execute(const QString& requestedScenario) {
             const auto name = [&](const QString& suffix) { return (prefix + suffix).toUtf8(); };
             if (!click(window, item(window, event ? "inspectorEventsButton" : "inspectorLinksButton"))) return false;
             auto* model = workspace.property(event ? "inspectorEventTable" : "inspectorLinkTable").value<QAbstractItemModel*>();
-            if (!model || model->rowCount() != 2 || model->columnCount() != 5) return false;
+            if (!model || model->rowCount() != (event ? 2 : 3) || model->columnCount() != (event ? 5 : 7)) return false;
             if (scenario.contains("_color_")) return eventColor("inspectorEventCell_0_1") && server.requests.size() == calls;
             const auto operation = scenario.section('_', -1);
-            const int column = event ? 3 : 0;
+            if (operation == "messages") {
+                if (event || model->index(0, 0).data().toString() != "alpha"
+                    || model->index(0, 1).data().toString() != QStringLiteral("●")
+                    || model->index(0, 5).data().toString() != "Pod/alpha"
+                    || !model->index(0, 6).data().toString().contains("Image registry was unreachable")
+                    || !model->index(0, 6).data().toString().contains("Registry token missing")
+                    || !model->index(0, 6).data().toString().contains(QLocale::system().toString(
+                        QDateTime::fromString("2026-10-03T10:00:00Z", Qt::ISODate).toLocalTime(), QLocale::ShortFormat))) return false;
+                const auto evidence = qEnvironmentVariable("PODLORD_LINKS_EVIDENCE");
+                if (!evidence.isEmpty()) window->grabWindow().save(evidence);
+                for (int row = 1; row < model->rowCount(); ++row)
+                    if (model->index(row, 0).data().toString() == "custom-widget")
+                        return model->index(row, 5).data().toString() == "Widget/custom-widget"
+                            && model->index(row, 6).data().toString().contains("Owner controller could not update")
+                            && model->index(row, 6).data().toString().contains("Controller rejected spec");
+                return false;
+            }
+            if (operation == "fill") {
+                auto columns = workspace.inspectorLinkColumns();
+                for (auto& value : columns) { auto column = value.toMap(); column["width"] = 70; value = column; }
+                if (!workspace.saveTableLayout("inspectorLink", columns)
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); })) { std::fprintf(stderr, "Link fill: save failed: %s\n", qPrintable(workspace.tableLayoutError())); return false; }
+                auto* table = item(window, "inspectorLinkTable");
+                window->setWidth(2400);
+                if (!table || !waitFor([&] { return table->width() > 1000 && table->property("contentWidth").toReal() >= table->width() - 1; })) {
+                    std::fprintf(stderr, "Link fill: wide viewport=%g content=%g error=%s\n", table ? table->width() : -1, table ? table->property("contentWidth").toReal() : -1, qPrintable(workspace.tableLayoutError())); return false;
+                }
+                window->setWidth(360);
+                if (!waitFor([&] { return table->width() > 0 && table->property("contentWidth").toReal() > table->width() + 1; })) {
+                    std::fprintf(stderr, "Link fill: narrow viewport=%g content=%g\n", table->width(), table->property("contentWidth").toReal()); return false;
+                }
+                table->setProperty("contentX", 120);
+                if (!waitFor([&] { return table->property("contentX").toReal() > 0; })) std::fprintf(stderr, "Link fill: scroll x=%g\n", table->property("contentX").toReal());
+                if (table->property("contentX").toReal() <= 0) return false;
+                auto pinnedOnly = workspace.inspectorLinkColumns();
+                for (auto& value : pinnedOnly) {
+                    auto column = value.toMap();
+                    column["visible"] = column["id"] == "resource";
+                    column["pinned"] = column["id"] == "resource";
+                    value = column;
+                }
+                if (!workspace.saveTableLayout("inspectorLink", pinnedOnly)
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); })) return false;
+                window->setWidth(2400);
+                auto* pinnedTable = item(window, "inspectorLinkPinnedTable");
+                const bool filled = pinnedTable && waitFor([&] {
+                    return pinnedTable->width() > 1000 && pinnedTable->property("contentWidth").toReal() >= pinnedTable->width() - 1;
+                });
+                if (!filled) std::fprintf(stderr, "Link fill: pinned viewport=%g content=%g shown=%d error=%s\n",
+                    pinnedTable ? pinnedTable->width() : -1, pinnedTable ? pinnedTable->property("contentWidth").toReal() : -1,
+                    pinnedTable && pinnedTable->isVisible(), qPrintable(workspace.tableLayoutError()));
+                return filled;
+            }
+            const int column = event ? 3 : 5;
             const auto header = name("Header_" + QString::number(column));
             const auto cell = name("Cell_0_" + QString::number(column));
             if (!waitFor([&] { return item(window, cell.constData()); })) return false;
             if (operation == "sort") {
-                if (!click(window, item(window, header.constData())) || model->data(model->index(0,column)).toString() != (event ? "3" : "alpha")) return false;
-                if (!click(window, item(window, header.constData())) || model->data(model->index(0,column)).toString() != (event ? "12" : "custom-widget")) return false;
+                if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "3" : "Pod/bravo")) return false;
+                if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "12" : "Widget/custom-widget")) return false;
+                if (!event && model->data(model->index(0, 1)).toString() != QStringLiteral("●")) return false;
                 return click(window, item(window, header.constData()))
                     && workspace.property(event ? "inspectorEventSortColumn" : "inspectorLinkSortColumn").toInt() == -1 && server.requests.size() == calls;
             }
@@ -5620,10 +5695,10 @@ bool execute(const QString& requestedScenario) {
             }
             if (operation == "copy") {
                 item(window, cell.constData())->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);
-                return QGuiApplication::clipboard()->text() == (event ? "3" : "alpha") && server.requests.size() == calls;
+                return QGuiApplication::clipboard()->text() == (event ? "3" : "Pod/alpha") && server.requests.size() == calls;
             }
             if (operation == "context" || operation == "keyboard") {
-                const auto endpoint = name(event ? "Cell_0_2" : operation == "context" ? "Cell_1_2" : "Cell_1_0");
+                const auto endpoint = name(event ? "Cell_0_2" : operation == "context" ? "Cell_1_5" : "Cell_2_5");
                 auto* target = item(window, endpoint.constData());
                 if (!target || !podlord::test::scrollIntoView(window, target)) return false;
                 if (operation == "keyboard") { target->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return); }
@@ -5632,20 +5707,20 @@ bool execute(const QString& requestedScenario) {
                     if (!waitFor([&] { return item(window, name("MenuInspector").constData()) && item(window, name("MenuInspector").constData())->isVisible(); })
                         || !click(window, item(window, name("MenuInspector").constData()))) return false;
                 }
-                return waitFor([&] { return workspace.inspectorName() == (!event && operation == "keyboard" ? "custom-widget" : "alpha"); });
+                return waitFor([&] { return workspace.inspectorName() == (!event && operation == "keyboard" ? "custom-widget" : !event ? "bravo" : "alpha"); });
             }
             if (operation == "invalid") {
                 QGuiApplication::clipboard()->setText("retained");
                 return !workspace.copyInspectorCell(prefix, "missing", 0) && !workspace.copyInspectorCell("unknown", "missing", 0)
                     && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), -1)
-                    && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), 5)
-                    && !workspace.sortInspectorColumn(prefix, -1) && !workspace.sortInspectorColumn(prefix, 5)
+                    && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), event ? 5 : 7)
+                    && !workspace.sortInspectorColumn(prefix, -1) && !workspace.sortInspectorColumn(prefix, event ? 5 : 7)
                     && QGuiApplication::clipboard()->text() == "retained" && server.requests.size() == calls;
             }
             if (operation == "find") {
                 if (!click(window, item(window, name("FindButton").constData())) || !type(window, item(window, name("FindInput").constData()), event ? "message" : "default")) return false;
-                if (!waitFor([&] { return text(window, name("FindCount").constData()) == "1/2"; }) || !click(window, item(window, name("FindNext").constData()))) return false;
-                return text(window, name("FindCount").constData()) == "2/2" && model->rowCount() == 2 && server.requests.size() == calls;
+                if (!waitFor([&] { return text(window, name("FindCount").constData()) == (event ? "1/2" : "1/3"); }) || !click(window, item(window, name("FindNext").constData()))) return false;
+                return text(window, name("FindCount").constData()) == (event ? "2/2" : "2/3") && model->rowCount() == (event ? 2 : 3) && server.requests.size() == calls;
             }
             if (operation == "narrow") window->setWidth(360);
             if (!click(window, item(window, name("ColumnsButton").constData()))) return false;
@@ -5658,14 +5733,15 @@ bool execute(const QString& requestedScenario) {
             }
             if (!click(window, item(window, name("SaveColumns").constData())) || !waitFor([&] { return !workspace.tableLayoutSaving(); }) || !workspace.tableLayoutError().isEmpty()) return false;
             auto columns = workspace.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList();
-            const auto saved = columns.last().toMap();
+            const auto saved = columns[event ? columns.size() - 1 : 3].toMap();
             if (operation == "hide") return !saved["visible"].toBool() && server.requests.size() == calls;
             if (operation == "pin") return saved["pinned"].toBool() && server.requests.size() == calls;
             if (operation == "restore") {
                 if (server.requests.size() != calls) return false;
                 podlord::Workspace restored(profile);
                 if (!waitFor([&] { return !restored.busy(); })) return false;
-                return restored.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList().last().toMap()["width"].toInt() == 222;
+                const auto restoredColumns = restored.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList();
+                return restoredColumns[event ? restoredColumns.size() - 1 : 3].toMap()["width"].toInt() == 222;
             }
             return saved["width"].toInt() == 222 && server.requests.size() == calls;
         }
