@@ -1241,6 +1241,7 @@ bool Workspace::reloadCatalogs(bool reconnect) {
                         navigation_[active_].workspace="map";
                         emit changed();
                     } else if (reconnect && selected && !active_.isEmpty() && (client_.connection(active_)
+                        || resolvedContextRevision_.contains(active_)
                         || (!credentialContext.isEmpty() && sessionConfiguration(active_).value("contextId").toString() == credentialContext))) resolve(active_);
                 }
             });
@@ -1484,7 +1485,7 @@ bool Workspace::confirmSourceRemoval() {
             runtime_->savingUsage.remove(contextId);
             credentials_.revoke(importedCredentialId(contextId));
             for (const auto& id : ids) {
-                client_.close(id); alerts_.closeSession(id); navigation_.remove(id);
+                client_.close(id); alerts_.closeSession(id); navigation_.remove(id); resolvedContextRevision_.remove(id);
             }
         }
         if (failure) {
@@ -1562,7 +1563,7 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
         if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; select(catalog_); return; }
         const auto catalog = std::get<SessionCatalog>(result);
         if (!usedContext.isEmpty()) runtime_->recordContextUse(usedContext);
-        if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); navigation_.remove(target); }
+        if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); navigation_.remove(target); resolvedContextRevision_.remove(target); }
         if (inWindow && catalog.activeSession) {
             catalog_ = catalog; runtime_->publishCatalog(catalog, this);
             const auto id = sessionId(*catalog.activeSession);

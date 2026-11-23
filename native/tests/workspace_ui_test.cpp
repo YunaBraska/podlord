@@ -169,7 +169,7 @@ public:
                         const bool second = !url.query().isEmpty() && url.query().contains("continue=");
                         const QString token = second && scenario != "repeated_page" ? "" : "next token";
                         document = {{"metadata", QJsonObject{{"continue", token}}}, {"items", QJsonArray{pod(second ? "bravo" : "alpha")}}};
-                        if (scenario == "shell_source_rebind" && authorization == "Bearer replacement-token")
+                        if (scenario.startsWith("shell_source_rebind") && authorization == "Bearer replacement-token")
                             document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("replacement")}}};
                         if (scenario == "invalid_list") document["items"] = QJsonArray{QJsonObject{{"kind", "Pod"}, {"metadata", QJsonObject{{"name", "../escape"}}}}};
                         if (scenario == "rate_limit" && refresh == 1) status = 429;
@@ -1301,8 +1301,25 @@ bool execute(const QString& requestedScenario) {
         if (invalid) {
             if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty(); }, 15000)) return false;
             QTest::qWait(100);
-            return workspace.currentSession() == session && workspace.contexts().size() == 1
-                && server.authorizations.size() == oldCalls && !workspace.refresh();
+            if (workspace.currentSession() != session || workspace.contexts().size() != 1
+                || server.authorizations.size() != oldCalls || workspace.refresh()) return false;
+            QFile repaired(source);
+            const auto replacement = QByteArray(yaml).replace("user: absent", "user: local")
+                .replace("local-test-token", "replacement-token");
+            if (!repaired.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                || repaired.write(replacement) != replacement.size()) return false;
+            repaired.close();
+            const bool started = workspace.importFile(source);
+            const bool restored = started && waitFor([&] {
+                return !workspace.busy() && !workspace.loading() && workspace.error().isEmpty()
+                    && server.authorizations.size() > oldCalls
+                    && server.authorizations.last() == "Bearer replacement-token"
+                    && workspace.totalResourceCount() == 2;
+            }, 15000);
+            if (!restored) qWarning() << "Recovery state:" << started << workspace.busy() << workspace.loading()
+                << workspace.error() << workspace.sourceImportError() << workspace.totalResourceCount()
+                << server.authorizations.size() << server.authorizations.last();
+            return restored;
         }
         if (!workspace.importFile(source) || !waitFor([&] {
             return !workspace.busy() && !workspace.loading() && server.authorizations.size() > oldCalls
