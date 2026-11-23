@@ -566,9 +566,15 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
             it->blocked.remove(task.path);
             enqueue(task);
         }
+        if (!it->lastDiscovery.isValid() || it->lastDiscovery.addSecs(30 * 60) <= now) {
+            it->lastDiscovery = now;
+            Task core; core.id = id; core.path = "/api"; enqueue(core);
+            Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
+        }
     } else {
         if (!foreground) for (auto failure = it->retryableFailures.cbegin(); failure != it->retryableFailures.cend(); ++failure)
             it->blocked.remove(failure.key());
+        it->lastDiscovery = now_();
         Task core; core.id = id; core.path = "/api"; core.foreground = foreground;
         enqueue(core);
         Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
@@ -1541,6 +1547,7 @@ void ResourceClient::collections(const QString& id, const QString& path, const Q
             task.collection = task.path; task.kind = resource["kind"].toString();
             task.namespaced = namespaced; task.read = Read::List; task.foreground = foreground;
             task.deletable = resource["verbs"].toArray().contains("delete");
+            if (!foreground && states_[id].collections.contains(task.collection)) continue;
             enqueue(task);
         }
     }

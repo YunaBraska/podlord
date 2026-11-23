@@ -184,6 +184,7 @@ private:
         bool initialized = false;
         quint64 revision = 0;
         QDateTime lastSync;
+        QDateTime lastDiscovery;
         QList<QDateTime> requestStarts;
         QDateTime presentationExpiry;
     };

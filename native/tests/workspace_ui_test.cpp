@@ -115,6 +115,7 @@ public:
     bool delayedReadDelivered = false;
     bool prematureDisconnect = false;
     bool refuseCollections = false;
+    bool newApiKind = false;
     explicit KubernetesBoundary(QString value) : scenario(std::move(value)) {
         clock.start();
         connect(this, &QTcpServer::newConnection, this, [this] {
@@ -150,7 +151,9 @@ public:
                             QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
                             QJsonObject{{"name", "pods/log"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get"}}}}}};
                     } else if (path == "/apis/example.test/v1") {
-                        document = {{"resources", QJsonArray{QJsonObject{{"name", "widgets"}, {"kind", "Widget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                        QJsonArray resources{QJsonObject{{"name", "widgets"}, {"kind", "Widget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}};
+                        if (newApiKind) resources.append(QJsonObject{{"name", "gadgets"}, {"kind", "Gadget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}});
+                        document = {{"resources", resources}};
                     } else if (path == "/api/v1/events") {
                         status = scenario == "forbidden" ? 403 : 200;
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{}}};
@@ -164,6 +167,8 @@ public:
                         }
                     } else if (path == "/apis/example.test/v1/widgets") {
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("custom-widget", "Widget", "example.test/v1")}}};
+                    } else if (path == "/apis/example.test/v1/gadgets") {
+                        document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("new-gadget", "Gadget", "example.test/v1")}}};
                     } else if (path == "/api/v1/pods") {
                         ++refresh;
                         const bool second = !url.query().isEmpty() && url.query().contains("continue=");
@@ -6039,7 +6044,16 @@ bool execute(const QString& requestedScenario) {
                 && client.rows("sync").size() == 3;
             if (!accepted) std::fprintf(stderr, "Adaptive reopen: %s rows=%lld\n", qPrintable(reopened.join(',')),
                 static_cast<long long>(client.rows("sync").size()));
-            return accepted;
+            if (!accepted) return false;
+            server.newApiKind = true;
+            const auto discovered = runSync(30 * 60 + 1);
+            if (!discovered.contains("/api") || !discovered.contains("/apis/example.test/v1")
+                || !discovered.contains("/apis/example.test/v1/gadgets") || client.rows("sync").size() != 4) {
+                std::fprintf(stderr, "Adaptive new kind: %s rows=%lld\n", qPrintable(discovered.join(',')),
+                    static_cast<long long>(client.rows("sync").size()));
+                return false;
+            }
+            return !runSync(26).contains("/api");
         }
         reference = reference.addSecs(26);
         const auto roots = server.requests.count("/api");
