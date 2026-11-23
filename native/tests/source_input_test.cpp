@@ -240,7 +240,9 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         require(std::holds_alternative<podlord::ClusterConnection>(after), "Renaming broke connection resolution");
         const auto beforeConnection = std::get<podlord::ClusterConnection>(connection), afterConnection = std::get<podlord::ClusterConnection>(after);
         require(beforeConnection.server == afterConnection.server && beforeConnection.authorization == afterConnection.authorization
-            && beforeConnection.credentialId == afterConnection.credentialId && catalog() == original && workspace.currentSession() == activeBeforeRename, "Source alias changed credentials, tabs or activation");
+            && (mode == "changed" ? beforeConnection.credentialId != afterConnection.credentialId
+                : beforeConnection.credentialId == afterConnection.credentialId)
+            && catalog() == original && workspace.currentSession() == activeBeforeRename, "Source alias changed credentials, tabs or activation");
         require(!workspace.sourceImportError().contains("source-input-secret"), "Alias error exposed credentials");
         require(!bindingLoop, "Alias UI emitted a binding loop");
         return true;
@@ -251,11 +253,36 @@ bool management(const QString& scenario, const QString& root, const QString& pro
             press("importHomeButton"); settle();
             require(sourceCount() == 1 && workspace.contexts().size() == 2, "Explicit home import did not populate owned contexts");
         } else if (mode.startsWith("refresh")) {
+            QString oldContext;
+            podlord::ClusterConnection oldConnection;
+            if (mode == "refresh_rebind" || mode == "refresh_removed") {
+                const auto listed = sources.list();
+                require(std::holds_alternative<podlord::SourceCatalog>(listed), "Cannot read original contexts");
+                oldContext = std::get<podlord::SourceCatalog>(listed).sources.first().contexts.first().id;
+                const auto resolved = sources.connection(oldContext);
+                require(std::holds_alternative<podlord::ClusterConnection>(resolved), "Cannot resolve original credentials");
+                oldConnection = std::get<podlord::ClusterConnection>(resolved);
+            }
             if (mode == "refresh_changed") write(origin, yaml + "# updated source\n");
+            if (mode == "refresh_rebind") write(origin, QByteArray(yaml).replace("source-input-secret", "replacement-token"));
+            if (mode == "refresh_removed") write(origin, QByteArray(yaml).replace("contexts:\n- name: local", "contexts:\n- name: replacement"));
             if (mode == "refresh_missing") require(QFile::remove(origin), "Cannot remove external source for failure case");
             press("refreshSourceFilesButton"); settle();
-            require(sourceCount() == (mode == "refresh_changed" ? 2 : 1), "Source refresh lost or duplicated an immutable snapshot");
+            require(sourceCount() == (mode == "refresh_changed" || mode == "refresh_rebind" || mode == "refresh_removed" ? 2 : 1), "Source refresh lost or duplicated an immutable snapshot");
             require(workspace.sourceImportIssues().size() == (mode == "refresh_missing" ? 1 : 0), "Refresh did not report unavailable source files");
+            if (mode == "refresh_removed") {
+                require(workspace.contexts().size() == 2, "Removed contexts remain selectable");
+                require(std::holds_alternative<podlord::Failure>(sources.connection(oldContext)), "Removed context still uses old credentials");
+            }
+            if (mode == "refresh_rebind") {
+                require(workspace.contexts().size() == 2, "Older versions created duplicate context choices");
+                const auto resolved = sources.connection(oldContext);
+                require(std::holds_alternative<podlord::ClusterConnection>(resolved), "Original context no longer resolves");
+                const auto& replacement = std::get<podlord::ClusterConnection>(resolved);
+                require(replacement.contextId == oldContext && replacement.authorization != oldConnection.authorization
+                    && replacement.credentialId != oldConnection.credentialId
+                    && replacement.authorization == "Bearer replacement-token", "Existing context still uses old imported credentials");
+            }
             if (mode == "refresh_repeat") { press("refreshSourceFilesButton"); settle(); require(sourceCount() == 1, "Repeated refresh duplicated snapshots"); }
         } else {
             press("pasteSourceButton");
@@ -430,7 +457,7 @@ int main(int argc, char* argv[]) {
             const bool folder = QStringList{"folder_url", "folder_plain", "empty_folder", "partial_folder", "private_folder"}.contains(mode);
             if (mode.startsWith("ui_")) {
                 if (mode != "ui_file") input = QUrl::fromLocalFile(directory).toString();
-                if (mode == "ui_partial") write(directory + "/broken.yaml", "not kubeconfig: [\n");
+                if (mode == "ui_partial") write(directory + "/broken.yaml", "contexts: [\n");
                 return ui(profile, input, mode == "ui_partial") ? 0 : 1;
             }
             if (folder) {
@@ -439,8 +466,9 @@ int main(int argc, char* argv[]) {
                     write(directory + "/nested/deeper/no-extension", config());
                     write(directory + "/arbitrary.txt", config());
                     write(directory + "/.hidden", config());
+                    write(directory + "/notes.txt", "This folder also has unrelated notes.\n");
                 }
-                if (mode == "partial_folder") write(directory + "/broken.yaml", "not kubeconfig: [\n");
+                if (mode == "partial_folder") write(directory + "/broken.yaml", "contexts: [\n");
                 input = mode == "folder_plain" ? directory : QUrl::fromLocalFile(directory).toString(QUrl::FullyEncoded);
             }
             if (mode == "private_folder") {
@@ -478,6 +506,30 @@ int main(int argc, char* argv[]) {
             require(result.code == 0 && result.json["sources"].toArray().isEmpty() && result.json["errors"].toArray().isEmpty(), "Empty directory did not return an explicit empty report");
             return 0;
         }
+        if (scenario == "depth_eight") {
+            write(first, config());
+            QString nested = directory;
+            for (int depth = 1; depth <= 9; ++depth) {
+                nested += "/level" + QString::number(depth);
+                if (depth == 8 || depth == 9) write(nested + "/config", config("https://127.0.0.1:" + QByteArray::number(depth)));
+            }
+            write(directory + "/readme.md", "Unrelated project notes.\n");
+            const auto result = run(executable, profile, {"import-path", directory}, home);
+            require(result.code == 1 && result.json["sources"].toArray().size() == 2
+                && result.json["errors"].toArray().size() == 1, "Folder import did not stop after eight nested folders");
+            const auto catalog = run(executable, profile, {"list"}, home);
+            require(catalog.code == 0 && catalog.json["sources"].toArray().size() == 2,
+                "A skipped folder or unrelated file entered the catalog");
+            return 0;
+        }
+        if (scenario == "json_folder") {
+            write(directory + "/config.json", R"({"apiVersion":"v1","kind":"Config","clusters":[{"name":"local","cluster":{"server":"https://127.0.0.1:9"}}],"users":[{"name":"local","user":{"token":"source-input-secret"}}],"contexts":[{"name":"local","context":{"cluster":"local","user":"local"}}]})");
+            write(directory + "/notes.json", R"({"project":"unrelated"})");
+            const auto result = run(executable, profile, {"import-path", directory}, home);
+            require(result.code == 0 && result.json["sources"].toArray().size() == 1
+                && result.json["errors"].toArray().isEmpty(), "JSON kubeconfig was skipped or unrelated JSON was imported");
+            return 0;
+        }
         if (scenario == "missing" || scenario == "blank" || scenario == "arguments") {
             const QStringList args = scenario == "arguments" ? QStringList{"import-path", directory, "extra"}
                 : QStringList{"import-path", scenario == "blank" ? " " : root + "/missing"};
@@ -489,7 +541,7 @@ int main(int argc, char* argv[]) {
         write(first, config());
         if (scenario.startsWith("layout_")) return ui(profile, directory, false, scenario.mid(7).toInt()) ? 0 : 1;
         if (scenario == "nested") write(directory + "/deep/more/other.yml", config("https://127.0.0.1:10"));
-        if (scenario == "partial" || scenario == "ui_partial") write(directory + "/broken.yml", "not kubeconfig: [\n");
+        if (scenario == "partial" || scenario == "ui_partial") write(directory + "/broken.yml", "contexts: [\n");
         if (scenario == "ui" || scenario == "ui_partial") return ui(profile, directory, scenario == "ui_partial") ? 0 : 1;
         if (scenario == "inside_profile") {
             profile = directory + "/owned";
@@ -512,7 +564,7 @@ int main(int argc, char* argv[]) {
         }
         if (scenario == "unsupported_home") path = "~another/kube";
         if (scenario == "all_invalid") {
-            write(first, "malformed: [\n");
+            write(first, "contexts: [\n");
         }
         if (scenario == "busy") {
             require(QDir().mkpath(profile + "/kubeconfigs"), "Cannot create lock directory");

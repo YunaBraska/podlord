@@ -886,6 +886,8 @@ private:
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     void publishResourceColumns();
     SourceCatalog sources_;
+    QMap<QString, quint64> resolvedContextRevision_;
+    bool pendingCatalogReload_ = false, pendingCatalogReconnect_ = false;
     struct SourceInspection final {
         QVariantMap metadata;
         QString yaml, draft, error;

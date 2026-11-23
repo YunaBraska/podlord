@@ -96,7 +96,13 @@ bool Workspace::applySourceDraft() {
         sourceImportNotice_.clear();
         emit sourceInspectionChanged(); emit sourceDraftChanged(); emit yamlEditChanged();
         ++runtime_->contextCatalogRevision;
-        reloadCatalogs(false); emit sourceImportFinished(true);
+        reloadCatalogs(true);
+        for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_
+            && !other->reloadCatalogs(true)) {
+            other->pendingCatalogReload_ = true;
+            other->pendingCatalogReconnect_ = true;
+        }
+        emit sourceImportFinished(true);
     });
     const auto profile=profile_;
     sourceEditFuture_=QtConcurrent::run([profile,snapshot,contextId,draft] { return KubeconfigStore(profile).editOwnedYaml(snapshot,contextId,draft); });

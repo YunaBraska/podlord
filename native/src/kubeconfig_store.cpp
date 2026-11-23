@@ -677,6 +677,13 @@ Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteA
     source.ownedPath = QDir(std::get<QString>(directory)).filePath(source.id + ".json");
     auto catalog = readContextCatalog(profile_);
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+    const auto& priorMembership = std::get<ContextCatalog>(catalog).sources;
+    const auto prefix = hash(source.sourcePath.toUtf8()) + "-";
+    for (auto it = priorMembership.lowerBound(prefix); it != priorMembership.cend() && it.key().startsWith(prefix); ++it) {
+        const auto prior = readOwned(QDir(std::get<QString>(directory)).filePath(it.key() + ".json"));
+        if (const auto* snapshot = std::get_if<SourceSnapshot>(&prior); snapshot && source.importedAt <= snapshot->importedAt)
+            source.importedAt = snapshot->importedAt.addMSecs(1);
+    }
     if (QFileInfo(source.ownedPath).exists() || QFileInfo(source.ownedPath).isSymLink()) {
         const auto previous = readOwned(source.ownedPath);
         if (const auto* failure = std::get_if<Failure>(&previous)) return *failure;
@@ -809,9 +816,12 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
     }
     if (!readableDirectory(path)) return Failure{StoreError::ReadFailed, "Cannot read source folder.", true};
     SourceImportReport report;
-    QStringList directories{path};
+    QList<QPair<QString, int>> directories{{path, 0}};
+    bool skippedDeepFolders = false;
+    static const QRegularExpression kubeconfigMarker(
+        "(?m)^[ \\t]*(?:contexts|clusters|users|current-context)[ \\t]*:|^[ \\t]*kind[ \\t]*:[ \\t]*Config[ \\t]*(?:#.*)?$");
     while (!directories.isEmpty()) {
-        const QString directory = directories.takeLast();
+        const auto [directory, depth] = directories.takeLast();
         if (!readableDirectory(directory)) {
             report.errors.append({directory, {StoreError::ReadFailed, "Cannot read source folder."}});
             continue;
@@ -820,12 +830,31 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
             | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name);
         for (const auto& entry : entries) {
             if (entry == QFileInfo(profile_)) continue;
-            if (entry.isDir()) { directories.append(entry.absoluteFilePath()); continue; }
-            const auto imported = importFile(entry.absoluteFilePath());
+            if (entry.isDir()) {
+                if (depth < 8) directories.append({entry.absoluteFilePath(), depth + 1});
+                else skippedDeepFolders = true;
+                continue;
+            }
+            QFile file(entry.absoluteFilePath());
+            if (!file.open(QIODevice::ReadOnly)) {
+                report.errors.append({entry.absoluteFilePath(), {StoreError::ReadFailed, "Cannot read source file."}});
+                continue;
+            }
+            const auto bytes = file.read(maximumKubeconfigBytes + 1);
+            if (file.error() != QFileDevice::NoError) {
+                report.errors.append({entry.absoluteFilePath(), {StoreError::ReadFailed, "Cannot read source file."}});
+                continue;
+            }
+            const auto content = QString::fromUtf8(bytes);
+            if (!kubeconfigMarker.match(content).hasMatch()
+                && !(content.trimmed().startsWith('{') && content.contains("\"contexts\""))) continue;
+            const auto imported = importContent(entry.absoluteFilePath(), bytes);
             if (const auto* failure = std::get_if<Failure>(&imported)) report.errors.append({entry.absoluteFilePath(), *failure});
             else report.sources.append(std::get<SourceSnapshot>(imported));
         }
     }
+    if (skippedDeepFolders)
+        report.errors.append({path, {StoreError::InvalidInput, "Folders deeper than eight levels were skipped."}});
     std::sort(report.sources.begin(), report.sources.end(), [](const auto& a, const auto& b) { return a.sourcePath < b.sourcePath; });
     std::sort(report.errors.begin(), report.errors.end(), [](const auto& a, const auto& b) { return a.sourcePath < b.sourcePath; });
     return report;
@@ -889,9 +918,21 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
     if (contextId.isEmpty()) return Failure{StoreError::InvalidInput, "A context is required."};
     const auto catalog = list();
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
-    for (const auto& source : std::get<SourceCatalog>(catalog).sources) {
-        for (const auto& context : source.contexts) {
-            if (context.id != contextId) continue;
+    const auto& sources = std::get<SourceCatalog>(catalog).sources;
+    for (const auto& originalSource : sources) {
+        for (const auto& originalContext : originalSource.contexts) {
+            if (originalContext.id != contextId) continue;
+            const auto current = std::find_if(sources.cbegin(), sources.cend(), [&](const auto& candidate) {
+                return candidate.current && candidate.sourcePath == originalSource.sourcePath;
+            });
+            const auto newer = current == sources.cend() ? originalSource.contexts.cend()
+                : std::find_if(current->contexts.cbegin(), current->contexts.cend(), [&](const auto& candidate) {
+                    return candidate.name == originalContext.name;
+                });
+            if (current != sources.cend() && newer == current->contexts.cend())
+                return Failure{StoreError::NotFound, "Context is no longer present in the imported source."};
+            const auto& source = current != sources.cend() ? *current : originalSource;
+            const auto& context = current != sources.cend() ? *newer : originalContext;
             if (!context.brokenReferences.isEmpty())
                 return Failure{StoreError::InvalidData, "Context has missing or ambiguous references."};
             QByteArray original;
@@ -1048,7 +1089,7 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         spec.insert("cluster", info);
                     }
                     command.info = {{"apiVersion", command.apiVersion}, {"kind", "ExecCredential"}, {"spec", spec}};
-                    const auto importedOci = importedOciEnvironment(profile_, contextId);
+                    const auto importedOci = importedOciEnvironment(profile_, context.id);
                     if (const auto* failure = std::get_if<Failure>(&importedOci)) return *failure;
                     const bool hasImportedOci = std::get<std::optional<QMap<QString, QString>>>(importedOci).has_value();
                     if (hasImportedOci) {
@@ -1068,10 +1109,10 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                         command.oidc = std::get<std::optional<OidcLogin>>(aks);
                     }
 #endif
-                    const auto importedGke = importedGkeAccount(profile_, contextId);
+                    const auto importedGke = importedGkeAccount(profile_, context.id);
                     if (const auto* failure = std::get_if<Failure>(&importedGke)) return *failure;
                     const auto& account = std::get<std::optional<GkeServiceAccount>>(importedGke);
-                    const auto importedAws = importedAwsProfile(profile_, contextId, command);
+                    const auto importedAws = importedAwsProfile(profile_, context.id, command);
                     if (const auto* failure = std::get_if<Failure>(&importedAws)) return *failure;
                     const auto& aws = std::get<std::optional<AwsProfile>>(importedAws);
                     if (aws) {

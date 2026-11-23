@@ -421,6 +421,12 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     static const int yamlType = qmlRegisterType<YamlPresentation>("Podlord.Graphics", 1, 0, "YamlPresentation");
     Q_UNUSED(yamlType);
     runtime_->windows.append(this);
+    connect(this, &Workspace::changed, this, [this] {
+        if (!pendingCatalogReload_ || busy_) return;
+        QMetaObject::invokeMethod(this, [this] {
+            if (pendingCatalogReload_ && !busy_) reloadCatalogs(pendingCatalogReconnect_);
+        }, Qt::QueuedConnection);
+    });
     alerts_.setPresentationText(uiText());
     connect(this, &Workspace::languageChanged, this, [this] { alerts_.setPresentationText(uiText()); });
     alerts_.setSessionOwnership([this](const QString& id) {
@@ -521,11 +527,18 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
 }
 QVariantList Workspace::contexts() const {
     QVariantList result;
-    for (const auto& source : sources_.sources)
-        for (const auto& context : source.contexts)
+    QSet<QString> visible;
+    for (const auto& source : sources_.sources) {
+        if (!source.current) continue;
+        for (const auto& context : source.contexts) {
+            const QString key = source.sourcePath + QChar::Null + context.name;
+            if (visible.contains(key)) continue;
+            visible.insert(key);
             result.append(QVariantMap{{"id", context.id}, {"name", context.displayName}, {"context", context.name}, {"source", source.sourcePath},
                 {"auth", context.authType}, {"usable", context.brokenReferences.isEmpty()}, {"cluster",context.cluster}, {"user",context.user},
                 {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")}, {"current",source.current}});
+        }
+    }
     return result;
 }
 QVariantList Workspace::tabs() const {
@@ -1169,6 +1182,8 @@ bool Workspace::publish() {
 bool Workspace::reload() { return reloadCatalogs(true); }
 bool Workspace::reloadCatalogs(bool reconnect) {
     if (busy_) return false;
+    pendingCatalogReload_ = false;
+    pendingCatalogReconnect_ = false;
     const auto credentialContext = credentialImportContext_;
     credentialImportContext_.clear();
     busy_ = true; emit changed();
@@ -1518,11 +1533,18 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
             const auto& report = std::get<SourceImportReport>(result);
             ++runtime_->contextCatalogRevision;
             sourceImportError_.clear(); sourceImportIssues_.clear();
-            sourceImportNotice_ = report.errors.isEmpty() ? QString{} : QString("Some files could not be opened.");
+            sourceImportNotice_ = report.errors.isEmpty() ? QString{} : uiText().value("settings.importSkipped").toString();
             for (const auto& issue : report.errors) sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
             if (!credentialContext.isEmpty()) credentials_.revoke(importedCredentialId(credentialContext));
             credentialImportContext_ = credentialContext;
             if (!reloadCatalogs(reload == SourceReload::Configuration)) credentialImportContext_.clear();
+            for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_) {
+                const bool reconnect = reload == SourceReload::Configuration;
+                if (!other->reloadCatalogs(reconnect)) {
+                    other->pendingCatalogReload_ = true;
+                    other->pendingCatalogReconnect_ = other->pendingCatalogReconnect_ || reconnect;
+                }
+            }
             emit sourceImportFinished(!report.sources.isEmpty() && report.errors.isEmpty());
         }
     });
@@ -1554,7 +1576,8 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
                 const auto connection = client_.connection(active_);
                 const auto session = std::find_if(catalog.sessions.cbegin(), catalog.sessions.cend(),
                     [&](const auto& value) { return sessionId(value.id) == active_; });
-                if (connection && session != catalog.sessions.cend())
+                if (connection && session != catalog.sessions.cend()
+                    && resolvedContextRevision_.value(active_) == runtime_->contextCatalogRevision)
                     client_.open(active_, *connection, runtime_->contextViews.value(session->config.contextId).value("resource").namespaces);
                 else resolve(active_);
             } else emit changed();
@@ -1622,7 +1645,8 @@ bool Workspace::activate(const QString& id) {
     const bool entered = id != active_ || (workspacePage() == "map" && mapOverview());
     if (id == active_ && found->open && catalog_.activeSession == QUuid(id)) {
         if (workspacePage()=="map") { rememberMapSession(); client_.showSession(id,viewId_); emit changed(); }
-        const bool accepted = client_.connection(id) ? true : resolve(id);
+        const bool accepted = client_.connection(id) && resolvedContextRevision_.value(id) == runtime_->contextCatalogRevision
+            ? true : resolve(id);
         if (accepted && entered) runtime_->recordContextUse(found->config.contextId);
         return accepted;
     }
@@ -1647,11 +1671,17 @@ bool Workspace::resolve(const QString& id, bool retry) {
     if (viewStateErrors_.contains(found->config.contextId)) return false;
     auto config = found->config;
     config.namespaces = runtime_->contextViews.value(config.contextId).value("resource").namespaces;
+    const auto revision = runtime_->contextCatalogRevision;
     busy_ = true; emit changed();
     auto* watcher = new QFutureWatcher<Result<ClusterConnection>>(this);
-    connect(watcher, &QFutureWatcher<Result<ClusterConnection>>::finished, this, [this, watcher, id, config, retry] {
+    connect(watcher, &QFutureWatcher<Result<ClusterConnection>>::finished, this, [this, watcher, id, config, retry, revision] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
-        if (const auto* failure = std::get_if<Failure>(&result)) error_ = failure->message;
+        if (revision != runtime_->contextCatalogRevision) { resolve(id, retry); return; }
+        resolvedContextRevision_.insert(id, revision);
+        if (const auto* failure = std::get_if<Failure>(&result)) {
+            client_.close(id);
+            error_ = failure->message;
+        }
         else {
             error_.clear();
             auto connection = std::get<ClusterConnection>(result);

@@ -169,6 +169,8 @@ public:
                         const bool second = !url.query().isEmpty() && url.query().contains("continue=");
                         const QString token = second && scenario != "repeated_page" ? "" : "next token";
                         document = {{"metadata", QJsonObject{{"continue", token}}}, {"items", QJsonArray{pod(second ? "bravo" : "alpha")}}};
+                        if (scenario == "shell_source_rebind" && authorization == "Bearer replacement-token")
+                            document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("replacement")}}};
                         if (scenario == "invalid_list") document["items"] = QJsonArray{QJsonObject{{"kind", "Pod"}, {"metadata", QJsonObject{{"name", "../escape"}}}}};
                         if (scenario == "rate_limit" && refresh == 1) status = 429;
                         if (scenario == "retain" && refresh >= 3) status = 500;
@@ -793,6 +795,16 @@ bool execute(const QString& requestedScenario) {
             file.close(); urls.append(QUrl::fromLocalFile(second));
         }
         if (scenario == "drop_config_repeat") urls.append(urls.first());
+        if (scenario == "drop_config_folder") {
+            const auto folder = temporary.filePath("dropped-folder");
+            if (!QDir().mkpath(folder + "/nested")) return false;
+            QFile configFile(folder + "/nested/config");
+            QFile notes(folder + "/notes.txt");
+            if (!configFile.open(QIODevice::WriteOnly) || configFile.write(yaml) != yaml.size()
+                || !notes.open(QIODevice::WriteOnly) || notes.write("Unrelated notes.\n") < 0) return false;
+            configFile.close(); notes.close();
+            urls = {QUrl::fromLocalFile(folder)};
+        }
         if (scenario == "drop_config_missing") urls={QUrl::fromLocalFile(temporary.filePath("missing.yaml"))};
         if (scenario.startsWith("drop_config_locked_")) {
             const auto invalidPath=temporary.filePath("invalid.yaml");
@@ -1275,6 +1287,33 @@ bool execute(const QString& requestedScenario) {
     if (!scenario.startsWith("map_")) {
         if (!waitFor([&] { return workspace.totalResourceCount() > 0 || !workspace.loading(); }, 15000)) return false;
         if (workspace.totalResourceCount() > 0 && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
+    }
+    if (scenario == "shell_source_rebind" || scenario == "shell_source_rebind_invalid") {
+        const auto session = workspace.currentSession();
+        if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
+        const auto oldCalls = server.authorizations.size();
+        QFile changed(source);
+        const bool invalid = scenario == "shell_source_rebind_invalid";
+        if (!changed.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            || changed.write(invalid ? yaml.replace("user: local", "user: absent")
+                : yaml.replace("local-test-token", "replacement-token")) < 0) return false;
+        changed.close();
+        if (invalid) {
+            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty(); }, 15000)) return false;
+            QTest::qWait(100);
+            return workspace.currentSession() == session && workspace.contexts().size() == 1
+                && server.authorizations.size() == oldCalls && !workspace.refresh();
+        }
+        if (!workspace.importFile(source) || !waitFor([&] {
+            return !workspace.busy() && !workspace.loading() && server.authorizations.size() > oldCalls
+                && server.authorizations.contains("Bearer replacement-token") && workspace.totalResourceCount() == 2;
+        }, 15000)) return false;
+        const auto calls = server.requests.size();
+        return workspace.filter("alpha") && workspace.table()->rowCount() == 0 && server.requests.size() == calls
+            && workspace.currentSession() == session && workspace.tabs().size() == 1 && workspace.contexts().size() == 1
+            && std::all_of(server.authorizations.cbegin() + oldCalls, server.authorizations.cend(), [](const auto& value) {
+                return value == "Bearer replacement-token";
+            });
     }
     if (scenario == "filters_all_resources") {
         if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
@@ -2023,14 +2062,14 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_footer_reference") {
             if (text(window, "resourceMatchCount") != "visible: 3/3"
-                || text(window, "syncStatus") != QString("API: %1/min  Synced: 0s ago").arg(calls)) return false;
+                || text(window, "syncStatus") != QString("API: %1/min").arg(calls)) return false;
             reference = reference.addSecs(59);
             if (!workspace.filter("alpha") || text(window, "resourceMatchCount") != "visible: 1/3"
-                || text(window, "syncStatus") != QString("API: %1/min  Synced: 59s ago").arg(calls)) return false;
+                || text(window, "syncStatus") != QString("API: %1/min").arg(calls)) return false;
             reference = reference.addSecs(1);
-            if (!workspace.filter("") || text(window, "syncStatus") != "API: 0/min  Synced: 1m ago") return false;
+            if (!workspace.filter("") || text(window, "syncStatus") != "API: 0/min") return false;
             reference = reference.addSecs(3540);
-            return workspace.filter("alpha") && text(window, "syncStatus") == "API: 0/min  Synced: 1h ago" && server.requests.size() == calls;
+            return workspace.filter("alpha") && text(window, "syncStatus") == "API: 0/min" && server.requests.size() == calls;
         }
         if (scenario == "shell_footer_reopen") {
             const auto session = workspace.currentSession();
@@ -2043,7 +2082,7 @@ bool execute(const QString& requestedScenario) {
                     return !workspace.busy() && !workspace.loading() && !active.isEmpty() && active != session
                         && workspace.sessionConfiguration(active).value("contextId").toString() == context;
                 })) return false;
-            const bool preserved = text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
+            const bool preserved = text(window, "syncStatus") == QString("API: %1/min").arg(calls) && server.requests.size() == calls;
             if (!preserved) qWarning() << "Reopened context footer:" << text(window,"syncStatus") << "requests" << calls << server.requests;
             return preserved;
         }

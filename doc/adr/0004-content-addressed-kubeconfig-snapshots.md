@@ -20,16 +20,17 @@ The source list is displayed with the most recently imported snapshots first.
 
 ## Consequences
 
-Existing sessions remain bound to the kubeconfig content they were created from.
-Automatic source refresh can discover changed kubeconfig files without mutating older snapshots.
-Switching to the changed configuration requires an explicit user action; a source-file update does not retarget an open session.
-Users may see multiple entries for the same filesystem path when that file changed over time, which is intentional and auditable.
+Older snapshots remain private history and are never overwritten.
+Podlord does not watch source files. An explicit reimport of changed content selects the newest snapshot for open tabs with the same source path and context name. It reconnects those tabs with the new endpoint and credentials. A tab whose context name was removed stays visible but disconnects with an error. Its old snapshot remains private history.
+The context chooser shows one entry per source path and context name. Distinct source paths remain distinct because relative credential paths and access rights may differ.
 
 Session selection and usage ordering are specified separately in [the operational specification](../spec/podlord-operational-spec.md#confirmed-source-and-session-requirements). Source import recency does not define session usage frequency.
 
 ## Ergänzung: Wie werden eingefügte Konfigurationen und Datei-Refresh behandelt?
 
-2026-10-05: Paste und Dateiimport teilen Parser, Identitätsbildung, Sperre und atomare private Speicherung. Ein expliziter Origin-Pfad bleibt für relative Authentifizierungsdateien und Credential-Plugins maßgeblich; Paste schreibt diesen Origin nicht. Ein späterer Datei-Refresh kann deshalb ausdrücklich mit „nicht lesbar“ scheitern, ohne den privaten Snapshot zu verlieren. Es gibt keinen erfundenen Dateiersatz und kein automatisches Retargeting bestehender Sessions.
+2026-10-05: Paste und Dateiimport teilen Parser, Identitätsbildung, Sperre und atomare private Speicherung. Ein expliziter Origin-Pfad bleibt für relative Authentifizierungsdateien und Credential-Plugins maßgeblich; Paste schreibt diesen Origin nicht. Ein späterer Datei-Refresh kann deshalb ausdrücklich mit „nicht lesbar“ scheitern, ohne den privaten Snapshot zu verlieren.
+
+2026-11-23: Ein ausdrücklich importierter neuer Stand desselben Pfads aktualisiert bestehende Tabs mit gleichnamigem Kontext. Alte Snapshots bleiben erhalten. Beim Wechsel werden alte Ressourcen, laufende Lesevorgänge, Terminals und Portweiterleitungen verworfen. Nicht importierte externe Dateiänderungen ändern keine aktive Verbindung. Ordnerimporte prüfen höchstens acht Unterordner-Ebenen und überspringen Dateien ohne Kubeconfig-Merkmale.
 
 Um unbeschränktes Einlesen externer Konfigurationen zu vermeiden, gilt vor Parsing eine lokale Obergrenze von 16 MiB UTF-8. Der private Base64-/JSON-Umschlag ist auf 32 MiB begrenzt. Zu große oder beschädigte Daten werden nicht überschrieben. Die Ressourcen-YAML-Apply-Grenze bleibt ein separater, einstellbarer Vertrag.
 

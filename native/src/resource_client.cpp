@@ -463,6 +463,26 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
         }
         states_.insert(id, std::move(state));
     }
+    auto& existing = states_[id];
+    if (!existing.connection.contextId.isEmpty()
+        && (existing.connection.credentialId != connection.credentialId || existing.connection.server != connection.server)) {
+        ++existing.revision;
+        dropQueued([&](const auto& task) { return task.id == id; });
+        stopTerminal(id);
+        stopSessionForwards(id);
+        QList<QNetworkReply*> obsoleteReplies;
+        for (auto reply = reads_.cbegin(); reply != reads_.cend(); ++reply)
+            if (reply.value().id == id) obsoleteReplies.append(reply.key());
+        State fresh;
+        fresh.revision = existing.revision;
+        fresh.lastSync = now_();
+        fresh.namespaces = namespaces;
+        fresh.connection = connection;
+        existing = std::move(fresh);
+        resetConnections_ = true;
+        for (auto* reply : obsoleteReplies) reply->abort();
+        emit rowsChanged(id);
+    }
     const auto& previous = states_[id].connection;
     if (previous.authorization != connection.authorization || previous.tls.localCertificate() != connection.tls.localCertificate()
         || previous.credentialReady != connection.credentialReady || previous.expiresAt != connection.expiresAt) {
@@ -873,20 +893,7 @@ QString ResourceClient::failureStatus(const QString& id) const {
     return messages.join("\n");
 }
 QString ResourceClient::syncSummary(const QString& id) const {
-    const auto state = states_.constFind(id);
-    if (state == states_.cend()) return "API: 0/min  Synced: never";
-    const auto now = now_();
-    const auto calls = requestCountLastMinute(id);
-    QDateTime latest;
-    for (const auto& collection : state->collections)
-        if (!latest.isValid() || collection.at > latest) latest = collection.at;
-    QString since = "never";
-    if (latest.isValid()) {
-        const auto seconds = std::max<qint64>(0, latest.secsTo(now));
-        since = seconds < 60 ? QString::number(seconds) + "s" : seconds < 3600 ? QString::number(seconds / 60) + "m" : QString::number(seconds / 3600) + "h";
-        since += " ago";
-    }
-    return QString("API: %1/min  Synced: %2").arg(calls).arg(since);
+    return QString("API: %1/min").arg(requestCountLastMinute(id));
 }
 int ResourceClient::requestCountLastMinute(const QString& id) const {
     const auto state = states_.constFind(id);
@@ -1346,6 +1353,13 @@ void ResourceClient::dispatch() {
     }
     connect(reply, &QNetworkReply::finished, this, [this, reply, task, payload, tlsErrors, parallel, url, authorization = connection.authorization] {
         Task completion = task; completion.foreground = parallel ? reads_.value(reply).foreground : running_->foreground;
+        if (states_[task.id].revision != task.revision) {
+            reply->deleteLater();
+            if (parallel) reads_.remove(reply); else running_.reset();
+            emit changed(task.id);
+            dispatch(); scheduleSync(); scheduleLogs();
+            return;
+        }
         const auto remaining = reply->readAll();
         const auto http = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         bool lengthKnown = false;

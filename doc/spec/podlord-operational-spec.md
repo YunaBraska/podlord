@@ -19,7 +19,7 @@ It turns Kubernetes from scattered YAML and terminal state into one cache-backed
 - Import standard Kubernetes kubeconfigs from files, folders, pasted YAML and default locations. Configurations exported by local Kubernetes tools use the same import paths.
 - K3d belongs only to local/CI Kubernetes test infrastructure. The native product has no K3d discovery command, importer, executable lookup or installation requirement. Historical stored source identities remain readable without invoking a generator.
 - Store app-owned kubeconfig snapshots with content hashes to avoid duplicates.
-- Detect changed kubeconfig files and create new snapshots while preserving existing session bindings.
+- Explicitly reimport changed kubeconfig files as new snapshots and update matching open tabs.
 - Open contexts in tabs or detached windows while sharing context preferences and the same cache.
 - Keep each actual tab in one window. A context may be open in several tabs or windows.
 - List Kubernetes resources in a flat, sortable, filterable table.
@@ -112,10 +112,10 @@ These requirements were confirmed on 2026-09-30. Confirmation establishes requir
 | ID | Required observable behavior |
 |---|---|
 | SES-001 | When an imported kubeconfig file changes, Podlord MUST preserve the previously imported snapshot and import the changed content as a new snapshot. |
-| SES-002 | An existing session MUST remain bound to its original snapshot until the user explicitly chooses a replacement session. A source-file change MUST NOT silently change its API endpoint or authentication configuration. |
+| SES-002 | An external source-file change MUST NOT alter an open tab until an explicit import. When the same path is reimported with changed content, open tabs for context names still present MUST use the new endpoint and credentials without creating duplicate tabs. A tab whose context name was removed MUST stop using its old credentials and show an error. |
 | SES-003 | Re-importing unchanged content from the same source path MUST NOT create duplicate snapshots or sessions. |
 | SES-004 | Session selection MUST prioritize frequently used sessions so obsolete, rarely used sessions move out of the prominent part of the list. This ordering MUST NOT delete sessions or their snapshots. |
-| SES-005 | When changed source configuration produces a replacement session, the replacement MUST inherit its predecessor's base display name with a numeric suffix, whether that base name was assigned automatically or by the user. Numbering follows SES-007, SES-017, and SES-018. |
+| SES-005 | Explicitly created replacement sessions inherit the predecessor's base display name with a numeric suffix, whether that base name was assigned automatically or by the user. Source reimport under SES-002 reconnects the existing tab instead. Numbering follows SES-007, SES-017, and SES-018. |
 | SES-006 | Creating a replacement session MUST preserve the names of all existing sessions. |
 | SES-007 | Successive replacements MUST use numeric suffixes starting at 2: `Production`, `Production 2`, `Production 3`, or `dev`, `dev 2`, `dev 3`. The suffix MUST NOT accumulate into names such as `Production 2 2`. Deletion and name collisions follow SES-017 and SES-018. |
 | SES-008 | Explicitly opening a session or switching to it MUST count as usage. Background synchronization MUST NOT count as usage. |
@@ -210,10 +210,10 @@ layout document to version 4 without discarding Resources/Events preferences.
 | SES-025 | Start forwards in two session tabs and switch between the tabs without closing either. | Both forwards remain running at their existing local endpoints. | Planned check; implementation review pending. |
 | SES-026 | Open a polling log view, then switch to another session tab or hide the log view. | No further polling requests are initiated for the hidden view while it remains hidden. | Planned check; implementation review pending. |
 | SES-027 | Return to a log view with available cached logs while the next refresh is delayed. | Cached logs appear immediately, before the refresh returns; polling resumes while the view is visible. | Planned check; implementation review pending. |
-| SES-005, SES-006 | Rename a session to `Production`, change its source configuration, and refresh the source. | The replacement is named `Production 2`; the original remains `Production`. | Planned check; implementation review pending. |
-| SES-005, SES-006, SES-007 | Keep an automatically assigned name `dev`, change its source configuration, and refresh the source. | The replacement is named `dev 2`; the original remains `dev`. A further changed import produces `dev 3` while both predecessors remain. | Planned check; implementation review pending. |
-| SES-006, SES-007 | Change the configuration again after creating `Production 2` and refresh the source. | The next replacement is `Production 3`; the earlier names remain unchanged. | Planned check; implementation review pending. |
-| SES-003, SES-007 | Refresh the unchanged configuration after creating `Production 2`. | No replacement or additional numeric suffix is created. | Planned check; implementation review pending. |
+| SES-002 | Rename a session to `Production`, change its source configuration, and explicitly reimport the source. | The same tab remains named `Production` and uses the new credentials. | Planned check; implementation review pending. |
+| SES-002 | Keep an automatically assigned name `dev`, change its source configuration, and explicitly reimport twice. | The same tab remains named `dev` and each successful import replaces its active connection. | Planned check; implementation review pending. |
+| SES-002 | Remove the active context name from a reimported source file. | The tab remains visible, stops requests using old credentials, and shows an error. | Passing native `management.source_manage_refresh_removed` Basic/Fusion. |
+| SES-003 | Reimport unchanged source content. | No new snapshot or session is created. | Passing native `management.source_manage_refresh_repeat` Basic/Fusion. |
 
 ### Open Decisions
 
@@ -1167,7 +1167,7 @@ increment, not complete Inspector, accessibility or release parity.
 | Action | What Podlord Does | Why |
 |---|---|---|
 | Import kubeconfig | Validates, snapshots, hashes, deduplicates, creates sessions | Stable app-owned sources without changing user files |
-| Source file changes | Creates a new snapshot for changed content and preserves existing session bindings | Keep changed configuration available without silently retargeting active work |
+| Source file changes | An explicit import creates a new snapshot and reconnects matching open tabs | Keep old bytes for history without using old credentials after reimport |
 | Select session | Restores cached rows, filters, radar state, and open tab state | Fast context switching without losing work |
 | Refresh data | Queues Kubernetes API calls with pacing, TTL, and backoff | Avoid API spam while keeping data current |
 | Display resources | Reads from cache and applies local filters immediately | UI stays responsive during sync |
@@ -1352,6 +1352,10 @@ that path directly. Invalid URL metadata must fail explicitly instead of silentl
 selecting another file. Focused macOS CLI and visible-UI evidence is recorded in
 [the test map](k3d-test-map.md);
 OS-native chooser interaction and actual additional-platform proof remain open.
+Desktop folder selection and drag/drop use this same import path. The selected folder
+is level zero. Files through eight nested folder levels are considered. Deeper
+folders are skipped with one reported issue. The scan skips unrelated files by
+content, including when they share a common kubeconfig filename extension.
 
 ## What is required of the shared native application shell?
 
@@ -1375,7 +1379,7 @@ records presentation ownership and non-duplicated cache summary semantics.
 | SHL-011 | The tab strip exposes a quick file-open action and an anchored dropdown for usage-ranked saved sessions and imported contexts. File acceptance depends on kubeconfig content, not a suffix. Invalid, missing and unreadable files do not import or change the selected session, cache, filters or notices. Valid import never implicitly activates a context, executes a credential command or opens authentication. Profile/write failures remain visible. Session/context selection retains the existing draft-discard and authentication safeguards. |
 | SHL-012 | Compact landscape windows (at least 600 logical pixels wide and less than 600 high) retain the shared single-line icon navigation, with 44-pixel targets. The former separate left-hand navigation rail is superseded by the confirmed automatic workspace-menu overflow. The small Radar is automatically hidden and closed filters occupy only the narrow filter icon rail. Filters can be expanded without clearing active filters; the full Map remains available. Returning to a larger layout restores the same Radar and its camera without extra synchronization or a new renderer. Rotation and disclosure preserve session, query, cache and Radar pose without issuing requests. Portrait retains the drawer; no orientation lock or second UI is introduced. Header metrics follow SHL-003. With search and a validation error visible, at least one complete resource row remains operable above the horizontal scrollbar. Android input keeps the app visible instead of replacing it with a fullscreen keyboard editor. The normal system keyboard remains available. Automatic small-Radar hiding and the collapsed filter rail remain unchanged. |
 | SHL-014 | Primary shell navigation MUST remain one row at every supported size. Icon actions which no longer fit MUST move into the existing hamburger menu, using the same actions, enabled state and selected indication. Activating the already selected workspace MUST NOT clear its selected indication, either in the toolbar or overflow menu. Resizing MUST restore fitting icons automatically, without resetting the session, filters, camera or draft or issuing requests. Tooltip and accessibility labels MUST retain the full action names. Navigation and metric overflow MUST NOT create a second row or duplicate action behavior. Confirmed on 2026-11-08. |
-| SHL-013 | The single-line footer matches the reference categories: visible/cached resource counts, admitted API requests in the preceding minute for the selected session, and age of its latest accepted collection snapshot (seconds/minutes/hours, or never). The session Map labels and counts all filter matches against the cache total, independently of the table's row limit. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Failed reads do not create a fresh snapshot timestamp. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
+| SHL-013 | The single-line footer shows visible/cached resource counts and admitted API requests in the preceding minute for the selected session. It does not show a "Synced" age. The session Map labels and counts all filter matches against the cache total, independently of the table's row limit. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
 
 Normal empty, loading and connection feedback uses user-facing resource/context terms rather than cache, snapshot or queue implementation details. Routine successful imports produce no log-style notice. An import with failed inputs retains a concise warning and reachable failure details. An unavailable metric remains omitted in the compact summary.
 
@@ -1461,7 +1465,7 @@ YAML and its configurable patch limit.
 | UI-SRC-02 | Activating a Sources row opens its source-only inspector, not a context connection. Overview and YAML use the existing inspector area, including the confirmed narrow-window takeover. Viewing, editing and applying a source do not activate sessions, contact clusters or initiate authentication. |
 | UI-SRC-03 | YAML comes only from the validated app-owned snapshot for the inspected context. Reads run outside the UI thread. Missing, damaged, symlinked, removed or unrelated copies fail explicitly, without falling back to an original file. UI getters read cached editor state only. |
 | UI-SRC-04 | Source YAML is initially read-only. Explicit Edit becomes available only after the owned copy loads successfully. The local draft uses the existing Stay/Discard protection for close and navigation. Raw kubeconfig contents are confined to this explicitly selected editor, not table metadata, error messages or logs. |
-| UI-SRC-05 | Apply validates and imports edited YAML with its existing owned origin, including supported mobile document origins. Changed content creates a new immutable snapshot. Identical content retains snapshot and context identities and may refresh import recency under the ordinary import contract. Original files, prior snapshot contents and every existing session binding remain unchanged. The newly imported version becomes current without connecting or authenticating. |
+| UI-SRC-05 | Apply validates and imports edited YAML with its existing owned origin, including supported mobile document origins. Changed content creates a new immutable snapshot. Identical content retains snapshot and context identities and may refresh import recency under the ordinary import contract. Original files and prior snapshot contents remain unchanged. Matching open tabs reconnect with the new configuration through the existing authentication flow. |
 | UI-SRC-06 | Rejected Apply preserves the local draft and presents a safe error. Discard returns to the valid owned baseline and permits editing again. A failed baseline read never permits editing. Existing source-import size and UTF-8 validation remain enforced. |
 | UI-SRC-07 | Confirmed removal cannot discard another window's open source editor. While removal is in flight, the same context cannot enter editing elsewhere. Successful removal clears matching inspectors. Closing clears the editor buffers, and a late read completion cannot reopen the inspector. Removing a source still requires the existing explicit context/session cascade confirmation. Applying an edit never performs that cascade. |
 | UI-SRC-08 | While editing Source YAML with the on-screen keyboard and less than 480 logical pixels of usable height, the existing input-priority layout also applies in portrait. It temporarily hides headers, tabs and toolbars without changing the draft, session or connection. Dismissing the keyboard restores those controls. This reuses the shared layout behavior, not a separate portrait editor. Other inspectors retain their existing landscape rule. Confirmed on 2026-11-03. |
@@ -1642,7 +1646,7 @@ Token, CA, client-certificate and private-key references share the existing 16 M
 
 When reading cached provider tokens: when no explicit token or token-file value is selected, read `auth-provider.config.access-token`, falling back to `id-token` when absent or empty. Validate the chosen value with the shared bearer-token checks and never expose it in source metadata or errors. Malformed selected provider token/config types fail explicitly. Import and connection resolution remain network- and execution-free.
 
-This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot; old sessions remain bound to the old one. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
+This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot and matching open tabs use it. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
 
 ### What must native mobile OIDC authentication prove before release?
 
