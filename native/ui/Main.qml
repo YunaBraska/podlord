@@ -364,6 +364,104 @@ ApplicationWindow {
         }
     }
     ModalDialog {
+        id: sourceConflictDialog
+        objectName: "sourceConflictDialog"
+        title: workspace.uiText["sources.matches"]
+        width: Math.min(760, window.width - 24)
+        height: Math.min(window.height - 24, Math.min(560,
+            150 + workspace.sourceImportChoices.length * (window.width < 600 ? 200 : 135)))
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        property int chosenCount: 0
+        contentItem: ScrollView {
+            clip: true
+            ColumnLayout {
+                width: sourceConflictDialog.availableWidth
+                spacing: 12
+                Repeater {
+                    id: sourceConflictRows
+                    model: workspace.sourceImportChoices
+                    delegate: ColumnLayout {
+                        id: conflictRow
+                        required property var modelData
+                        required property int index
+                        property int selectedIndex: -1
+                        property alias targetChoice: sourceChoice
+                        Layout.fillWidth: true
+                        spacing: 3
+                        SelectableText {
+                            Layout.fillWidth: true
+                            text: modelData.name + (modelData.cluster && modelData.cluster !== modelData.name ? " · " + modelData.cluster : "")
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                        }
+                        SelectableText {
+                            Layout.fillWidth: true
+                            text: modelData.sourcePath + (modelData.server ? "\n" + modelData.server : "")
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: workspace.appearanceColors.muted
+                        }
+                        ComboBox {
+                            id: sourceChoice
+                            objectName: "sourceConflictChoice_" + index
+                            Layout.fillWidth: true
+                            model: [{id: "", shortLabel: workspace.uiText["action.add"], label: workspace.uiText["action.add"]}].concat(
+                                modelData.targets.map(target => ({id: target.id,
+                                    shortLabel: workspace.uiText["sources.update"] + " · " + target.name,
+                                    label: workspace.uiText["sources.update"] + " · " + target.name + "\n" + target.sourcePath + "\n" + target.server})))
+                            textRole: "shortLabel"
+                            valueRole: "id"
+                            currentIndex: -1
+                            displayText: currentIndex < 0 ? "…" : model[currentIndex].shortLabel
+                            Accessible.name: workspace.uiText["sources.matches"] + ": " + modelData.name
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: sourceChoice.width
+                                text: modelData.label
+                                contentItem: Label {
+                                    text: parent.text
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.WrapAnywhere
+                                    color: workspace.appearanceColors.text
+                                }
+                            }
+                            onActivated: {
+                                if (conflictRow.selectedIndex < 0) sourceConflictDialog.chosenCount++
+                                conflictRow.selectedIndex = currentIndex
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        footer: DialogButtonBox {
+            FlatButton {
+                objectName: "confirmSourceConflicts"
+                text: workspace.uiText["action.import"]
+                enabled: sourceConflictDialog.chosenCount === workspace.sourceImportChoices.length
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+        }
+        onOpened: chosenCount = 0
+        onAccepted: {
+            let decisions = []
+            for (let i = 0; i < sourceConflictRows.count; i++) {
+                const row = sourceConflictRows.itemAt(i)
+                decisions.push({candidateId: row.modelData.candidateId, targetId: row.targetChoice.currentValue})
+            }
+            workspace.resolveSourceImport(decisions)
+        }
+        onRejected: workspace.cancelSourceImport()
+        Connections {
+            target: workspace
+            function onChanged() {
+                if (workspace.sourceImportChoices.length > 0 && !sourceConflictDialog.visible) sourceConflictDialog.open()
+            }
+        }
+    }
+    ModalDialog {
         id: deleteConfirmation
         objectName: "resourceDeleteDialog"
         title: "Delete this resource?"

@@ -139,7 +139,7 @@ bool scenario(const QString& name) {
         if (name == "frequency" || name == "restart" || name == "remove" || name == "remove_live") {
             CHECK(visit(beta) && visit(alpha) && visit(beta) && visit(gamma));
             CHECK(workspace.showMapOverview());
-            CHECK((order(window) == QStringList{beta, gamma, alpha}));
+            CHECK((order(window) == QStringList{gamma, beta, alpha}));
             if (name == "remove_live") {
                 CHECK(workspace.requestSourceRemoval(beta) && workspace.confirmSourceRemoval());
                 CHECK(wait([&] { return !workspace.busy() && workspace.contexts().size() == 2; }));
@@ -191,7 +191,7 @@ bool scenario(const QString& name) {
             CHECK(workspace.importText(origin, yaml));
             CHECK(wait([&] { return !workspace.busy() && workspace.contexts().size() == 3; }));
             CHECK(workspace.showMapOverview());
-            CHECK((order(window) == QStringList{alpha, gamma, beta}));
+            CHECK((order(window) == QStringList{gamma, alpha, beta}));
         } else if (name == "visible_stability" || name == "shared_windows") {
             now = now.addSecs(1);
             CHECK(workspace.openContext(beta, true) && wait([&] { return !workspace.busy() && host.windows().size() == 2; }));
@@ -300,7 +300,7 @@ bool scenario(const QString& name) {
         }
         CHECK(wait([&] { return host.restorationReady() && !restored.busy(); }));
         const auto expected = name == "remove" ? QStringList{gamma, alpha, beta}
-            : name == "catalog_lock" ? QStringList{alpha, beta, gamma} : QStringList{beta, gamma, alpha};
+            : name == "catalog_lock" ? QStringList{alpha, beta, gamma} : QStringList{gamma, beta, alpha};
         const auto actual = order(host.windows().value(0));
         if (name == "shared_windows") CHECK((actual == QStringList{beta, alpha, gamma}));
         else CHECK(actual == expected);

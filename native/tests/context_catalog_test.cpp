@@ -72,7 +72,25 @@ bool scenario(const QString& name) {
         return writeContextCatalog(profile, value);
     };
 
-    if (name == "usage_accumulation") {
+    if (name == "replacement_schema") {
+        const auto newer = sources.importText(temporary.filePath("second"), yaml);
+        CHECK(std::holds_alternative<SourceSnapshot>(newer));
+        const auto replacement = std::get<SourceSnapshot>(newer).contexts.first().id;
+        CHECK(std::holds_alternative<SourceSnapshot>(sources.replaceContext(id, replacement)));
+        const auto valid = read(path);
+        CHECK(std::get<ContextCatalog>(readContextCatalog(profile)).replacements.value(id) == replacement);
+        QList<QJsonObject> invalid;
+        auto root = QJsonDocument::fromJson(valid).object();
+        auto changed = root; changed["replacements"] = QJsonObject{{id, id}}; invalid.append(changed);
+        changed = root; changed["replacements"] = QJsonObject{{"ctx:" + QString(64, '0'), replacement}}; invalid.append(changed);
+        changed = root; changed["pinned"] = QJsonArray{id}; invalid.append(changed);
+        changed = root; changed["pinned"] = QJsonArray{replacement, replacement}; invalid.append(changed);
+        for (const auto& candidate : invalid) {
+            const auto bytes = QJsonDocument(candidate).toJson(); CHECK(write(path, bytes));
+            CHECK(std::holds_alternative<Failure>(readContextCatalog(profile)) && read(path) == bytes);
+        }
+        CHECK(write(path, valid));
+    } else if (name == "usage_accumulation") {
         CHECK(std::holds_alternative<ContextUsageMap>(recordContextUsage(profile, {{id, {2, now}}})));
         const auto result = recordContextUsage(profile, {{id, {1, now.addSecs(10)}}});
         CHECK(std::holds_alternative<ContextUsageMap>(result));

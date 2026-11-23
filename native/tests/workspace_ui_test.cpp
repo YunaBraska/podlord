@@ -1311,6 +1311,14 @@ bool execute(const QString& requestedScenario) {
     }
     if (scenario == "shell_source_rebind" || scenario == "shell_source_rebind_invalid") {
         const auto session = workspace.currentSession();
+        const auto importChanged = [&] {
+            if (!workspace.importFile(source) || !waitFor([&] {
+                return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+            }, 15000)) return false;
+            const auto choice = workspace.sourceImportChoices().first().toMap();
+            return workspace.resolveSourceImport({QVariantMap{{"candidateId", choice.value("candidateId")},
+                {"targetId", choice.value("targets").toList().first().toMap().value("id")}}});
+        };
         if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
         const auto oldCalls = server.authorizations.size();
         QFile changed(source);
@@ -1320,7 +1328,7 @@ bool execute(const QString& requestedScenario) {
                 : yaml.replace("local-test-token", "replacement-token")) < 0) return false;
         changed.close();
         if (invalid) {
-            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty(); }, 15000)) return false;
+            if (!importChanged() || !waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty(); }, 15000)) return false;
             QTest::qWait(100);
             if (workspace.currentSession() != session || workspace.contexts().size() != 1
                 || server.authorizations.size() != oldCalls || workspace.refresh()) return false;
@@ -1330,7 +1338,7 @@ bool execute(const QString& requestedScenario) {
             if (!repaired.open(QIODevice::WriteOnly | QIODevice::Truncate)
                 || repaired.write(replacement) != replacement.size()) return false;
             repaired.close();
-            const bool started = workspace.importFile(source);
+            const bool started = importChanged();
             const bool restored = started && waitFor([&] {
                 return !workspace.busy() && !workspace.loading() && workspace.error().isEmpty()
                     && server.authorizations.size() > oldCalls
@@ -1342,7 +1350,7 @@ bool execute(const QString& requestedScenario) {
                 << server.authorizations.size() << server.authorizations.last();
             return restored;
         }
-        if (!workspace.importFile(source) || !waitFor([&] {
+        if (!importChanged() || !waitFor([&] {
             return !workspace.busy() && !workspace.loading() && server.authorizations.size() > oldCalls
                 && server.authorizations.contains("Bearer replacement-token") && workspace.totalResourceCount() == 2;
         }, 15000)) return false;

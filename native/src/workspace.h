@@ -156,6 +156,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantMap appearanceColors READ appearanceColors NOTIFY appearanceChanged)
     Q_PROPERTY(QString sourceImportNotice READ sourceImportNotice NOTIFY changed)
     Q_PROPERTY(QVariantList sourceImportIssues READ sourceImportIssues NOTIFY changed)
+    Q_PROPERTY(QVariantList sourceImportChoices READ sourceImportChoices NOTIFY changed)
     Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
     Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
     Q_PROPERTY(bool sessionWindowActionsReady READ sessionWindowActionsReady NOTIFY sessionWindowActionsReadyChanged)
@@ -401,6 +402,7 @@ public:
     Q_INVOKABLE bool previewAlertZoom(const QVariantMap& draft);
     QString sourceImportNotice() const { return sourceImportNotice_; }
     QVariantList sourceImportIssues() const { return sourceImportIssues_; }
+    QVariantList sourceImportChoices() const { return sourceImportChoices_; }
     QStringList themeNames() const { return podlord::themeNames(); }
     QString themeName() const { return settings_.themeName; }
     QString themeVariant() const { return settings_.themeVariant; }
@@ -752,6 +754,8 @@ public:
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importFiles(const QStringList& paths);
+    Q_INVOKABLE bool resolveSourceImport(const QVariantList& decisions);
+    Q_INVOKABLE bool cancelSourceImport();
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false, bool duplicate = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);
@@ -920,6 +924,9 @@ private:
         const QString& credentialContext = {}, SourceReload reload = SourceReload::Configuration);
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
+    QVariantList sourceImportChoices_;
+    QStringList pendingImportPaths_;
+    QStringList pendingImportIds_;
     SessionCatalog catalog_;
     ResourceClient& client_;
     ReleaseUpdates& releaseUpdates_;

@@ -232,7 +232,7 @@ bool management(const QString& scenario, const QString& root, const QString& pro
                 }
                 if (mode == "changed") {
                     write(origin, yaml + "# changed\n"); press("refreshSourceFilesButton"); settle();
-                    require(sourceCount() == 2 && workspace.contexts().first().toMap()["name"] == "local", "A new immutable snapshot inherited another snapshot's alias");
+                    require(sourceCount() == 2 && workspace.contexts().first().toMap()["name"] == "Operations", "Changed credentials discarded the context alias");
                 }
             }
         }
@@ -283,7 +283,12 @@ bool management(const QString& scenario, const QString& root, const QString& pro
                     && replacement.credentialId != oldConnection.credentialId
                     && replacement.authorization == "Bearer replacement-token", "Existing context still uses old imported credentials");
             }
-            if (mode == "refresh_repeat") { press("refreshSourceFilesButton"); settle(); require(sourceCount() == 1, "Repeated refresh duplicated snapshots"); }
+            if (mode == "refresh_repeat") {
+                const auto importedAt = workspace.contexts().first().toMap()["imported"];
+                press("refreshSourceFilesButton"); settle();
+                require(sourceCount() == 1 && workspace.contexts().first().toMap()["imported"] == importedAt,
+                    "Repeated import changed an unchanged source or its ordering");
+            }
         } else {
             press("pasteSourceButton");
             require(QTest::qWaitFor([&] { return item("pasteSourceYaml") != nullptr; }, 2000), "Paste dialog did not open");
@@ -348,6 +353,215 @@ int main(int argc, char* argv[]) {
         const QString directory = root + "/sources";
         const QString home = root + "/home";
         require(QDir().mkpath(directory) && QDir().mkpath(home), "Cannot create isolated inputs");
+        if (scenario.startsWith("conflict_")) {
+            const auto first = directory + "/first.yaml";
+            const auto second = directory + "/second.yaml";
+            write(first, config());
+            podlord::Workspace workspace(profile);
+            QQmlApplicationEngine engine;
+            engine.rootContext()->setContextProperty("workspace", &workspace);
+            engine.load(QUrl("qrc:/podlord/Main.qml"));
+            require(!engine.rootObjects().isEmpty(), "Cannot open context import UI");
+            auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+            if (scenario == "conflict_narrow" || scenario == "conflict_batch_narrow") window->resize(390, 720);
+            require(window && QTest::qWaitFor([&] { return !workspace.busy(); }), "Context import UI did not settle");
+            require(workspace.importFile(first) && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }), "Initial context import failed");
+            const auto oldId = workspace.contexts().first().toMap().value("id").toString();
+            const auto oldTab = podlord::SessionStore(profile).openTab(oldId);
+            require(std::holds_alternative<podlord::SessionCatalog>(oldTab), "Cannot create existing context tab");
+            const auto oldSession = std::get<podlord::SessionCatalog>(oldTab).sessions.first().id;
+            require(workspace.renameSourceContext(oldId, "Operations") && QTest::qWaitFor([&] {
+                return !workspace.busy() && workspace.contexts().first().toMap().value("name") == "Operations";
+            }), "Cannot prepare renamed context");
+            if (scenario == "conflict_noop") {
+                const auto imported = workspace.contexts().first().toMap().value("imported");
+                require(workspace.importFiles({first, QUrl::fromLocalFile(first).toString()})
+                    && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.sourceImportChoices().isEmpty() && workspace.contexts().first().toMap().value("imported") == imported,
+                    "Identical input changed source recency or opened a conflict dialog");
+                return 0;
+            }
+            if (scenario == "conflict_recent") {
+                write(second, QByteArray(config("https://127.0.0.1:11")).replace("- name: local\n  context:", "- name: other\n  context:"));
+                require(workspace.importFile(second) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.contexts().size() == 2;
+                }), "Cannot import a separate context");
+                require(workspace.contexts().first().toMap().value("source") == second,
+                    "Sources are not initially ordered by the most recent change");
+                require(workspace.importFile(first) && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.contexts().first().toMap().value("source") == second,
+                    "An unchanged reimport moved an old source to the top");
+                return 0;
+            }
+            if (scenario == "conflict_same_path_add") {
+                write(first, QByteArray(config("https://127.0.0.1:13")).replace("source-input-secret", "version-two"));
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Changed file did not offer Add or Update");
+                const auto candidate = workspace.sourceImportChoices().first().toMap().value("candidateId").toString();
+                require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", QString{}}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 2; }),
+                    "Add from the same file did not retain both versions");
+                const auto oldConnection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(oldConnection)
+                    && std::get<podlord::ClusterConnection>(oldConnection).authorization == "Bearer source-input-secret",
+                    "Kept context silently switched to new credentials");
+                podlord::Workspace restored(profile);
+                require(QTest::qWaitFor([&] { return !restored.busy() && restored.contexts().size() == 2; }),
+                    "Added context version was lost on restart");
+                return 0;
+            }
+            if (scenario == "conflict_revert") {
+                write(first, QByteArray(config("https://127.0.0.1:13")).replace("source-input-secret", "version-two"));
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Changed file did not offer an update");
+                auto candidate = workspace.sourceImportChoices().first().toMap().value("candidateId").toString();
+                require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", oldId}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }),
+                    "Cannot update the first source version");
+                write(first, config());
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Restored file content was mistaken for an unchanged current import");
+                const auto choice = workspace.sourceImportChoices().first().toMap();
+                candidate = choice.value("candidateId").toString();
+                const auto target = choice.value("targets").toList().first().toMap().value("id").toString();
+                require(candidate == oldId && workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", target}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy(); }), "Cannot restore the earlier source version");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(workspace.sourceImportError().isEmpty() && workspace.contexts().size() == 1
+                    && workspace.contexts().first().toMap().value("name") == "Operations"
+                    && std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer source-input-secret",
+                    "Restored version lost the alias, tab or original credentials");
+                return 0;
+            }
+            if (scenario == "conflict_historical_tabs") {
+                write(first, QByteArray(config("https://127.0.0.1:10")).replace("source-input-secret", "intermediate-secret"));
+                require(workspace.refreshSources() && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.contexts().size() == 1, "Cannot prepare historical context version");
+            }
+            write(second, QByteArray(config("https://127.0.0.1:11")).replace("source-input-secret", "new-secret"));
+            if (scenario == "conflict_batch" || scenario == "conflict_batch_narrow") {
+                const auto third = directory + "/third.yaml";
+                write(third, config("https://127.0.0.1:14"));
+                require(workspace.importFile(directory) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 2;
+                }), "Folder conflicts were not collected into one decision");
+                const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+                require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture batch conflict dialog");
+                require(std::get<podlord::SourceCatalog>(podlord::KubeconfigStore(profile).list()).sources.size() == 1,
+                    "Folder import saved a source before review");
+                QVariantList decisions;
+                for (const auto& value : workspace.sourceImportChoices()) {
+                    const auto choice = value.toMap();
+                    decisions.append(QVariantMap{{"candidateId", choice.value("candidateId")},
+                        {"targetId", choice.value("sourcePath") == second ? QVariant(oldId) : QVariant(QString{})}});
+                }
+                require(workspace.resolveSourceImport(decisions) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.contexts().size() == 2;
+                }), "Folder choices did not apply together");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer new-secret",
+                    "Folder update did not rebind the existing tab");
+                return 0;
+            }
+            require(workspace.importFile(second) && QTest::qWaitFor([&] {
+                return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+            }), "Matching context did not wait for a choice");
+            require(workspace.contexts().size() == 1 && std::get<podlord::SourceCatalog>(podlord::KubeconfigStore(profile).list()).sources.size()
+                == (scenario == "conflict_historical_tabs" ? 2 : 1),
+                "Conflict imported content before confirmation");
+            auto* dialog = window->findChild<QObject*>("sourceConflictDialog");
+            require(dialog && QTest::qWaitFor([&] { return dialog->property("visible").toBool(); }), "Conflict choices are not visible");
+            if (scenario == "conflict_narrow") {
+                require(dialog->property("width").toReal() <= window->width() - 20, "Conflict dialog clips in a narrow window");
+                const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+                require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture narrow conflict dialog");
+                const auto dropdown = qEnvironmentVariable("PODLORD_CONFLICT_DROPDOWN_SCREENSHOT");
+                if (!dropdown.isEmpty()) {
+                    require(podlord::test::clickVisible(window, "sourceConflictChoice_0"), "Cannot open narrow conflict options");
+                    QCoreApplication::processEvents();
+                    require(window->grabWindow().save(dropdown), "Cannot capture narrow conflict options");
+                }
+                return 0;
+            }
+            const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+            require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture conflict dialog");
+            const auto choice = workspace.sourceImportChoices().first().toMap();
+            const auto candidate = choice.value("candidateId").toString();
+            const auto target = choice.value("targets").toList().first().toMap().value("id").toString();
+            if (scenario == "conflict_ui_update") {
+                require(podlord::test::clickVisible(window, "sourceConflictChoice_0"), "Cannot open the conflict action selector");
+                QTest::keyClick(window, Qt::Key_Down);
+                QTest::keyClick(window, Qt::Key_Down);
+                QTest::keyClick(window, Qt::Key_Return);
+                auto* selector = podlord::test::visibleItem(window->contentItem(), "sourceConflictChoice_0");
+                require(selector && QTest::qWaitFor([&] { return selector->property("currentValue").toString() == target; }),
+                    "Keyboard could not choose Update");
+                require(podlord::test::clickVisible(window, "confirmSourceConflicts")
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1
+                        && workspace.contexts().first().toMap().value("source") == second; }),
+                    "Conflict dialog did not apply the selected update");
+                return 0;
+            }
+            if (scenario == "conflict_cancel") {
+                require(workspace.cancelSourceImport() && workspace.contexts().size() == 1, "Cancelled import changed contexts");
+                return 0;
+            }
+            if (scenario == "conflict_stale") write(second, config("https://127.0.0.1:12"));
+            require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", scenario == "conflict_add" ? QString{} : target}}}),
+                "Selected context action was rejected");
+            require(QTest::qWaitFor([&] { return !workspace.busy(); }), "Context decision did not finish");
+            if (scenario == "conflict_stale") {
+                require(workspace.contexts().size() == 1 && workspace.sourceImportError().contains("changed", Qt::CaseInsensitive),
+                    "Changed input was imported after review");
+                return 0;
+            }
+            if (scenario == "conflict_add") {
+                require(workspace.contexts().size() == 2, "Add did not keep both contexts");
+                QStringList labels;
+                for (const auto& value : workspace.contexts()) labels.append(value.toMap().value("name").toString());
+                require(labels.contains("Operations") && labels.contains("local · second.yaml"), "Added context is not distinguishable");
+            } else {
+                require(workspace.contexts().size() == 1 && workspace.contexts().first().toMap().value("name") == "Operations"
+                    && workspace.contexts().first().toMap().value("source") == second,
+                    "Update lost the renamed context or its new source");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer new-secret",
+                    "Existing tab did not resolve the new credentials");
+                const auto tabs = podlord::SessionStore(profile).list();
+                require(std::holds_alternative<podlord::SessionCatalog>(tabs)
+                    && std::get<podlord::SessionCatalog>(tabs).sessions.first().id == oldSession,
+                    "Update replaced the open tab");
+                if (scenario == "conflict_refresh_old") {
+                    write(first, config("https://127.0.0.1:15"));
+                    require(workspace.refreshSources() && QTest::qWaitFor([&] { return !workspace.busy(); }),
+                        "Old source refresh did not finish");
+                    require(workspace.contexts().size() == 1
+                        && workspace.contexts().first().toMap().value("source") == second,
+                        "Refreshing the replaced source silently restored a duplicate context");
+                    const auto rebound = podlord::KubeconfigStore(profile).connection(oldId);
+                    require(std::holds_alternative<podlord::ClusterConnection>(rebound)
+                        && std::get<podlord::ClusterConnection>(rebound).authorization == "Bearer new-secret",
+                        "Refreshing an old source changed the updated tab credentials");
+                }
+                if (scenario == "conflict_remove") {
+                    const auto newId = workspace.contexts().first().toMap().value("id").toString();
+                    require(workspace.requestSourceRemoval(newId) && workspace.confirmSourceRemoval()
+                        && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().isEmpty(); }),
+                        "Removing an updated context left an old version visible");
+                    const auto remaining = podlord::SessionStore(profile).list();
+                    require(std::holds_alternative<podlord::SessionCatalog>(remaining)
+                        && std::get<podlord::SessionCatalog>(remaining).sessions.isEmpty(),
+                        "Removing an updated context left its old tab open");
+                }
+            }
+            return 0;
+        }
         if (scenario.startsWith("source_alias_contract_")) {
             const QString mode = scenario.mid(22);
             const QString origin = directory + "/config";

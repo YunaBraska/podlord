@@ -8,6 +8,7 @@
 #include <QSaveFile>
 #include <QLockFile>
 #include <QSet>
+#include <algorithm>
 #include <limits>
 
 namespace podlord {
@@ -25,8 +26,12 @@ Result<ContextCatalog> readContextCatalog(const QString& profile) {
     const auto document = QJsonDocument::fromJson(file.readAll(), &error);
     if (file.error() != QFile::NoError) return Failure{StoreError::ReadFailed, "Cannot read the context catalog."};
     const auto root = document.object();
+    const auto keys = root.keys();
     if (error.error != QJsonParseError::NoError || !document.isObject()
-        || (root.size() != 2 && !(root.size() == 3 && root.contains("usage")))
+        || root.size() < 2 || root.size() > 5
+        || std::any_of(keys.cbegin(), keys.cend(), [](const QString& key) {
+            return key != "version" && key != "sources" && key != "usage" && key != "replacements" && key != "pinned";
+        })
         || !root["version"].isDouble() || !root["sources"].isObject())
         return Failure{StoreError::InvalidData, "The context catalog could not be read. Existing files were retained."};
     if (root["version"] != 1) return Failure{StoreError::UnsupportedVersion, "Unsupported context catalog format."};
@@ -46,10 +51,30 @@ Result<ContextCatalog> readContextCatalog(const QString& profile) {
         }
         catalog.sources.insert(source.key(), contexts);
     }
+    QSet<QString> members;
+    for (const auto& contexts : catalog.sources) for (const auto& id : contexts) members.insert(id);
+    if (root.contains("replacements")) {
+        if (!root["replacements"].isObject()) return Failure{StoreError::InvalidData, "Invalid context replacements."};
+        const auto replacements = root["replacements"].toObject();
+        for (auto entry = replacements.begin(); entry != replacements.end(); ++entry) {
+            const auto target = entry.value().toString();
+            if (!members.contains(entry.key()) || !entry.value().isString() || !members.contains(target)
+                || entry.key() == target || replacements.contains(target))
+                return Failure{StoreError::InvalidData, "Invalid context replacement."};
+            catalog.replacements.insert(entry.key(), target);
+        }
+    }
+    if (root.contains("pinned")) {
+        if (!root["pinned"].isArray()) return Failure{StoreError::InvalidData, "Invalid saved context versions."};
+        for (const auto& value : root["pinned"].toArray()) {
+            const auto id = value.toString();
+            if (!value.isString() || !members.contains(id) || catalog.replacements.contains(id) || catalog.pinned.contains(id))
+                return Failure{StoreError::InvalidData, "Invalid saved context version."};
+            catalog.pinned.insert(id);
+        }
+    }
     if (root.contains("usage")) {
         if (!root["usage"].isObject()) return Failure{StoreError::InvalidData, "Invalid context usage record."};
-        QSet<QString> members;
-        for (const auto& contexts : catalog.sources) for (const auto& id : contexts) members.insert(id);
         const auto usage = root["usage"].toObject();
         for (auto entry = usage.begin(); entry != usage.end(); ++entry) {
             const auto value = entry.value().toObject();
@@ -81,6 +106,17 @@ Result<bool> writeContextCatalog(const QString& profile, const ContextCatalog& c
             {"lastUsed", entry->lastUsed.toUTC().toString(Qt::ISODateWithMs)}});
     QJsonObject root{{"version", 1}, {"sources", sources}};
     if (!usage.isEmpty()) root.insert("usage", usage);
+    if (!catalog.replacements.isEmpty()) {
+        QJsonObject replacements;
+        for (auto entry = catalog.replacements.cbegin(); entry != catalog.replacements.cend(); ++entry)
+            replacements.insert(entry.key(), entry.value());
+        root.insert("replacements", replacements);
+    }
+    if (!catalog.pinned.isEmpty()) {
+        QStringList pinned(catalog.pinned.cbegin(), catalog.pinned.cend());
+        pinned.sort();
+        root.insert("pinned", QJsonArray::fromStringList(pinned));
+    }
     const auto bytes = QJsonDocument(root).toJson();
     QSaveFile file(path);
     file.setDirectWriteFallback(false);

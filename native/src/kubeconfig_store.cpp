@@ -430,7 +430,37 @@ Result<std::optional<AwsProfile>> importedAwsProfile(const QString& profile, con
 } // namespace
 
 KubeconfigStore::KubeconfigStore(QString profile) : profile_(std::move(profile)) {}
-Result<SourceSnapshot> KubeconfigStore::importFile(QString path) const {
+QSet<QString> replacedSourceNames(const SourceCatalog& catalog) {
+    QMap<QString, QPair<QString, QString>> identities;
+    for (const auto& source : catalog.sources) for (const auto& context : source.contexts)
+        identities.insert(context.id, {source.sourcePath, context.name});
+    QSet<QString> replaced;
+    for (auto entry = catalog.replacements.cbegin(); entry != catalog.replacements.cend(); ++entry) {
+        const auto old = identities.value(entry.key()), target = identities.value(entry.value());
+        if (!old.first.isEmpty() && !target.first.isEmpty() && old.first != target.first)
+            replaced.insert(old.first + QChar::Null + old.second);
+    }
+    return replaced;
+}
+QStringList removalContextIds(const SourceCatalog& catalog, const QString& contextId) {
+    QSet<QString> affected{contextId};
+    for (auto entry = catalog.replacements.cbegin(); entry != catalog.replacements.cend(); ++entry)
+        if (entry.value() == contextId) affected.insert(entry.key());
+    QString targetPath;
+    for (const auto& source : catalog.sources) for (const auto& context : source.contexts)
+        if (context.id == contextId) targetPath = source.sourcePath;
+    QSet<QString> obsoleteNames;
+    for (const auto& source : catalog.sources) if (source.sourcePath != targetPath)
+        for (const auto& context : source.contexts) if (affected.contains(context.id))
+            obsoleteNames.insert(source.sourcePath + QChar::Null + context.name);
+    for (const auto& source : catalog.sources) for (const auto& context : source.contexts)
+        if (!catalog.pinned.contains(context.id)
+            && obsoleteNames.contains(source.sourcePath + QChar::Null + context.name)) affected.insert(context.id);
+    auto ids = affected.values();
+    ids.sort();
+    return ids;
+}
+Result<SourceSnapshot> KubeconfigStore::importFile(QString path, const QString& expectedContentHash) const {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     path = std::get<QString>(normalized);
@@ -439,6 +469,8 @@ Result<SourceSnapshot> KubeconfigStore::importFile(QString path) const {
     if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
     const auto bytes = file.read(maximumKubeconfigBytes + 1);
     if (file.error() != QFileDevice::NoError) return Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
+    if (!expectedContentHash.isEmpty() && hash(bytes) != expectedContentHash)
+        return Failure{StoreError::Conflict, "Kubeconfig changed during import. Choose it again."};
     return importContent(std::move(path), bytes);
 }
 Result<SourceSnapshot> KubeconfigStore::importText(QString originPath, const QString& yaml) const {
@@ -678,23 +710,33 @@ Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteA
     auto catalog = readContextCatalog(profile_);
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
     const auto& priorMembership = std::get<ContextCatalog>(catalog).sources;
+    std::optional<SourceSnapshot> previous;
+    if (QFileInfo(source.ownedPath).exists() || QFileInfo(source.ownedPath).isSymLink()) {
+        const auto loaded = readOwned(source.ownedPath);
+        if (const auto* failure = std::get_if<Failure>(&loaded)) return *failure;
+        previous = std::get<SourceSnapshot>(loaded);
+    }
     const auto prefix = hash(source.sourcePath.toUtf8()) + "-";
+    std::optional<SourceSnapshot> latest;
     for (auto it = priorMembership.lowerBound(prefix); it != priorMembership.cend() && it.key().startsWith(prefix); ++it) {
         const auto prior = readOwned(QDir(std::get<QString>(directory)).filePath(it.key() + ".json"));
-        if (const auto* snapshot = std::get_if<SourceSnapshot>(&prior); snapshot && source.importedAt <= snapshot->importedAt)
-            source.importedAt = snapshot->importedAt.addMSecs(1);
+        if (const auto* snapshot = std::get_if<SourceSnapshot>(&prior)) {
+            if (!latest || snapshot->importedAt > latest->importedAt) latest = *snapshot;
+            if (source.importedAt <= snapshot->importedAt) source.importedAt = snapshot->importedAt.addMSecs(1);
+        }
     }
-    if (QFileInfo(source.ownedPath).exists() || QFileInfo(source.ownedPath).isSymLink()) {
-        const auto previous = readOwned(source.ownedPath);
-        if (const auto* failure = std::get_if<Failure>(&previous)) return *failure;
-        for (auto& context : source.contexts) for (const auto& old : std::get<SourceSnapshot>(previous).contexts)
+    QStringList ids;
+    for (const auto& context : source.contexts) ids.append(context.id);
+    ids.sort();
+    if (previous && priorMembership.value(source.id) == ids && (!latest || latest->id == source.id)) return *previous;
+    if (latest) for (auto& context : source.contexts) for (const auto& old : latest->contexts)
+        if (context.name == old.name) context.displayName = old.displayName;
+    if (previous) {
+        for (auto& context : source.contexts) for (const auto& old : previous->contexts)
             if (context.id == old.id) context.displayName = old.displayName;
     }
     const auto saved = publishSource(source, bytes);
     if (const auto* failure = std::get_if<Failure>(&saved)) return *failure;
-    QStringList ids;
-    for (const auto& context : source.contexts) ids.append(context.id);
-    ids.sort();
     auto& membership = std::get<ContextCatalog>(catalog);
     if (!membership.sources.contains(source.id) || membership.sources.value(source.id) != ids) {
         membership.sources.insert(source.id, ids);
@@ -735,6 +777,80 @@ Result<SourceSnapshot> KubeconfigStore::renameContext(const QString& contextId, 
     }
     return Failure{StoreError::NotFound, "Source context is unavailable; existing data was retained."};
 }
+Result<SourceSnapshot> KubeconfigStore::replaceContext(const QString& oldContextId, const QString& newContextId) const {
+    if (oldContextId.isEmpty() || newContextId.isEmpty() || oldContextId == newContextId)
+        return Failure{StoreError::InvalidInput, "Choose two different imported contexts."};
+    const auto directory = sourceDirectory(profile_, false);
+    if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
+    QLockFile lock(QDir(std::get<QString>(directory)).filePath("sources.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(0)) return Failure{StoreError::Busy, "Cannot lock owned kubeconfigs; context was not updated."};
+    const auto loaded = list();
+    if (const auto* failure = std::get_if<Failure>(&loaded)) return *failure;
+    const auto& available = std::get<SourceCatalog>(loaded).sources;
+    const SourceContext* oldContext = nullptr;
+    const SourceContext* newContext = nullptr;
+    QString oldPath;
+    const SourceSnapshot* newSource = nullptr;
+    for (const auto& source : available) for (const auto& context : source.contexts) {
+        if (context.id == oldContextId) { oldContext = &context; oldPath = source.sourcePath; }
+        if (context.id == newContextId) { newSource = &source; newContext = &context; }
+    }
+    if (!oldContext || !newSource || !newContext || oldContext->name != newContext->name
+        || std::get<SourceCatalog>(loaded).replacements.contains(oldContextId)
+        || (std::get<SourceCatalog>(loaded).replacements.contains(newContextId)
+            && std::get<SourceCatalog>(loaded).replacements.value(newContextId) != oldContextId))
+        return Failure{StoreError::NotFound, "The selected context or replacement is unavailable."};
+    QByteArray bytes;
+    auto owned = readOwned(newSource->ownedPath, &bytes);
+    if (const auto* failure = std::get_if<Failure>(&owned)) return *failure;
+    auto source = std::get<SourceSnapshot>(owned);
+    for (auto& context : source.contexts) if (context.id == newContextId) context.displayName = oldContext->displayName;
+    const auto published = publishSource(source, bytes);
+    if (const auto* failure = std::get_if<Failure>(&published)) return *failure;
+    auto membership = readContextCatalog(profile_);
+    if (const auto* failure = std::get_if<Failure>(&membership)) return *failure;
+    auto& catalog = std::get<ContextCatalog>(membership);
+    catalog.replacements.remove(newContextId);
+    QSet<QString> migrating{oldContextId};
+    for (const auto& priorSource : available) if (priorSource.sourcePath == oldPath)
+        for (const auto& priorContext : priorSource.contexts)
+            if (priorContext.name == oldContext->name && priorContext.id != newContextId
+                && !catalog.pinned.contains(priorContext.id)) migrating.insert(priorContext.id);
+    for (auto entry = catalog.replacements.begin(); entry != catalog.replacements.end(); ++entry)
+        if (migrating.contains(entry.value())) entry.value() = newContextId;
+    for (const auto& id : migrating) { catalog.replacements.insert(id, newContextId); catalog.pinned.remove(id); }
+    if (catalog.usage.contains(oldContextId)) {
+        auto& target = catalog.usage[newContextId];
+        const auto& prior = catalog.usage[oldContextId];
+        target.count = std::max(target.count, prior.count);
+        target.lastUsed = std::max(target.lastUsed, prior.lastUsed);
+    }
+    const auto saved = writeContextCatalog(profile_, catalog);
+    if (const auto* failure = std::get_if<Failure>(&saved)) return *failure;
+    return std::get<SourceSnapshot>(published);
+}
+Result<bool> KubeconfigStore::keepContext(const QString& contextId) const {
+    const auto directory = sourceDirectory(profile_, false);
+    if (const auto* failure = std::get_if<Failure>(&directory)) return *failure;
+    QLockFile lock(QDir(std::get<QString>(directory)).filePath("sources.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(0)) return Failure{StoreError::Busy, "Cannot lock owned kubeconfigs; context was not retained."};
+    const auto sources = list();
+    if (const auto* failure = std::get_if<Failure>(&sources)) return *failure;
+    const bool exists = std::any_of(std::get<SourceCatalog>(sources).sources.cbegin(),
+        std::get<SourceCatalog>(sources).sources.cend(), [&](const auto& source) {
+            return std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; });
+        });
+    if (!exists) return Failure{StoreError::NotFound, "Context version is unavailable."};
+    auto loaded = readContextCatalog(profile_);
+    if (const auto* failure = std::get_if<Failure>(&loaded)) return *failure;
+    auto& catalog = std::get<ContextCatalog>(loaded);
+    if (catalog.replacements.contains(contextId)) return Failure{StoreError::Conflict, "Context is already updated."};
+    if (catalog.pinned.contains(contextId)) return true;
+    catalog.pinned.insert(contextId);
+    return writeContextCatalog(profile_, catalog);
+}
 Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, QStringList expectedSessions) const {
     static const QRegularExpression identifier("\\Actx:[0-9a-f]{64}\\z");
     if (!identifier.match(contextId).hasMatch()) return Failure{StoreError::InvalidInput, "Select a valid imported context."};
@@ -761,6 +877,7 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
         "Cannot lock owned kubeconfigs; context and sessions were retained."};
     const auto catalog = list();
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+    const auto affected = removalContextIds(std::get<SourceCatalog>(catalog), contextId);
     for (const auto& source : std::get<SourceCatalog>(catalog).sources)
         if (std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; })) {
             const auto preferences = QDir(profile_).filePath("views");
@@ -778,15 +895,20 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
             auto membership = readContextCatalog(profile_);
             if (const auto* failure = std::get_if<Failure>(&membership)) return *failure;
             auto& entries = std::get<ContextCatalog>(membership);
-            entries.sources[source.id].removeAll(contextId);
-            const auto removed = SessionStore(profile_).removeContext(contextId, expectedSessions,
+            for (const auto& owned : std::get<SourceCatalog>(catalog).sources) for (const auto& context : owned.contexts)
+                if (affected.contains(context.id)) entries.sources[owned.id].removeAll(context.id);
+            for (const auto& id : affected) entries.replacements.remove(id);
+            for (const auto& id : affected) entries.pinned.remove(id);
+            const auto removed = SessionStore(profile_).removeContext(affected, expectedSessions,
                 [&] { return writeContextCatalog(profile_, entries); });
             const auto* failure = std::get_if<Failure>(&removed);
             if (std::holds_alternative<SessionCatalog>(removed) || (failure && failure->code == StoreError::CleanupFailed)) {
                 bool deleted = true;
-                for (const auto& path : {settingsPath, ociCredentialPath(std::get<QString>(directory), contextId),
-                                         gkeCredentialPath(std::get<QString>(directory), contextId),
-                                         awsCredentialPath(std::get<QString>(directory), contextId)}) {
+                QStringList paths;
+                for (const auto& id : affected) paths.append({QDir(preferences).filePath(contextViewName(id)),
+                    ociCredentialPath(std::get<QString>(directory), id), gkeCredentialPath(std::get<QString>(directory), id),
+                    awsCredentialPath(std::get<QString>(directory), id)});
+                for (const auto& path : paths) {
                     const QFileInfo credential(path);
                     if ((credential.exists() || credential.isSymLink()) && !QFile::remove(path)) deleted = false;
                 }
@@ -797,7 +919,9 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
         }
     return Failure{StoreError::NotFound, "Source context is unavailable; existing data was retained."};
 }
-Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
+Result<SourceImportReport> KubeconfigStore::importPath(QString path) const { return scanPath(std::move(path), false); }
+Result<SourceImportReport> KubeconfigStore::inspectPath(QString path) const { return scanPath(std::move(path), true); }
+Result<SourceImportReport> KubeconfigStore::scanPath(QString path, bool preview) const {
     const auto normalized = sourcePath(std::move(path));
     if (const auto* failure = std::get_if<Failure>(&normalized)) return Failure{failure->code, failure->message, true};
     if (const auto failure = profileFailure(profile_)) return *failure;
@@ -810,7 +934,15 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
     if (root.isDir() && root == QFileInfo(profile_))
         return Failure{StoreError::InvalidInput, "The private application profile cannot be scanned as a source folder."};
     if (contentSource(path) || !root.isDir()) {
-        const auto imported = importFile(path);
+        Result<SourceSnapshot> imported = Failure{StoreError::ReadFailed, "Cannot read kubeconfig source.", true};
+        if (preview) {
+            QFile file(path);
+            if (!contentSource(path) && !root.isFile()) return Failure{StoreError::ReadFailed, "Source must be a readable regular kubeconfig file.", true};
+            if (file.open(QIODevice::ReadOnly)) {
+                const auto bytes = file.read(maximumKubeconfigBytes + 1);
+                if (file.error() == QFileDevice::NoError) imported = parse(path, bytes, QDateTime::currentDateTimeUtc());
+            }
+        } else imported = importFile(path);
         if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }
@@ -848,7 +980,8 @@ Result<SourceImportReport> KubeconfigStore::importPath(QString path) const {
             const auto content = QString::fromUtf8(bytes);
             if (!kubeconfigMarker.match(content).hasMatch()
                 && !(content.trimmed().startsWith('{') && content.contains("\"contexts\""))) continue;
-            const auto imported = importContent(entry.absoluteFilePath(), bytes);
+            const auto imported = preview ? parse(entry.absoluteFilePath(), bytes, QDateTime::currentDateTimeUtc())
+                : importContent(entry.absoluteFilePath(), bytes);
             if (const auto* failure = std::get_if<Failure>(&imported)) report.errors.append({entry.absoluteFilePath(), *failure});
             else report.sources.append(std::get<SourceSnapshot>(imported));
         }
@@ -867,6 +1000,8 @@ Result<SourceCatalog> KubeconfigStore::list() const {
     const auto& entries = std::get<ContextCatalog>(membership).sources;
     SourceCatalog catalog;
     catalog.usage = std::get<ContextCatalog>(membership).usage;
+    catalog.replacements = std::get<ContextCatalog>(membership).replacements;
+    catalog.pinned = std::get<ContextCatalog>(membership).pinned;
     QList<SourceSnapshot> snapshots;
     const QDir owned(std::get<QString>(directory));
     if (owned.exists() && !readableDirectory(owned.absolutePath()))
@@ -918,10 +1053,12 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
     if (contextId.isEmpty()) return Failure{StoreError::InvalidInput, "A context is required."};
     const auto catalog = list();
     if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
-    const auto& sources = std::get<SourceCatalog>(catalog).sources;
+    const auto& sourceCatalog = std::get<SourceCatalog>(catalog);
+    const auto& sources = sourceCatalog.sources;
+    const auto effectiveId = sourceCatalog.replacements.value(contextId, contextId);
     for (const auto& originalSource : sources) {
         for (const auto& originalContext : originalSource.contexts) {
-            if (originalContext.id != contextId) continue;
+            if (originalContext.id != effectiveId) continue;
             const auto current = std::find_if(sources.cbegin(), sources.cend(), [&](const auto& candidate) {
                 return candidate.current && candidate.sourcePath == originalSource.sourcePath;
             });
@@ -931,8 +1068,9 @@ Result<ClusterConnection> KubeconfigStore::connection(const QString& contextId) 
                 });
             if (current != sources.cend() && newer == current->contexts.cend())
                 return Failure{StoreError::NotFound, "Context is no longer present in the imported source."};
-            const auto& source = current != sources.cend() ? *current : originalSource;
-            const auto& context = current != sources.cend() ? *newer : originalContext;
+            const bool pinned = sourceCatalog.pinned.contains(effectiveId);
+            const auto& source = !pinned && current != sources.cend() ? *current : originalSource;
+            const auto& context = !pinned && current != sources.cend() ? *newer : originalContext;
             if (!context.brokenReferences.isEmpty())
                 return Failure{StoreError::InvalidData, "Context has missing or ambiguous references."};
             QByteArray original;

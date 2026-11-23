@@ -1,6 +1,7 @@
 #pragma once
 #include "session_store.h"
 #include <QMap>
+#include <QSet>
 
 namespace podlord {
 /** The only membership authority. Immutable source files are not a discovery index. */
@@ -12,6 +13,8 @@ using ContextUsageMap = QMap<QString, ContextUsage>;
 struct ContextCatalog final {
     QMap<QString, QStringList> sources;
     ContextUsageMap usage;
+    QMap<QString, QString> replacements;
+    QSet<QString> pinned;
 };
 Result<ContextCatalog> readContextCatalog(const QString& profile);
 /** Caller owns kubeconfigs/sources.lock. Publication is atomic. */

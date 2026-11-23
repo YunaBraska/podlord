@@ -21,8 +21,8 @@ void Workspace::refreshMapContexts(bool reorder) {
         if (!reorder) return positions.value(a, std::numeric_limits<qsizetype>::max())
             < positions.value(b, std::numeric_limits<qsizetype>::max());
         const auto first = runtime_->contextUsage.value(a), second = runtime_->contextUsage.value(b);
-        if (first.count != second.count) return first.count > second.count;
-        return first.lastUsed > second.lastUsed;
+        if (first.lastUsed != second.lastUsed) return first.lastUsed > second.lastUsed;
+        return first.count > second.count;
     });
     if (next == mapContexts_) return;
     mapContexts_ = std::move(next);
@@ -87,7 +87,8 @@ QString Workspace::mapContextCaption() const {
 QVariantMap Workspace::mapContextIdentity() const {
     const auto session=std::find_if(catalog_.sessions.cbegin(),catalog_.sessions.cend(),[&](const auto& entry) { return entry.id==QUuid(active_); });
     if (session!=catalog_.sessions.cend()) for (const auto& source:sources_.sources) for (const auto& context:source.contexts)
-        if (context.id==session->config.contextId) return {{"id", context.id}, {"name", context.displayName}, {"cluster", context.cluster}};
+        if (context.id==sources_.replacements.value(session->config.contextId, session->config.contextId))
+            return {{"id", session->config.contextId}, {"name", context.displayName}, {"cluster", context.cluster}};
     return {};
 }
 bool Workspace::copyMapIdentity(const QString& field) {

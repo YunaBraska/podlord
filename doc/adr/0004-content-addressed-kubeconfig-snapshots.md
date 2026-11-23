@@ -13,16 +13,19 @@ Keying imported contexts only by path causes changed files to overwrite previous
 ## Decision
 
 Podlord stores each imported kubeconfig snapshot by source path and content hash.
-Re-importing the same path with identical content updates the existing snapshot metadata instead of duplicating it.
-Re-importing the same path after its content changes creates a new imported context snapshot and app-owned kubeconfig copy.
+Re-importing the current path with identical content is a no-op and preserves its import time.
+Changed content creates a new imported context snapshot and app-owned kubeconfig copy.
 
-The source list is displayed with the most recently imported snapshots first.
+File, folder, drop and startup imports inspect all candidates before writing. If a context name matches an existing or another incoming context, one batch dialog lets the user select **Update** with a specific target or **Add**. A changed file cannot silently win by folder order. An Update preserves the target's display name and existing tab identity while resolving its connection through the selected new source. An Add gets a distinct display name. When two versions of the same source path are added, the older selected version keeps its own credentials.
+
+Sources are displayed by their last actual import, newest first. The Map sorts contexts by last use when the overview is opened and keeps card positions stable while visible.
 
 ## Consequences
 
 Older snapshots remain private history and are never overwritten.
-Podlord does not watch source files. An explicit reimport of changed content selects the newest snapshot for open tabs with the same source path and context name. It reconnects those tabs with the new endpoint and credentials. A tab whose context name was removed stays visible but disconnects with an error. Its old snapshot remains private history.
-The context chooser shows one entry per source path and context name. Distinct source paths remain distinct because relative credential paths and access rights may differ.
+Podlord does not watch source files. The explicit source refresh action updates same-path tabs with the new endpoint and credentials. A tab whose context name was removed stays visible but disconnects with an error. An explicit Update can also move a context to another source path without changing its open tabs. Later refreshes of the replaced old path do not silently add that context again.
+
+The context catalog retains optional replacement and pinned-version identities. Older catalog files remain readable. An older binary may reject a profile once these fields are written, so rollback after a conflict decision requires a profile backup. Removing an updated context removes its replaced identities and affected tabs in the existing confirmed removal flow. Original kubeconfig files remain untouched.
 
 Session selection and usage ordering are specified separately in [the operational specification](../spec/podlord-operational-spec.md#confirmed-source-and-session-requirements). Source import recency does not define session usage frequency.
 

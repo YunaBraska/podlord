@@ -527,16 +527,17 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
 }
 QVariantList Workspace::contexts() const {
     QVariantList result;
-    QSet<QString> visible;
+    const auto replacedNames = replacedSourceNames(sources_);
     for (const auto& source : sources_.sources) {
-        if (!source.current) continue;
         for (const auto& context : source.contexts) {
-            const QString key = source.sourcePath + QChar::Null + context.name;
-            if (visible.contains(key)) continue;
-            visible.insert(key);
+            if (!source.current && !sources_.pinned.contains(context.id)) continue;
+            if (sources_.replacements.contains(context.id)) continue;
+            if (replacedNames.contains(source.sourcePath + QChar::Null + context.name)
+                && !sources_.pinned.contains(context.id)) continue;
             result.append(QVariantMap{{"id", context.id}, {"name", context.displayName}, {"context", context.name}, {"source", source.sourcePath},
                 {"auth", context.authType}, {"usable", context.brokenReferences.isEmpty()}, {"cluster",context.cluster}, {"user",context.user},
-                {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")}, {"current",source.current}});
+                {"imported",source.importedAt.toString(Qt::ISODate)}, {"detail",context.brokenReferences.join(", ")},
+                {"current",source.current || sources_.pinned.contains(context.id)}});
         }
     }
     return result;
@@ -551,7 +552,9 @@ QVariantList Workspace::tabs() const {
         auto row = value.toMap();
         for (const auto& session : catalog_.sessions) if (sessionId(session.id) == row["id"].toString())
             for (const auto& source : sources_.sources) for (const auto& context : source.contexts)
-                if (context.id == session.config.contextId) { row["name"] = context.displayName; row["contextId"] = context.id; }
+                if (context.id == sources_.replacements.value(session.config.contextId, session.config.contextId)) {
+                    row["name"] = context.displayName; row["contextId"] = session.config.contextId;
+                }
         row["connectionCount"] = client_.connectionCount(row["id"].toString());
         value = row;
     }
@@ -1349,12 +1352,7 @@ bool Workspace::select(const SessionCatalog& incoming, bool local) {
     return true;
 }
 bool Workspace::importFile(const QString& path) {
-    if (!retainDocumentReadAccess(path)) {
-        sourceImportError_ = error_ = "Android cannot retain access to this document. Select it again from the system file picker.";
-        emit changed();
-        return false;
-    }
-    return importSource([path](const KubeconfigStore& store) { return store.importPath(path); });
+    return importFiles({path});
 }
 bool Workspace::importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath) {
     if (!retainDocumentReadAccess(configPath) || !retainDocumentReadAccess(keyPath)) {
@@ -1391,40 +1389,209 @@ bool Workspace::importAwsProfile(const QString& contextId, const QString& config
         return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
     }, false, contextId);
 }
+namespace {
+struct ImportPreview final {
+    SourceImportReport report;
+    QVariantList choices;
+    QStringList ids;
+};
+Result<ImportPreview> inspectImport(const KubeconfigStore& store, const QStringList& paths) {
+    const auto catalog = store.list();
+    if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+    const auto& existing = std::get<SourceCatalog>(catalog);
+    const auto replacedNames = replacedSourceNames(existing);
+    ImportPreview preview;
+    std::optional<Failure> rejected;
+    for (const auto& path : paths) {
+        const auto inspected = store.inspectPath(path);
+        if (const auto* failure = std::get_if<Failure>(&inspected)) {
+            if (!rejected || (rejected->sourceInput && !failure->sourceInput)) rejected = *failure;
+            preview.report.errors.append({path, *failure});
+        } else {
+            const auto& report = std::get<SourceImportReport>(inspected);
+            preview.report.sources.append(report.sources);
+            preview.report.errors.append(report.errors);
+        }
+    }
+    if (preview.report.sources.isEmpty() && rejected) return *rejected;
+    std::sort(preview.report.sources.begin(), preview.report.sources.end(), [](const auto& a, const auto& b) {
+        return a.sourcePath < b.sourcePath;
+    });
+    QSet<QString> candidateIds;
+    preview.report.sources.erase(std::remove_if(preview.report.sources.begin(), preview.report.sources.end(), [&](const auto& source) {
+        if (candidateIds.contains(source.id)) return true;
+        candidateIds.insert(source.id);
+        return false;
+    }), preview.report.sources.end());
+    struct Seen final { QString id, name, displayName, sourcePath, cluster, server; };
+    QList<Seen> seen;
+    for (const auto& source : existing.sources) {
+        if (!source.current && std::none_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) {
+            return existing.pinned.contains(context.id);
+        })) continue;
+        for (const auto& context : source.contexts) {
+            if ((!source.current && !existing.pinned.contains(context.id)) || existing.replacements.contains(context.id)
+                || (replacedNames.contains(source.sourcePath + QChar::Null + context.name)
+                    && !existing.pinned.contains(context.id))) continue;
+            seen.append({context.id, context.name, context.displayName, source.sourcePath, context.cluster, context.server});
+        }
+    }
+    preview.report.sources.erase(std::remove_if(preview.report.sources.begin(), preview.report.sources.end(), [&](const auto& source) {
+        return std::any_of(existing.sources.cbegin(), existing.sources.cend(), [&](const auto& prior) {
+            return prior.current && prior.id == source.id;
+        });
+    }), preview.report.sources.end());
+    for (const auto& source : preview.report.sources) {
+        preview.ids.append(source.id);
+        for (const auto& context : source.contexts) {
+            QVariantList targets;
+            for (const auto& prior : seen) if (prior.name == context.name)
+                targets.append(QVariantMap{{"id", prior.id}, {"name", prior.displayName}, {"sourcePath", prior.sourcePath},
+                    {"cluster", prior.cluster}, {"server", prior.server}});
+            if (!targets.isEmpty()) preview.choices.append(QVariantMap{{"candidateId", context.id}, {"sourceId", source.id},
+                {"name", context.name}, {"sourcePath", source.sourcePath}, {"cluster", context.cluster},
+                {"server", context.server}, {"targets", targets}});
+            seen.append({context.id, context.name, context.displayName, source.sourcePath, context.cluster, context.server});
+        }
+    }
+    return preview;
+}
+Result<SourceImportReport> applyImport(const KubeconfigStore& store, const QStringList& paths,
+    const QStringList& expectedIds, const QVariantList& expectedChoices, const QVariantList& decisions) {
+    const auto inspected = inspectImport(store, paths);
+    if (const auto* failure = std::get_if<Failure>(&inspected)) return *failure;
+    const auto& preview = std::get<ImportPreview>(inspected);
+    if (preview.ids != expectedIds || preview.choices != expectedChoices)
+        return Failure{StoreError::Conflict, "Sources changed during import. Choose the files again."};
+    QMap<QString, QString> selected;
+    for (const auto& decision : decisions) {
+        const auto row = decision.toMap();
+        const auto id = row.value("candidateId").toString();
+        if (selected.contains(id)) return Failure{StoreError::InvalidInput, "Choose each context once."};
+        selected.insert(id, row.value("targetId").toString());
+    }
+    if (selected.size() != preview.choices.size()) return Failure{StoreError::InvalidInput, "Choose an action for each matching context."};
+    QSet<QString> updateTargets;
+    for (const auto& value : preview.choices) {
+        const auto choice = value.toMap();
+        const auto candidate = choice.value("candidateId").toString();
+        if (!selected.contains(candidate)) return Failure{StoreError::InvalidInput, "Choose an action for each matching context."};
+        const auto target = selected.value(candidate);
+        if (target.isEmpty()) continue;
+        bool found = false;
+        for (const auto& option : choice.value("targets").toList())
+            if (option.toMap().value("id").toString() == target) found = true;
+        if (!found || updateTargets.contains(target))
+            return Failure{StoreError::InvalidInput, "Choose one existing context for each update."};
+        updateTargets.insert(target);
+    }
+    for (const auto& value : preview.choices) {
+        const auto choice = value.toMap();
+        if (!selected.value(choice.value("candidateId").toString()).isEmpty()) continue;
+        for (const auto& option : choice.value("targets").toList()) {
+            const auto target = option.toMap();
+            if (target.value("sourcePath") != choice.value("sourcePath")) continue;
+            const auto kept = store.keepContext(target.value("id").toString());
+            if (const auto* failure = std::get_if<Failure>(&kept)) return *failure;
+        }
+    }
+    SourceImportReport report;
+    report.errors = preview.report.errors;
+    for (const auto& source : preview.report.sources) {
+        const auto imported = store.importFile(source.sourcePath, source.contentHash);
+        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
+        report.sources.append(std::get<SourceSnapshot>(imported));
+    }
+    QSet<QString> labels;
+    const auto before = store.list();
+    if (const auto* failure = std::get_if<Failure>(&before)) return *failure;
+    for (const auto& source : std::get<SourceCatalog>(before).sources) for (const auto& context : source.contexts)
+        if (source.current || std::get<SourceCatalog>(before).pinned.contains(context.id)) labels.insert(context.displayName);
+    for (const auto& value : preview.choices) {
+        const auto choice = value.toMap();
+        const auto candidate = choice.value("candidateId").toString();
+        if (!selected.value(candidate).isEmpty()) continue;
+        const auto base = choice.value("name").toString() + " · " + QFileInfo(choice.value("sourcePath").toString()).fileName();
+        QString label = base;
+        for (int number = 2; labels.contains(label); ++number) label = base + " (" + QString::number(number) + ")";
+        const auto renamed = store.renameContext(candidate, label);
+        if (const auto* failure = std::get_if<Failure>(&renamed)) return *failure;
+        labels.insert(label);
+    }
+    for (const auto& value : preview.choices) {
+        const auto choice = value.toMap();
+        const auto candidate = choice.value("candidateId").toString();
+        const auto target = selected.value(candidate);
+        if (target.isEmpty()) continue;
+        const auto updated = store.replaceContext(target, candidate);
+        if (const auto* failure = std::get_if<Failure>(&updated)) return *failure;
+    }
+    for (const auto& value : preview.choices) {
+        const auto choice = value.toMap();
+        const auto candidate = choice.value("candidateId").toString();
+        if (!selected.value(candidate).isEmpty() || updateTargets.contains(candidate)) continue;
+        const auto latest = store.list();
+        if (const auto* failure = std::get_if<Failure>(&latest)) return *failure;
+        if (replacedSourceNames(std::get<SourceCatalog>(latest)).contains(
+                choice.value("sourcePath").toString() + QChar::Null + choice.value("name").toString())) {
+            const auto kept = store.keepContext(candidate);
+            if (const auto* failure = std::get_if<Failure>(&kept)) return *failure;
+        }
+    }
+    return report;
+}
+}
 bool Workspace::importFiles(const QStringList& inputs) {
     auto paths = inputs; paths.removeDuplicates();
-    if (paths.isEmpty()) return false;
+    if (paths.isEmpty() || busy_ || !pendingImportPaths_.isEmpty()) return false;
     for (const auto& path : paths) if (!retainDocumentReadAccess(path)) {
         sourceImportError_ = error_ = "Cannot access the selected file. Choose it again.";
         emit changed(); return false;
     }
-    return importSource([paths](const KubeconfigStore& store) -> Result<SourceImportReport> {
-        SourceImportReport report; std::optional<Failure> rejected;
-        for (const auto& path : paths) {
-            const auto imported = store.importPath(path);
-            if (const auto* failure = std::get_if<Failure>(&imported)) {
-                if (!rejected || (rejected->sourceInput && !failure->sourceInput)) rejected = *failure;
-                if (!failure->sourceInput) report.errors.append({path, *failure});
-            } else {
-                const auto& result = std::get<SourceImportReport>(imported);
-                report.sources.append(result.sources); report.errors.append(result.errors);
-            }
+    sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear();
+    busy_ = true; emit changed();
+    auto* watcher = new QFutureWatcher<Result<ImportPreview>>(this);
+    connect(watcher, &QFutureWatcher<Result<ImportPreview>>::finished, this, [this, watcher, paths] {
+        const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
+        if (const auto* failure = std::get_if<Failure>(&result)) {
+            sourceImportError_ = failure->message; emit changed(); emit sourceImportFinished(false); return;
         }
-        if (report.sources.isEmpty() && rejected) return *rejected;
-        return report;
-    }, true);
+        const auto& preview = std::get<ImportPreview>(result);
+        if (preview.report.sources.isEmpty()) {
+            for (const auto& issue : preview.report.errors)
+                sourceImportIssues_.append(QVariantMap{{"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
+            if (!sourceImportIssues_.isEmpty()) sourceImportNotice_ = uiText().value("settings.importSkipped").toString();
+            emit changed(); emit sourceImportFinished(sourceImportIssues_.isEmpty()); return;
+        }
+        if (!preview.choices.isEmpty()) {
+            pendingImportPaths_ = paths; pendingImportIds_ = preview.ids; sourceImportChoices_ = preview.choices;
+            emit changed(); return;
+        }
+        importSource([paths, ids = preview.ids, choices = preview.choices](const KubeconfigStore& store) {
+            return applyImport(store, paths, ids, choices, {});
+        }, true);
+    });
+    const auto profile = profile_;
+    watcher->setFuture(QtConcurrent::run([profile, paths] { return inspectImport(KubeconfigStore(profile), paths); }));
+    return true;
+}
+bool Workspace::resolveSourceImport(const QVariantList& decisions) {
+    if (busy_ || pendingImportPaths_.isEmpty()) return false;
+    const auto paths = pendingImportPaths_;
+    const auto ids = pendingImportIds_;
+    const auto choices = sourceImportChoices_;
+    pendingImportPaths_.clear(); pendingImportIds_.clear(); sourceImportChoices_.clear(); emit changed();
+    return importSource([paths, ids, choices, decisions](const KubeconfigStore& store) {
+        return applyImport(store, paths, ids, choices, decisions);
+    });
+}
+bool Workspace::cancelSourceImport() {
+    if (busy_ || pendingImportPaths_.isEmpty()) return false;
+    pendingImportPaths_.clear(); pendingImportIds_.clear(); sourceImportChoices_.clear(); emit changed();
+    return true;
 }
 bool Workspace::quickImportFile(const QString& path) {
-    if (!retainDocumentReadAccess(path)) {
-        sourceImportError_ = error_ = "Android cannot retain access to this document. Select it again from the system file picker.";
-        emit changed();
-        return false;
-    }
-    return importSource([path](const KubeconfigStore& store) -> Result<SourceImportReport> {
-        const auto imported = store.importFile(path);
-        if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
-        return SourceImportReport{{std::get<SourceSnapshot>(imported)}, {}};
-    }, true);
+    return importFiles({path});
 }
 QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
 QUrl Workspace::defaultKubeconfigFolder() const {
@@ -1469,15 +1636,17 @@ bool Workspace::requestSourceRemoval(const QString& contextId) {
     sourceImportError_.clear(); sourceImportNotice_.clear();
     for (const auto& source : sources_.sources) for (const auto& context : source.contexts) {
         if (context.id != contextId) continue;
+        const auto contextIds = removalContextIds(sources_, contextId);
         QStringList ids;
-        for (const auto& session : catalog_.sessions) if (session.config.contextId == contextId) {
+        for (const auto& session : catalog_.sessions)
+            if (contextIds.contains(session.config.contextId)) {
             ids.append(sessionId(session.id));
         }
         if (yamlDirty() && (ids.contains(active_) || (sourceInspection_ && sourceInspection_->metadata.value("contextId")==contextId))) {
             sourceImportError_ = "Save or discard the YAML draft before removing its context.";
             emit changed(); return false;
         }
-        sourceRemoval_ = {{"contextId", contextId}, {"name", context.displayName}, {"sessionIds", ids}};
+        sourceRemoval_ = {{"contextId", contextId}, {"name", context.displayName}, {"sessionIds", ids}, {"contextIds", contextIds}};
         emit sourceRemovalChanged(); emit changed(); return true;
     }
     sourceImportError_ = "The selected imported context is unavailable.";
@@ -1491,12 +1660,14 @@ bool Workspace::cancelSourceRemoval() {
 bool Workspace::confirmSourceRemoval() {
     if (busy_ || pendingLeave_ || sourceRemoval_.isEmpty()) return false;
     const auto contextId = sourceRemoval_["contextId"].toString();
-    if ((viewSaving_ && viewSaveContext_ == contextId) || pendingViews_.contains(contextId)) {
+    const auto contextIds = sourceRemoval_["contextIds"].toStringList();
+    if ((viewSaving_ && contextIds.contains(viewSaveContext_))
+        || std::any_of(contextIds.cbegin(), contextIds.cend(), [&](const auto& id) { return pendingViews_.contains(id); })) {
         sourceImportError_ = "Wait for the context settings to finish saving."; emit changed(); return false;
     }
     const auto ids = sourceRemoval_["sessionIds"].toStringList();
     for (auto* owner : runtime_->windows)
-        if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId
+        if (owner->sourceInspection_ && contextIds.contains(owner->sourceInspection_->metadata.value("contextId").toString())
             && (owner->busy_ || owner->sourceEditing() || owner->yamlDirty() || owner->pendingLeave_)) {
             sourceImportError_="Save or discard the source draft in its owning window before removing this context.";
             emit changed(); return false;
@@ -1512,25 +1683,27 @@ bool Workspace::confirmSourceRemoval() {
     }
     sourceImportError_.clear(); busy_ = true; emit changed();
     for (auto* owner : runtime_->windows)
-        if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+        if (owner->sourceInspection_ && contextIds.contains(owner->sourceInspection_->metadata.value("contextId").toString()))
             emit owner->sourceInspectionChanged();
     auto* watcher = new QFutureWatcher<Result<SessionCatalog>>(this);
-    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, ids] {
+    connect(watcher, &QFutureWatcher<Result<SessionCatalog>>::finished, this, [this, watcher, contextId, contextIds, ids] {
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         const auto* failure = std::get_if<Failure>(&result);
         if (failure && failure->code!=StoreError::CleanupFailed)
             for (auto* owner : runtime_->windows)
-                if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+                if (owner->sourceInspection_ && contextIds.contains(owner->sourceInspection_->metadata.value("contextId").toString()))
                     emit owner->sourceInspectionChanged();
         if (!failure || failure->code == StoreError::CleanupFailed) {
             ++runtime_->contextCatalogRevision;
             for (auto* owner : runtime_->windows)
-                if (owner->sourceInspection_ && owner->sourceInspection_->metadata.value("contextId")==contextId)
+                if (owner->sourceInspection_ && contextIds.contains(owner->sourceInspection_->metadata.value("contextId").toString()))
                     owner->clearSourceInspection();
-            runtime_->contextUsage.remove(contextId);
-            runtime_->pendingUsage.remove(contextId);
-            runtime_->savingUsage.remove(contextId);
-            credentials_.revoke(importedCredentialId(contextId));
+            for (const auto& affected : contextIds) {
+                runtime_->contextUsage.remove(affected);
+                runtime_->pendingUsage.remove(affected);
+                runtime_->savingUsage.remove(affected);
+                credentials_.revoke(importedCredentialId(affected));
+            }
             for (const auto& id : ids) {
                 client_.close(id); alerts_.closeSession(id); navigation_.remove(id); resolvedContextRevision_.remove(id);
             }
@@ -1544,12 +1717,16 @@ bool Workspace::confirmSourceRemoval() {
         }
         for (auto& source : sources_.sources)
             source.contexts.erase(std::remove_if(source.contexts.begin(), source.contexts.end(),
-                [&](const auto& context) { return context.id == contextId; }), source.contexts.end());
+                [&](const auto& context) { return contextIds.contains(context.id); }), source.contexts.end());
         sources_.sources.erase(std::remove_if(sources_.sources.begin(), sources_.sources.end(),
             [](const auto& source) { return source.contexts.isEmpty(); }), sources_.sources.end());
-        reconcileMapPreviews(); runtime_->previews.forget(contextId);
-        runtime_->contextViews.remove(contextId); savedViews_.remove(contextId);
-        pendingViews_.remove(contextId); viewStateErrors_.remove(contextId);
+        for (const auto& affected : contextIds) {
+            sources_.replacements.remove(affected); sources_.pinned.remove(affected);
+            runtime_->previews.forget(affected);
+            runtime_->contextViews.remove(affected); savedViews_.remove(affected);
+            pendingViews_.remove(affected); viewStateErrors_.remove(affected);
+        }
+        reconcileMapPreviews();
         const auto& catalog = std::get<SessionCatalog>(result);
         if (viewsLoaded_) select(catalog);
         else catalog_ = catalog;
@@ -1609,7 +1786,7 @@ bool Workspace::mutate(const std::function<Result<SessionCatalog>(const SessionS
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) { error_ = failure->message; select(catalog_); return; }
         const auto catalog = std::get<SessionCatalog>(result);
-        if (!usedContext.isEmpty()) runtime_->recordContextUse(usedContext);
+        if (!usedContext.isEmpty()) runtime_->recordContextUse(sources_.replacements.value(usedContext, usedContext));
         if (!target.isEmpty()) { client_.close(target); alerts_.closeSession(target); navigation_.remove(target); resolvedContextRevision_.remove(target); }
         if (inWindow && catalog.activeSession) {
             catalog_ = catalog; runtime_->publishCatalog(catalog, this);
@@ -1695,7 +1872,7 @@ bool Workspace::activate(const QString& id) {
         if (workspacePage()=="map") { rememberMapSession(); client_.showSession(id,viewId_); emit changed(); }
         const bool accepted = client_.connection(id) && resolvedContextRevision_.value(id) == runtime_->contextCatalogRevision
             ? true : resolve(id);
-        if (accepted && entered) runtime_->recordContextUse(found->config.contextId);
+        if (accepted && entered) runtime_->recordContextUse(sources_.replacements.value(found->config.contextId, found->config.contextId));
         return accepted;
     }
     if (pendingLeave_ || (id != active_ && !allowLeave(Leave::Session, id))) return false;
@@ -1704,7 +1881,7 @@ bool Workspace::activate(const QString& id) {
     if (logsVisible()) client_.showLogs(id, navigation_.value(id).inspected, viewId_);
     else publishLogs();
     const bool accepted = mutate([id](const SessionStore& store) { return store.activate(QUuid(id)); });
-    if (accepted && entered) runtime_->recordContextUse(found->config.contextId);
+    if (accepted && entered) runtime_->recordContextUse(sources_.replacements.value(found->config.contextId, found->config.contextId));
     return accepted;
 }
 bool Workspace::close(const QString& id) {

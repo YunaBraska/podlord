@@ -133,17 +133,17 @@ Result<SessionCatalog> SessionStore::closeSessions(const QList<QUuid>& ids) cons
     });
 }
 Result<SessionCatalog> SessionStore::closeWorkspace() const { return mutate([](SessionCatalog) -> Result<SessionCatalog> { return SessionCatalog{}; }); }
-Result<SessionCatalog> SessionStore::removeContext(const QString& context, const QStringList& expected, const std::function<Result<bool>()>& remove) const {
+Result<SessionCatalog> SessionStore::removeContext(const QStringList& contexts, const QStringList& expected, const std::function<Result<bool>()>& remove) const {
     bool committed = false;
     auto result = mutate([&](SessionCatalog catalog) -> Result<SessionCatalog> {
         QStringList current;
-        for (const auto& tab : catalog.sessions) if (tab.config.contextId == context) current.append(tab.id.toString(QUuid::WithoutBraces));
+        for (const auto& tab : catalog.sessions) if (contexts.contains(tab.config.contextId)) current.append(tab.id.toString(QUuid::WithoutBraces));
         current.sort();
         if (current != expected) return Failure{StoreError::Conflict, "The affected tabs changed. Reopen the confirmation."};
         const auto removed = remove();
         if (const auto* failure = std::get_if<Failure>(&removed)) return *failure;
         committed = true;
-        catalog.sessions.erase(std::remove_if(catalog.sessions.begin(), catalog.sessions.end(), [&](const auto& tab) { return tab.config.contextId == context; }), catalog.sessions.end());
+        catalog.sessions.erase(std::remove_if(catalog.sessions.begin(), catalog.sessions.end(), [&](const auto& tab) { return contexts.contains(tab.config.contextId); }), catalog.sessions.end());
         if (catalog.activeSession && findSession(catalog, *catalog.activeSession) == catalog.sessions.end()) {
             catalog.activeSession.reset();
             if (!catalog.sessions.isEmpty()) catalog.activeSession = catalog.sessions.first().id;

@@ -63,7 +63,7 @@ public:
     Result<SessionCatalog> closeWorkspace() const;
 private:
     friend class KubeconfigStore;
-    Result<SessionCatalog> removeContext(const QString& contextId, const QStringList& expectedSessions,
+    Result<SessionCatalog> removeContext(const QStringList& contextIds, const QStringList& expectedSessions,
         const std::function<Result<bool>()>& remove) const;
     const QString profile_;
     Result<SessionCatalog> mutate(
