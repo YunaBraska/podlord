@@ -820,6 +820,7 @@ bool Workspace::valuesVisible() const { return currentNavigation().page == "valu
 bool Workspace::valuesAvailable() const { return isCoreValueResource(client_.resource(active_, inspectorPath())); }
 QString Workspace::monospaceFamily() const { return QFontDatabase::families().contains("Menlo") ? QString("Menlo") : QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
 QString Workspace::syncProblem() const {
+    if (authenticationRunning()) return {};
     auto message = client_.failureStatus(active_).section('\n', 0, 0);
     if (message.isEmpty()) return {};
     if (message.startsWith('/')) message = message.section(": ", 1);
@@ -2053,11 +2054,17 @@ bool Workspace::resolve(const QString& id, bool retry) {
                     const auto context = connection.contextId; connection = *cached; connection.contextId = context;
                 }
             }
+            const bool automaticOidc = id == active_ && !retry && !connection.credentialReady
+                && connection.exec && connection.exec->oidc && connection.exec->oidc->clientSecret.isEmpty()
+                && !runtime_->automaticOidcAttempts.contains(connection.credentialId);
             client_.open(id, connection, config.namespaces);
             if (id == active_ && !yamlFresh_ && !inspectorPath().isEmpty()) client_.inspect(id, inspectorPath());
             if (retry) {
                 if (connection.exec) credentials_.start(std::get<ClusterConnection>(result), id);
                 else client_.refresh(id, true);
+            } else if (automaticOidc) {
+                runtime_->automaticOidcAttempts.insert(connection.credentialId);
+                credentials_.start(std::get<ClusterConnection>(result), id);
             }
         }
         emit changed();

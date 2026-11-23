@@ -483,16 +483,21 @@ void NativeOidcLogin::poll() {
             if (error == "expired_token") {
                 finish(Failure{StoreError::ReadFailed, "OIDC sign-in code expired."}); return;
             }
-            static const QSet<QString> knownErrors{"invalid_client", "invalid_grant", "invalid_request",
-                "invalid_scope", "unauthorized_client", "unsupported_grant_type"};
-            finish(Failure{StoreError::ReadFailed, knownErrors.contains(error)
-                ? "OIDC token request failed (" + error + ")." : "OIDC token request failed (HTTP 400)."}); return;
+            acceptToken(status, object); return;
         }
         acceptToken(status, object);
     });
 }
 void NativeOidcLogin::acceptToken(int status, const QJsonObject& object) {
-    if (status != 200) { finish(invalidLogin()); return; }
+    if (status != 200) {
+        static const QSet<QString> knownErrors{"invalid_client", "invalid_grant", "invalid_request",
+            "invalid_scope", "unauthorized_client", "unsupported_grant_type"};
+        const auto error = object.value("error").toString();
+        finish(Failure{StoreError::ReadFailed, knownErrors.contains(error)
+            ? "OIDC token request failed (" + error + ")."
+            : "OIDC token request failed (HTTP " + QString::number(status) + ")."});
+        return;
+    }
     const auto& oidc = *connection_.exec->oidc;
     const auto token = object.value(oidc.useAccessToken ? "access_token" : "id_token").toString();
     if (token.isEmpty() || std::any_of(token.cbegin(), token.cend(), [](QChar c) { return c.isSpace() || c.category() == QChar::Other_Control; })) {

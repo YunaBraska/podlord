@@ -1,13 +1,21 @@
 #include "native_oidc.h"
+#include "kubernetes_auth_boundary.h"
+#include "workspace.h"
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QFile>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QQuickItem>
+#include <QQuickWindow>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
+#include <QTemporaryDir>
 #include <QUrlQuery>
 #include <cstdio>
 #include <functional>
@@ -90,10 +98,12 @@ public:
                     } else if (path == "/token") {
                         ++tokenRequests;
                         if (mode_ == "denied" || mode_ == "token_invalid_client" || mode_ == "token_private_error"
+                            || mode_ == "browser_token_rejected"
                             || ((mode_ == "pending" || mode_ == "slow_down") && tokenRequests == 1)) {
                             status = 400;
                             response = {{"error", mode_ == "denied" ? "access_denied"
                                 : mode_ == "token_invalid_client" ? "invalid_client"
+                                : mode_ == "browser_token_rejected" ? "unauthorized_client"
                                 : mode_ == "token_private_error" ? "private-secret-value"
                                 : mode_ == "slow_down" ? "slow_down" : "authorization_pending"}};
                         }
@@ -109,7 +119,8 @@ public:
                                 || fields.queryItemValue("client_id") != "podlord-client" || verifier.size() != 43
                                 || challenge != expectedChallenge) {
                                 status = 400; response = {{"error", "invalid_grant"}};
-                            } else response = {{"id_token", signedToken()}, {"access_token", "private-access-token"}, {"expires_in", 3600}};
+                            } else response = {{"id_token", signedToken()}, {"access_token", "private-access-token"},
+                                {"expires_in", mode_ == "browser_soon_expiry" ? 32 : 3600}};
                         }
                         else if (mode_ == "unsigned_id_token") {
                             const auto header = QJsonDocument(QJsonObject{{"alg", "none"}}).toJson(QJsonDocument::Compact)
@@ -529,6 +540,88 @@ bool browserFlow(const QString& scenario) {
         && (google || scenario == "browser_access_token" || ready->authorization.startsWith("Bearer ey"))
         && identity.tokenRequests == 1 && identity.jwksRequests == 1;
 }
+bool workspaceOidc(const QString& scenario) {
+    QTemporaryDir temporary;
+    IdentityBoundary identity(scenario == "workspace_auto_failure" ? "browser_missing_auth"
+        : scenario == "workspace_auto_token_rejected" ? "browser_token_rejected"
+        : scenario == "workspace_auto_expiry" ? "browser_soon_expiry" : "browser_valid");
+    podlord::test::Kubernetes cluster;
+    if (!temporary.isValid() || !identity.listen(QHostAddress::LocalHost, 0)
+        || !cluster.listen(QHostAddress::LocalHost, 0)) return false;
+    BrowserCapture browser;
+    const auto source = temporary.filePath("cluster.kubeconfig");
+    QFile file(source);
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    const auto config = "apiVersion: v1\nkind: Config\nclusters:\n- name: local\n  cluster:\n    server: http://127.0.0.1:"
+        + QByteArray::number(cluster.serverPort()) + "\nusers:\n- name: oidc\n  user:\n    exec:\n      apiVersion: client.authentication.k8s.io/v1\n      command: kubectl\n      interactiveMode: Never\n      args: [oidc-login, get-token, --oidc-issuer-url="
+        + identity.issuer().toUtf8() + ", --oidc-client-id=podlord-client"
+        + (scenario == "workspace_confirmation" ? ", --oidc-client-secret=private" : "")
+        + (scenario == "workspace_auto_expiry" ? ", --oidc-use-access-token" : "")
+        + "]\ncontexts:\n- name: local\n  context: {cluster: local, user: oidc}\n";
+    if (file.write(config) != config.size()) return false;
+    file.close();
+    auto clock = std::make_shared<QDateTime>(QDateTime::currentDateTimeUtc());
+    podlord::Workspace workspace(temporary.filePath("profile"), nullptr, [clock] { return *clock; });
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty("workspace", &workspace);
+    engine.load(QUrl("qrc:/podlord/Main.qml"));
+    if (engine.rootObjects().isEmpty()) return false;
+    auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+    if (!window || !waitFor([&] { return !workspace.busy(); }) || !workspace.quickImportFile(source)
+        || !waitFor([&] { return workspace.contexts().size() == 1 && !workspace.busy(); })
+        || !workspace.openContext(workspace.contexts().first().toMap().value("id").toString())) return false;
+    const auto find = [](auto&& self, QQuickItem* root, const QString& name) -> QQuickItem* {
+        if (root->objectName() == name) return root;
+        for (auto* child : root->childItems()) if (auto* found = self(self, child, name)) return found;
+        return nullptr;
+    };
+    auto* button = find(find, window->contentItem(), "authenticationButton");
+    if (!button) return false;
+    if (scenario == "workspace_confirmation")
+        return waitFor([&] { return !workspace.busy() && workspace.authenticationRequired(); })
+            && !workspace.authenticationRunning() && identity.requests == 0 && browser.opened == 0
+            && cluster.calls == 0 && button->isVisible();
+    if (scenario == "workspace_auto_failure") {
+        if (!waitFor([&] { return !workspace.busy() && workspace.authenticationRequired()
+                && !workspace.authenticationRunning() && !workspace.error().isEmpty(); })
+            || browser.opened != 0 || cluster.calls != 0 || !button->isVisible()) return false;
+        const auto requests = identity.requests;
+        return workspace.reload() && waitFor([&] { return !workspace.busy(); })
+            && identity.requests == requests && workspace.authenticationRequired() && button->isVisible();
+    }
+    if (!waitFor([&] { return browser.opened == 1 && workspace.authenticationRunning(); })
+        || !workspace.authenticationRequired() || button->isVisible()) return false;
+    const QUrlQuery authorization(browser.last);
+    identity.expectedRedirect = authorization.queryItemValue("redirect_uri", QUrl::FullyDecoded);
+    identity.expectedNonce = authorization.queryItemValue("nonce", QUrl::FullyDecoded);
+    identity.expectedChallenge = authorization.queryItemValue("code_challenge", QUrl::FullyDecoded);
+    const QUrl redirect(identity.expectedRedirect);
+    QUrlQuery response;
+    response.addQueryItem("state", authorization.queryItemValue("state", QUrl::FullyDecoded));
+    response.addQueryItem("code", "test-authorization-code");
+    QTcpSocket callback;
+    callback.connectToHost(QHostAddress::LocalHost, redirect.port());
+    if (!waitFor([&] { return callback.state() == QAbstractSocket::ConnectedState; })) return false;
+    callback.write("GET /?" + response.toString(QUrl::FullyEncoded).toUtf8() + " HTTP/1.1\r\nHost: localhost:"
+        + QByteArray::number(redirect.port()) + "\r\nConnection: close\r\n\r\n");
+    callback.flush();
+    if (!waitFor([&] { return callback.bytesAvailable() > 0; }) || !callback.readAll().startsWith("HTTP/1.1 200")) return false;
+    if (scenario == "workspace_auto_token_rejected")
+        return waitFor([&] { return !workspace.authenticationRunning() && workspace.authenticationRequired()
+            && workspace.error().contains("unauthorized_client"); })
+            && identity.tokenRequests == 1 && cluster.calls == 0 && button->isVisible();
+    if (!waitFor([&] { return !workspace.authenticationRunning() && !workspace.authenticationRequired()
+        && workspace.table()->rowCount() == 1 && !workspace.loading(); })
+        || identity.tokenRequests != 1 || !cluster.authorization.startsWith(
+            scenario == "workspace_auto_expiry" ? "Bearer private-access-token" : "Bearer ey") || button->isVisible()) return false;
+    if (scenario == "workspace_auto_expiry") {
+        *clock = clock->addSecs(45);
+        workspace.refresh(false);
+        return waitFor([&] { return browser.opened == 2 && workspace.authenticationRunning(); })
+            && workspace.authenticationRequired() && !button->isVisible();
+    }
+    return true;
+}
 
 bool invalidStart(const QString& scenario) {
     podlord::ClusterConnection connection;
@@ -557,6 +650,7 @@ int main(int argc, char** argv) {
     const auto args = app.arguments();
     const auto scenario = args.value(1);
     const bool passed = scenario == "parse" ? parse()
+        : scenario.startsWith("workspace_auto_") || scenario == "workspace_confirmation" ? workspaceOidc(scenario)
         : scenario.startsWith("start_") ? invalidStart(scenario)
         : scenario.startsWith("aks_") ? aksParse(scenario)
         : scenario.startsWith("browser_") ? browserFlow(scenario)

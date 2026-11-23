@@ -133,6 +133,7 @@ signals:
     /** A dispatched detail read completed; cached timestamps are not fresh-read authority. */
     void detailFinished(const QString& id, const QString& path, bool accepted);
     void authenticationRejected(const QString& credential);
+    void authenticationExpired(const QString& credential);
     void logsChanged(const QString& id, const QString& path);
     void yamlApplyFinished(const QString& id, const QString& path, const QString& token,
                            const QString& outcome, const QString& message, const QJsonObject& current);

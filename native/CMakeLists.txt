@@ -1050,7 +1050,7 @@ if(BUILD_TESTING)
     endforeach()
     target_link_libraries(authentication_ui_test PRIVATE podlord_workspace Qt6::Test)
     add_executable(native-oidc-test tests/native_oidc_test.cpp)
-    target_link_libraries(native-oidc-test PRIVATE podlord_sources Qt6::Test)
+    target_link_libraries(native-oidc-test PRIVATE podlord_workspace Qt6::Test)
     add_executable(native-eks-test tests/native_eks_test.cpp)
     target_link_libraries(native-eks-test PRIVATE podlord_sources)
     add_executable(aws-role-test tests/aws_role_test.cpp)
@@ -1261,7 +1261,8 @@ if(BUILD_TESTING)
             signed_short_signature signed_jwks_non_object signed_jwks_empty signed_jwks_long_modulus
             signed_jwks_long_exponent signed_jwks_zero_exponent signed_jwks_bad_exponent signed_jwks_empty_exponent
             signed_jwks_leading_zero)
-        list(APPEND oidc_scenarios browser_valid browser_loopback_success browser_bad_state browser_bad_nonce browser_denied browser_replay
+        list(APPEND oidc_scenarios workspace_auto_success workspace_auto_failure workspace_auto_token_rejected workspace_auto_expiry workspace_confirmation
+            browser_valid browser_loopback_success browser_bad_state browser_bad_nonce browser_denied browser_replay
             browser_access_token browser_cancel browser_missing_auth browser_jwks_server_error browser_jwks_bad_json
             browser_missing_id_token browser_missing_access_token browser_short_lifetime browser_long_lifetime
             browser_with_secret browser_wrong_path browser_fragment browser_empty_code browser_control_code browser_duplicate_error
@@ -1269,7 +1270,8 @@ if(BUILD_TESTING)
             browser_redirect_http browser_redirect_host browser_redirect_query browser_redirect_fragment browser_redirect_path browser_redirect_relative)
     foreach(scenario IN LISTS oidc_scenarios)
         add_test(NAME native.authentication.oidc_${scenario} COMMAND native-oidc-test ${scenario})
-        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 25 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 25
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
     foreach(scenario success authenticated_transport_failure cancel_confirmation cancel_running invalid_json array_json wrong_kind wrong_status token_type certificate_type key_type expiration_type bad_certificate bad_key wrong_version missing_status no_credentials bad_token expired bad_date failed_exit failed_start large_output v1beta1 relative_command invalid_mode requires_stdin invalid_args invalid_env mixed_credentials compact_inspector_401 retry_401 expiry cache_reopen restore shared_running shared_401 shutdown_running)
         add_test(NAME native.authentication.${scenario} COMMAND authentication_ui_test ${scenario})

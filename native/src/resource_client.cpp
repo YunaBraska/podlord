@@ -499,7 +499,7 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
     states_[id].open = true;
     if (views_.size() == 1 && views_.contains({}) && views_.value({}).session.isEmpty()) views_[{}].session = id;
     if (!states_[id].connection.credentialReady)
-        suspend(states_[id].connection.credentialId, "Authentication required. Confirm sign-in before a request is sent.");
+        suspend(states_[id].connection.credentialId, "Sign in required.");
     expire();
     if (reboundCache) emit rowsChanged(id);
     emit changed(id);
@@ -1236,7 +1236,10 @@ void ResourceClient::expire() {
             }
         }
     }
-    for (const auto& credential : expired) suspend(credential, "Credentials expired. Sign in again to reconnect.");
+    for (const auto& credential : expired) {
+        suspend(credential, "Credentials expired. Sign in again to reconnect.");
+        emit authenticationExpired(credential);
+    }
     if (next != std::numeric_limits<qint64>::max()) expiry_.start(static_cast<int>(std::min<qint64>(next, std::numeric_limits<int>::max())));
     for (auto& task : renewals) enqueue(std::move(task));
 }

@@ -12,10 +12,25 @@ WorkspaceRuntime::WorkspaceRuntime(QString selectedProfile, std::function<QDateT
     : profile(std::move(selectedProfile)), now(std::move(clock)), client(nullptr, now),
       releases(profile, nullptr, now, std::move(releaseEndpoint)) {
     QObject::connect(&client, &ResourceClient::authenticationRejected, &credentials, &CredentialProcess::invalidate);
+    QObject::connect(&client, &ResourceClient::authenticationExpired, &credentials, [this](const QString& credential) {
+        if (automaticOidcAttempts.contains(credential)) return;
+        for (const auto* window : windows) {
+            if (window->windowClosed_ || !window->windowVisible_) continue;
+            const auto connection = client.connection(window->active_);
+            if (!connection || connection->credentialId != credential || !connection->exec
+                || !connection->exec->oidc || !connection->exec->oidc->clientSecret.isEmpty()) continue;
+            automaticOidcAttempts.insert(credential);
+            credentials.start(*connection, window->active_);
+            break;
+        }
+    });
     QObject::connect(&credentials, &CredentialProcess::revoked, &client, &ResourceClient::forgetCredentials);
+    QObject::connect(&credentials, &CredentialProcess::revoked, &client,
+        [this](const QString& credential) { automaticOidcAttempts.remove(credential); });
     QObject::connect(&credentials, &CredentialProcess::completed, &client, [this](const QString& credential, const QString& session) {
         const auto result = credentials.result(credential);
         if (const auto* connection = std::get_if<ClusterConnection>(&result)) {
+            automaticOidcAttempts.remove(credential);
             QString foreground = session;
             for (const auto* window : windows) {
                 if (window->windowClosed_ || !window->windowVisible_) continue;
