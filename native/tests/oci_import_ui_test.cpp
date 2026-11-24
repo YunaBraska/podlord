@@ -333,8 +333,9 @@ bool run(const QString& scenario) {
             auto old = secret;
             auto metadata = old["metadata"].toObject(); metadata["resourceVersion"] = "late-A"; old["metadata"] = metadata;
             respond(heldA, old);
-            if (!QTest::qWaitFor([&] { return workspace.yamlText().contains("late-A"); }, 5000)
-                || workspace.canEditYaml() || workspace.beginYamlEdit() || workspace.revealValue("data/password", true)
+            if (!QTest::qWaitFor([&] { return heldA.isNull(); }, 5000)
+                || workspace.yamlText() != cachedYaml || workspace.canEditYaml() || workspace.beginYamlEdit()
+                || workspace.revealValue("data/password", true)
                 || secretVisible() || workspace.table()->rowCount() != 1) return false;
         }
         holdB = false;
@@ -351,7 +352,8 @@ bool run(const QString& scenario) {
             auto old = secret;
             auto metadata = old["metadata"].toObject(); metadata["resourceVersion"] = "late-A"; old["metadata"] = metadata;
             respond(heldA, old);
-            if (!QTest::qWaitFor([&] { return workspace.inspectorStatus().contains("A newer version is available."); }, 5000)
+            if (!QTest::qWaitFor([&] { return heldA.isNull(); }, 5000)
+                || workspace.inspectorStatus().contains("A newer version is available.")
                 || !workspace.canEditYaml() || workspace.yamlText() != cachedYaml || !secretVisible()
                 || !workspace.revealValue("data/password", true) || patches != 0) return failed("late A preserves accepted B freshness");
             rejectBDetail = true;
