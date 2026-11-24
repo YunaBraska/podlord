@@ -1453,7 +1453,7 @@ bool Workspace::importFile(const QString& path) {
 }
 bool Workspace::importOciCredentials(const QString& contextId, const QString& configPath, const QString& keyPath) {
     if (!retainDocumentReadAccess(configPath) || !retainDocumentReadAccess(keyPath)) {
-        sourceImportError_ = error_ = "Android cannot retain access to the selected OCI files. Select them again from the system file picker.";
+        sourceImportError_ = "Android cannot retain access to the selected OCI files. Select them again from the system file picker.";
         emit changed();
         return false;
     }
@@ -1465,7 +1465,7 @@ bool Workspace::importOciCredentials(const QString& contextId, const QString& co
 }
 bool Workspace::importGkeServiceAccount(const QString& contextId, const QString& keyPath) {
     if (!retainDocumentReadAccess(keyPath)) {
-        sourceImportError_ = error_ = "Android cannot read the selected Google service-account key. Select it again from the system file picker.";
+        sourceImportError_ = "Android cannot read the selected Google service-account key. Select it again from the system file picker.";
         emit changed();
         return false;
     }
@@ -1477,7 +1477,7 @@ bool Workspace::importGkeServiceAccount(const QString& contextId, const QString&
 }
 bool Workspace::importAwsProfile(const QString& contextId, const QString& configPath, const QString& credentialsPath) {
     for (const auto& path : {configPath, credentialsPath}) if (!path.isEmpty() && !retainDocumentReadAccess(path)) {
-        sourceImportError_ = error_ = "Cannot read the selected AWS profile document. Select it again from the system file picker.";
+        sourceImportError_ = "Cannot read the selected AWS profile document. Select it again from the system file picker.";
         emit changed(); return false;
     }
     return importSource([contextId, configPath, credentialsPath](const KubeconfigStore& store) -> Result<SourceImportReport> {
@@ -1642,7 +1642,7 @@ bool Workspace::importFiles(const QStringList& inputs) {
     auto paths = inputs; paths.removeDuplicates();
     if (paths.isEmpty() || busy_ || !pendingImportPaths_.isEmpty()) return false;
     for (const auto& path : paths) if (!retainDocumentReadAccess(path)) {
-        sourceImportError_ = error_ = "Cannot access the selected file. Choose it again.";
+        sourceImportError_ = "Cannot access the selected file. Choose it again.";
         emit changed(); return false;
     }
     sourceImportError_.clear(); sourceImportNotice_.clear(); sourceImportIssues_.clear();
@@ -1694,7 +1694,7 @@ bool Workspace::importStartupFiles(QStringList paths) {
     paths.removeDuplicates();
     if (paths.isEmpty() || busy_ || !pendingImportPaths_.isEmpty()) return false;
     for (const auto& path : paths) if (!retainDocumentReadAccess(path)) {
-        sourceImportError_ = error_ = "Cannot access the selected file. Choose it again.";
+        sourceImportError_ = "Cannot access the selected file. Choose it again.";
         emit changed(); return false;
     }
     return importSource([paths = std::move(paths)](const KubeconfigStore& store) {
@@ -1926,7 +1926,7 @@ bool Workspace::importSource(const std::function<Result<SourceImportReport>(cons
         const auto result = watcher->result(); watcher->deleteLater(); busy_ = false;
         if (const auto* failure = std::get_if<Failure>(&result)) {
             if (!ignoreInvalid || !failure->sourceInput) {
-                sourceImportError_ = failure->message; error_ = failure->message;
+                sourceImportError_ = failure->message;
             }
             emit changed(); emit sourceImportFinished(false);
         }

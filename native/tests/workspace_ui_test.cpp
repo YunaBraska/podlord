@@ -1067,10 +1067,15 @@ bool execute(const QString& requestedScenario) {
         bool admitted = false;
         if (!QMetaObject::invokeMethod(&workspace, "quickImportFile", Q_RETURN_ARG(bool, admitted), Q_ARG(QString, input))
             || !admitted || !waitFor([&] { return !workspace.busy(); })) return false;
-        if (scenario == "quick_file_invalid" || scenario == "quick_file_missing")
-            return workspace.contexts().isEmpty() && workspace.tabs().isEmpty()
-                && !workspace.error().isEmpty() && workspace.sourceImportError() == workspace.error()
-                && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
+        if (scenario == "quick_file_invalid" || scenario == "quick_file_missing") {
+            if (!workspace.contexts().isEmpty() || !workspace.tabs().isEmpty()
+                || workspace.error().isEmpty() || workspace.sourceImportError() != workspace.error()
+                || !workspace.sourceImportNotice().isEmpty() || !server.requests.isEmpty()) return false;
+            if (scenario == "quick_file_missing") return true;
+            if (!QFile::remove(path) || !QFile::copy(source, path) || !workspace.quickImportFile(path)) return false;
+            return waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; })
+                && workspace.error().isEmpty() && workspace.sourceImportError().isEmpty();
+        }
         return workspace.contexts().size() == 1 && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty()
             && server.requests.isEmpty();
     }
