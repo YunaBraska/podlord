@@ -1027,8 +1027,8 @@ Result<SessionCatalog> KubeconfigStore::removeContext(const QString& contextId, 
                 for (const auto& id : affected) paths.append({QDir(preferences).filePath(contextViewName(id)),
                     ociCredentialPath(std::get<QString>(directory), id), gkeCredentialPath(std::get<QString>(directory), id),
                     awsCredentialPath(std::get<QString>(directory), id)});
-                if (managedRetirement) for (const auto& source : std::get<SourceCatalog>(catalog).sources)
-                    if (managedPaths.contains(source.sourcePath)) paths.append(source.ownedPath);
+                if (managedRetirement) for (const auto& ownedSource : std::get<SourceCatalog>(catalog).sources)
+                    if (managedPaths.contains(ownedSource.sourcePath)) paths.append(ownedSource.ownedPath);
                 for (const auto& path : paths) {
                     const QFileInfo credential(path);
                     if ((credential.exists() || credential.isSymLink()) && !QFile::remove(path)) deleted = false;
