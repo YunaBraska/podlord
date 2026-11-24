@@ -5118,13 +5118,16 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("radar_info_panel")) {
             if (mapRadar && !waitFor([&] {
                 const auto* host=item(window,"resourceMapHost");
-                if (!host || !host->isVisible()) return false;
+                const auto* navigation=item(window,"radarNavigation");
+                if (!host || !host->isVisible() || !navigation || !navigation->isVisible()) return false;
                 const auto expected=host->mapRectToScene(QRectF(QPointF{},host->size())).adjusted(4,4,-4,-4);
                 const auto actual=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
-                return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.y()-expected.y())<=1
-                    && qAbs(actual.width()-expected.width())<=1 && qAbs(actual.height()-expected.height())<=1
+                const auto navigationBottom=navigation->mapRectToScene(navigation->boundingRect()).bottom();
+                return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.width()-expected.width())<=1
+                    && qAbs(actual.bottom()-expected.bottom())<=1 && actual.top()>=expected.top()
+                    && actual.top()>=navigationBottom && actual.top()-navigationBottom<=8
                     && !window->grabWindow().isNull();
-            })) return failed("expanded map renders at its full visible size");
+            })) return failed("expanded map fills the space below navigation");
             const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
             const auto first=radarPoint(radar,0);
             if (!first) return failed("first resource hover target");
