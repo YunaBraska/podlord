@@ -594,7 +594,7 @@ bool Alerts::dispatch() {
         }
         Presentation presentation;
         auto& state=presentation.state; state=initialState;
-        QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> triggered; QSet<QString> alive, visibleMatches;
+        QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> nextTriggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
         if (!reuse) {
             state.evaluatedAt = now; state.evaluateBefore = result.next;
@@ -617,8 +617,8 @@ bool Alerts::dispatch() {
             for (const auto& row : result.matches.value(id)) {
                 const auto path=row[QStringLiteral("path")].toString(), key=id+'\n'+path+'\n'+row[QStringLiteral("uid")].toString(); alive.insert(key); ++count; if (first.isEmpty()) first=path;
                 const Fingerprint fingerprint{row[QStringLiteral("status")],row[QStringLiteral("ready")],row[QStringLiteral("restarts")],row[QStringLiteral("issue")]};
-                const auto previous=state.triggered.constFind(key);
-                const bool entered=previous==state.triggered.cend() || previous.value()!=fingerprint; changed=changed || entered; triggered[key]=fingerprint;
+                const auto priorFingerprint=state.triggered.constFind(key);
+                const bool entered=priorFingerprint==state.triggered.cend() || priorFingerprint.value()!=fingerprint; changed=changed || entered; nextTriggered[key]=fingerprint;
                 const auto changedAt=state.changedAt.value(path);
                 const int severity=row["problemSeverity"].toInt();
                 if (entered && (focusPath.isEmpty() || changedAt>latestChange
@@ -663,7 +663,7 @@ bool Alerts::dispatch() {
             if (usesHolds) { for (const auto& row : result.rows) applyEffect(row); }
             else { for (const auto& row : result.matches.value(id)) applyEffect(row); }
         }
-        state.triggered=triggered;
+        state.triggered=nextTriggered;
         state.visibleMatches=visibleMatches;
         const auto prune=[&](QMap<QString,QDateTime>& holds) { for (auto it=holds.begin(); it!=holds.end();) { const auto parts=it.key().split('\n'); const bool exists=parts.size()==3 && result.rows.contains(parts[1]) && result.rows[parts[1]]["uid"]==parts[2]; if (!exists || it.value()<=now) it=holds.erase(it); else ++it; } };
         prune(state.colorUntil); prune(state.animationUntil);
