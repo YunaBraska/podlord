@@ -21,7 +21,8 @@ class NativeOidcLogin final : public QObject {
     Q_OBJECT
 public:
     enum class Flow { Device, Browser };
-    explicit NativeOidcLogin(ClusterConnection connection, Flow flow = Flow::Device, QObject* parent = nullptr);
+    explicit NativeOidcLogin(ClusterConnection connection, Flow flow = Flow::Device, QObject* parent = nullptr,
+        QString language = {});
     void start();
     void cancel();
     QString instruction() const;
@@ -48,7 +49,7 @@ private:
     QUrl jwksEndpoint_;
     QUrl browserUrl_;
     QUrl redirectUri_;
-    QString deviceCode_, instruction_, state_, nonce_, codeVerifier_;
+    QString deviceCode_, instruction_, state_, nonce_, codeVerifier_, language_;
     QDateTime deadline_;
     int interval_ = 5;
     bool done_ = false;

@@ -2060,11 +2060,11 @@ bool Workspace::resolve(const QString& id, bool retry) {
             client_.open(id, connection, config.namespaces);
             if (id == active_ && !yamlFresh_ && !inspectorPath().isEmpty()) client_.inspect(id, inspectorPath());
             if (retry) {
-                if (connection.exec) credentials_.start(std::get<ClusterConnection>(result), id);
+                if (connection.exec) credentials_.start(std::get<ClusterConnection>(result), id, settings_.language);
                 else client_.refresh(id, true);
             } else if (automaticOidc) {
                 runtime_->automaticOidcAttempts.insert(connection.credentialId);
-                credentials_.start(std::get<ClusterConnection>(result), id);
+                credentials_.start(std::get<ClusterConnection>(result), id, settings_.language);
             }
         }
         emit changed();

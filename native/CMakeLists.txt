@@ -1262,7 +1262,7 @@ if(BUILD_TESTING)
             signed_jwks_long_exponent signed_jwks_zero_exponent signed_jwks_bad_exponent signed_jwks_empty_exponent
             signed_jwks_leading_zero)
         list(APPEND oidc_scenarios workspace_auto_success workspace_auto_failure workspace_auto_token_rejected workspace_auto_expiry workspace_confirmation
-            browser_valid browser_loopback_success browser_bad_state browser_bad_nonce browser_denied browser_replay
+            browser_valid browser_loopback_success browser_loopback_de browser_bad_state browser_bad_nonce browser_denied browser_replay
             browser_access_token browser_cancel browser_missing_auth browser_jwks_server_error browser_jwks_bad_json
             browser_missing_id_token browser_missing_access_token browser_short_lifetime browser_long_lifetime
             browser_with_secret browser_wrong_path browser_fragment browser_empty_code browser_control_code browser_duplicate_error
@@ -1272,6 +1272,12 @@ if(BUILD_TESTING)
         add_test(NAME native.authentication.oidc_${scenario} COMMAND native-oidc-test ${scenario})
         set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 25
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
+    endforeach()
+    foreach(scenario live_zitadel_device live_zitadel_invalid_client live_zitadel_browser
+            live_zitadel_device_full live_zitadel_device_id_token_full live_zitadel_browser_full)
+        add_test(NAME native.authentication.oidc_${scenario} COMMAND native-oidc-test ${scenario})
+        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic" LABELS real-idp)
     endforeach()
     foreach(scenario success authenticated_transport_failure cancel_confirmation cancel_running invalid_json array_json wrong_kind wrong_status token_type certificate_type key_type expiration_type bad_certificate bad_key wrong_version missing_status no_credentials bad_token expired bad_date failed_exit failed_start large_output v1beta1 relative_command invalid_mode requires_stdin invalid_args invalid_env mixed_credentials compact_inspector_401 retry_401 expiry cache_reopen restore shared_running shared_401 shutdown_running)
         add_test(NAME native.authentication.${scenario} COMMAND authentication_ui_test ${scenario})
@@ -2110,7 +2116,7 @@ endif()
 if(TARGET workspace_ui_test)
     add_test(NAME native.ui.initial_load_navigation COMMAND workspace_ui_test initial_load_navigation)
     set_tests_properties(native.ui.initial_load_navigation PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic" LABELS behavior)
-    foreach(case map_auto_group map_auto_group_phone map_auto_import map_auto_retire map_auto_import_new map_auto_retire_new map_auto_uid_rotation map_auto_import_invalid map_auto_import_forbidden map_auto_import_mismatch map_card_close map_caption_copy map_caption_touch map_repeat_navigation map_menu_remove map_empty map_empty_phone map_overview map_alias map_phone map_landscape map_loaded_landscape map_boundaries map_overview_stability map_overview_lifecycle map_current_versions map_current_removed map_catalog_warning map_catalog_unreadable map_source_enter map_navigation map_search map_preview map_preview_expiry map_preview_deferred map_preview_restart map_restore_tab map_restore_metadata map_active_tab map_cleanup map_cache_settings  )
+    foreach(case map_auto_group map_auto_group_phone map_auto_import map_auto_retire map_auto_import_new map_auto_retire_new map_managed_provenance map_auto_uid_rotation map_auto_import_invalid map_auto_import_forbidden map_auto_import_mismatch map_card_close map_caption_copy map_caption_touch map_repeat_navigation map_menu_remove map_empty map_empty_phone map_overview map_alias map_phone map_landscape map_loaded_landscape map_boundaries map_overview_stability map_overview_lifecycle map_current_versions map_current_removed map_catalog_warning map_catalog_unreadable map_source_enter map_navigation map_search map_preview map_preview_expiry map_preview_deferred map_preview_restart map_restore_tab map_restore_metadata map_active_tab map_cleanup map_cache_settings  )
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${case}_${style} COMMAND workspace_ui_test ${case})
             set_tests_properties(native.ui.${case}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}" LABELS behavior)
@@ -2119,6 +2125,7 @@ if(TARGET workspace_ui_test)
             endif()
         endforeach()
     endforeach()
+    set_tests_properties(native.ui.map_overview_lifecycle_Basic native.ui.map_overview_lifecycle_Fusion PROPERTIES TIMEOUT 90)
 endif()
 
 if(TARGET workspace_ui_test)

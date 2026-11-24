@@ -31,6 +31,7 @@ ColumnLayout {
     property int sortableColumns: -1
     property int rowHeight: Math.max(32, Math.ceil(workspace.textSizes.cell * 1.3) + 12)
     property bool wrapCells: false
+    property int wrapColumn: -1
     property var actionColumns: []
     property var accessoryColumns: []
     property Component cellAccessory: null
@@ -493,7 +494,7 @@ ColumnLayout {
             font: cell.font
             color: identityColor.a > 0 ? identityColor : grid.colors.text
             verticalAlignment: Text.AlignVCenter
-            wrapMode: grid.wrapCells ? TextEdit.Wrap : TextEdit.NoWrap
+            wrapMode: grid.wrapCells || cell.column === grid.wrapColumn ? TextEdit.Wrap : TextEdit.NoWrap
             TapHandler {
                 acceptedButtons: Qt.LeftButton
                 gesturePolicy: TapHandler.DragThreshold

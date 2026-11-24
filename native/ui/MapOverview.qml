@@ -19,6 +19,8 @@ Pane {
         return result
     }
     readonly property var ungroupedContexts: contexts.filter(context => !context.groupId)
+    readonly property real cardWidth: width / Math.max(1, Math.floor(width / 240))
+    readonly property real cardHeight: Math.max(1, Math.min(224, height))
     readonly property var groupRows: {
         const rows = []
         const columns = Math.max(1, Math.floor(width / 240))
@@ -65,8 +67,8 @@ Pane {
             visible: overview.groups.length === 0
             Layout.fillWidth: true; Layout.fillHeight: true
             clip: true; cacheBuffer: 0
-            cellWidth: width / Math.max(1, Math.floor(width / 240))
-            cellHeight: Math.max(1, Math.min(224, height))
+            cellWidth: overview.cardWidth
+            cellHeight: overview.cardHeight
             model: overview.groups.length === 0 ? overview.contexts : []
             ScrollBar.vertical: ScrollBar {}
             delegate: contextCard
@@ -83,7 +85,7 @@ Pane {
                 id: groupRow
                 required property var modelData
                 width: groupedCards.width
-                height: modelData.heading ? 28 : cards.cellHeight
+                height: modelData.heading ? 28 : overview.cardHeight
                 SelectableText {
                     objectName: groupRow.modelData.heading ? "contextGroup_" + groupRow.modelData.id : ""
                     visible: groupRow.modelData.heading
@@ -104,7 +106,7 @@ Pane {
                 id: card
                 required property var modelData
                 objectName: "contextMapCard_" + modelData.id
-                width: cards.cellWidth - 8; height: Math.max(0, cards.cellHeight - 8)
+                width: overview.cardWidth - 8; height: Math.max(0, overview.cardHeight - 8)
                 padding: 8
                 enabled: !workspace.busy
                 readonly property string openSessionId: modelData.openSessionId || ""
@@ -118,7 +120,7 @@ Pane {
                     border.color: card.openSessionId || card.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
                 }
                 contentItem: GridLayout {
-                    readonly property bool horizontal: cards.cellHeight < 160
+                    readonly property bool horizontal: overview.cardHeight < 160
                     columns: horizontal ? 2 : 1
                     columnSpacing: 8; rowSpacing: 4
                     Item {

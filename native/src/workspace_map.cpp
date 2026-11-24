@@ -2,6 +2,7 @@
 #include "workspace_runtime.h"
 #include <algorithm>
 #include <QClipboard>
+#include <QCryptographicHash>
 #include <QGuiApplication>
 #include <QFutureWatcher>
 #include <QHash>
@@ -15,7 +16,7 @@ void Workspace::refreshMapContexts(bool reorder) {
     for (const auto& value : contexts()) if (value.toMap().value("current").toBool()) next.append(value);
     QHash<QString, QString> managerByEndpoint;
     QSet<QString> ambiguousEndpoints;
-    QHash<QString, QString> managerNames;
+    QHash<QString, QString> managerNames, managerByOrigin, originByContext;
     QSet<QString> contextIds, importedEndpoints;
     QHash<QString, QString> endpointByContext;
     for (const auto& value : next) {
@@ -30,6 +31,11 @@ void Workspace::refreshMapContexts(bool reorder) {
         endpointByContext.insert(context.id, endpoint);
         importedEndpoints.insert(endpoint);
         if (!managerNames.contains(endpoint)) managerNames.insert(endpoint, context.cluster.isEmpty() ? context.displayName : context.cluster);
+        const auto origin = QCryptographicHash::hash(source.sourcePath.toUtf8() + '\0' + context.name.toUtf8(),
+            QCryptographicHash::Sha256).toHex();
+        managerByOrigin.insert(QString::fromLatin1(origin), endpoint);
+        if (source.sourcePath.startsWith("managed://capi/"))
+            originByContext.insert(context.id, source.sourcePath.mid(QStringLiteral("managed://capi/").size(), 64));
     }
     for (const auto& session : catalog_.sessions) {
         const auto connection = client_.connection(session.id.toString(QUuid::WithoutBraces));
@@ -55,8 +61,9 @@ void Workspace::refreshMapContexts(bool reorder) {
         auto context = value.toMap();
         const auto id = context.value("id").toString();
         const auto endpoint = endpointByContext.value(id);
-        const auto manager = managerByEndpoint.value(endpoint);
-        if (manager.isEmpty() || manager == endpoint || ambiguousEndpoints.contains(endpoint)) continue;
+        const auto owner = managerByOrigin.value(originByContext.value(id));
+        const auto manager = owner.isEmpty() ? managerByEndpoint.value(endpoint) : owner;
+        if (manager.isEmpty() || manager == endpoint || (owner.isEmpty() && ambiguousEndpoints.contains(endpoint))) continue;
         context.insert("groupId", manager);
         context.insert("groupName", managerNames.value(manager, manager));
         context.insert("groupRole", "workload");

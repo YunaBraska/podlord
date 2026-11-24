@@ -1100,7 +1100,14 @@ ApplicationWindow {
                     }
                     Item {
                         anchors.fill: parent
-                        Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts } }
+                        Loader {
+                            anchors.left: parent.left; anchors.right: parent.right
+                            anchors.top: parent.top; anchors.topMargin: mapNavigationSlot.height
+                            anchors.bottom: parent.bottom
+                            active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview
+                            visible: active
+                            sourceComponent: MapOverview { contexts: window.mapContexts }
+                        }
                         Item { id: resourceMapHost; objectName: "resourceMapHost"; anchors.fill: parent; visible: !workspace.mapOverview }
                     }
                 }

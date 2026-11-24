@@ -1,4 +1,5 @@
 #include "native_oidc.h"
+#include "ui_language.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDesktopServices>
@@ -256,8 +257,8 @@ Result<std::optional<OidcLogin>> nativeAks(const ExecCommand& command) {
     return std::optional<OidcLogin>{std::move(login)};
 }
 
-NativeOidcLogin::NativeOidcLogin(ClusterConnection connection, Flow flow, QObject* parent)
-    : QObject(parent), connection_(std::move(connection)), flow_(flow) {
+NativeOidcLogin::NativeOidcLogin(ClusterConnection connection, Flow flow, QObject* parent, QString language)
+    : QObject(parent), connection_(std::move(connection)), flow_(flow), language_(std::move(language)) {
     timer_.setSingleShot(true);
     connect(&timer_, &QTimer::timeout, this, [this] {
         if (flow_ == Flow::Browser) finish(Failure{StoreError::ReadFailed, "Browser sign-in expired. Confirm another attempt to retry."});
@@ -352,8 +353,8 @@ void NativeOidcLogin::start() {
                         const bool accepted = valid && !state_.isEmpty() && states.size() == 1 && states.front() == state_
                             && ((codes.size() == 1 && !codes.front().isEmpty() && errors.isEmpty())
                                 || (errors.size() == 1 && codes.isEmpty()));
-                        const QByteArray body = accepted ? "Sign-in received. Return to PodLord." : "Invalid sign-in response.";
-                        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Length: "
+                        const QByteArray body = localizedAuthCallbackPage(accepted, language_);
+                        socket->write("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'\r\nContent-Length: "
                             + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
                         socket->disconnectFromHost();
                         if (accepted) handleRedirect(callback);

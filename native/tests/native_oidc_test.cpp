@@ -4,9 +4,14 @@
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QTimer>
 #include <QFile>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -29,8 +34,14 @@ namespace {
 class BrowserCapture final : public QObject {
     Q_OBJECT
 public:
-    BrowserCapture() { QDesktopServices::setUrlHandler("https", this, "open"); }
-    ~BrowserCapture() override { QDesktopServices::unsetUrlHandler("https"); }
+    BrowserCapture() {
+        QDesktopServices::setUrlHandler("https", this, "open");
+        QDesktopServices::setUrlHandler("http", this, "open");
+    }
+    ~BrowserCapture() override {
+        QDesktopServices::unsetUrlHandler("https");
+        QDesktopServices::unsetUrlHandler("http");
+    }
     int opened = 0;
     QUrl last;
 public slots:
@@ -456,7 +467,8 @@ bool browserFlow(const QString& scenario) {
     if (scenario == "browser_redirect_relative") connection.exec->oidc->redirectUri = QUrl("/oauth2redirect");
     connection.exec->oidc->useAccessToken = google || scenario == "browser_access_token" || scenario == "browser_missing_id_token"
         || scenario == "browser_missing_access_token" || scenario == "browser_short_lifetime" || scenario == "browser_long_lifetime";
-    podlord::NativeOidcLogin login(std::move(connection), podlord::NativeOidcLogin::Flow::Browser);
+    podlord::NativeOidcLogin login(std::move(connection), podlord::NativeOidcLogin::Flow::Browser, nullptr,
+        scenario == "browser_loopback_de" ? "de" : "en");
     std::optional<podlord::Result<podlord::ClusterConnection>> result;
     QObject::connect(&login, &podlord::NativeOidcLogin::completed, &login,
         [&](podlord::Result<podlord::ClusterConnection> value) { result = std::move(value); });
@@ -513,7 +525,11 @@ bool browserFlow(const QString& scenario) {
         socket.write("GET " + target + " HTTP/1.1\r\nHost: localhost:" + QByteArray::number(redirect.port())
             + "\r\nConnection: close\r\n\r\n");
         socket.flush();
-        if (!waitFor([&] { return socket.bytesAvailable() > 0; }) || !socket.readAll().startsWith("HTTP/1.1 200")) return false;
+        if (!waitFor([&] { return socket.bytesAvailable() > 0; })) return false;
+        const auto callback = socket.readAll();
+        if (!callback.startsWith("HTTP/1.1 200") || !callback.contains("Content-Type: text/html")) return false;
+        if (scenario == "browser_loopback_de" && (!callback.contains("lang=\"de\"")
+            || !callback.contains("PodLord schließt sie ab"))) return false;
     } else if (!QDesktopServices::openUrl(redirect)) return false;
     if (scenario == "browser_bad_state" || scenario == "browser_duplicate_state") {
         QTest::qWait(50);
@@ -643,13 +659,131 @@ bool invalidStart(const QString& scenario) {
     QTest::qWait(20);
     return completions == 1;
 }
+bool liveZitadel(const QString& scenario) {
+    const auto issuer = qEnvironmentVariable("PODLORD_ZITADEL_ISSUER");
+    const auto clientId = qEnvironmentVariable("PODLORD_ZITADEL_CLIENT_ID");
+    if (issuer.isEmpty() || clientId.isEmpty()) return false;
+    BrowserCapture browser;
+    podlord::ClusterConnection connection;
+    connection.exec.emplace();
+    connection.exec->oidc.emplace();
+    connection.exec->oidc->issuer = QUrl(issuer);
+    connection.exec->oidc->clientId = scenario == "live_zitadel_invalid_client" ? clientId + "-invalid" : clientId;
+    connection.exec->oidc->useAccessToken = scenario != "live_zitadel_device_id_token_full";
+    const bool browserFlow = scenario.startsWith("live_zitadel_browser");
+    connection.exec->oidc->deviceCodeGrant = !browserFlow;
+    if (browserFlow) connection.exec->oidc->redirectUri = QUrl("http://localhost:8427");
+    podlord::NativeOidcLogin login(std::move(connection), browserFlow
+        ? podlord::NativeOidcLogin::Flow::Browser : podlord::NativeOidcLogin::Flow::Device);
+    std::optional<podlord::Result<podlord::ClusterConnection>> result;
+    QObject::connect(&login, &podlord::NativeOidcLogin::completed, &login,
+        [&](podlord::Result<podlord::ClusterConnection> value) { result = std::move(value); });
+    login.start();
+    if (scenario == "live_zitadel_invalid_client")
+        return waitFor([&] { return result.has_value(); }, 10000)
+            && std::holds_alternative<podlord::Failure>(*result) && browser.opened == 0;
+    if (!waitFor([&] { return browser.opened == 1; }, 10000)) return false;
+    if (browserFlow) {
+        const QUrlQuery query(browser.last);
+        if (query.queryItemValue("client_id") != clientId || query.queryItemValue("response_type") != "code"
+            || query.queryItemValue("redirect_uri") != "http://localhost:8427"
+            || query.queryItemValue("state").size() != 43 || query.queryItemValue("code_challenge").size() != 43)
+            return false;
+    } else if (!login.instruction().contains("code") || !login.browserAvailable()
+        || browser.last.host() != "localhost") return false;
+    if (scenario.endsWith("_full")) {
+        QFile credential(qEnvironmentVariable("PODLORD_ZITADEL_LOGIN_PAT_FILE"));
+        if (!credential.open(QIODevice::ReadOnly)) return false;
+        const auto token = credential.readAll().trimmed();
+        if (token.isEmpty()) return false;
+        QNetworkAccessManager network;
+        const auto request = [&](const QByteArray& method, const QString& path, const QJsonObject& payload = {}) {
+            QNetworkRequest call(QUrl(issuer + path));
+            call.setRawHeader("Authorization", "Bearer " + token);
+            call.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            call.setTransferTimeout(10000);
+            QNetworkReply* reply = method == "GET" ? network.get(call)
+                : network.sendCustomRequest(call, method, QJsonDocument(payload).toJson(QJsonDocument::Compact));
+            QEventLoop loop;
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+            const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const auto response = QJsonDocument::fromJson(reply->readAll()).object();
+            reply->deleteLater();
+            if (status < 200 || status >= 300) qWarning() << "Live Zitadel step failed:" << method << path << status;
+            return status >= 200 && status < 300 ? response.isEmpty() ? QJsonObject{{"ok", true}} : response : QJsonObject{};
+        };
+        QString authorizationId;
+        if (browserFlow) {
+            QNetworkRequest authorize(browser.last);
+            authorize.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+            authorize.setTransferTimeout(10000);
+            auto* reply = network.get(authorize);
+            QEventLoop loop;
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+            const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const auto location = reply->header(QNetworkRequest::LocationHeader).toUrl();
+            reply->deleteLater();
+            if (status != 302) return false;
+            authorizationId = QUrlQuery(location).queryItemValue("authRequest");
+            const auto observed = request("GET", "/v2/oidc/auth_requests/" + authorizationId)
+                .value("authRequest").toObject();
+            if (observed.value("clientId").toString() != clientId) return false;
+        } else {
+            const auto userCode = QUrlQuery(browser.last).queryItemValue("user_code");
+            authorizationId = request("GET", "/v2/oidc/device_authorization/" + userCode)
+                .value("deviceAuthorizationRequest").toObject().value("id").toString();
+        }
+        const auto username = qEnvironmentVariable("PODLORD_ZITADEL_TEST_USERNAME");
+        const auto password = qEnvironmentVariable("PODLORD_ZITADEL_TEST_PASSWORD");
+        if (authorizationId.isEmpty() || username.isEmpty() || password.isEmpty()) return false;
+        const auto session = request("POST", "/v2/sessions", {{"checks", QJsonObject{{"user", QJsonObject{{"loginName", username}}}}}});
+        const auto sessionId = session.value("sessionId").toString();
+        if (sessionId.isEmpty()) return false;
+        const auto verified = request("PATCH", "/v2/sessions/" + sessionId,
+            {{"checks", QJsonObject{{"password", QJsonObject{{"password", password}}}}}});
+        const auto sessionToken = verified.value("sessionToken").toString();
+        if (sessionToken.isEmpty()) return false;
+        const auto approved = request("POST", browserFlow ? "/v2/oidc/auth_requests/" + authorizationId
+            : "/v2/oidc/device_authorization/" + authorizationId,
+            {{"session", QJsonObject{{"sessionId", sessionId}, {"sessionToken", sessionToken}}}});
+        if (approved.isEmpty()) return false;
+        if (browserFlow) {
+            const QUrl callback(approved.value("callbackUrl").toString());
+            if (!callback.isValid() || callback.host() != "localhost" || callback.port() != 8427) return false;
+            QNetworkRequest returned(callback);
+            returned.setTransferTimeout(10000);
+            auto* reply = network.get(returned);
+            QEventLoop loop;
+            QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+            loop.exec();
+            const auto status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            const auto page = reply->readAll();
+            reply->deleteLater();
+            if (status != 200 || !page.contains("PodLord")) return false;
+        }
+        if (!waitFor([&] { return result.has_value(); }, 12000)) return false;
+        const auto* ready = std::get_if<podlord::ClusterConnection>(&*result);
+        return ready && ready->credentialReady && ready->authorization.startsWith("Bearer ")
+            && ready->expiresAt > QDateTime::currentDateTimeUtc().addSecs(30);
+    }
+    login.cancel();
+    return result.has_value() && std::holds_alternative<podlord::Failure>(*result);
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
     const auto args = app.arguments();
     const auto scenario = args.value(1);
+    if (scenario.startsWith("live_zitadel_") && (qEnvironmentVariableIsEmpty("PODLORD_ZITADEL_ISSUER")
+        || qEnvironmentVariableIsEmpty("PODLORD_ZITADEL_CLIENT_ID")
+        || (scenario.endsWith("_full") && (qEnvironmentVariableIsEmpty("PODLORD_ZITADEL_LOGIN_PAT_FILE")
+            || qEnvironmentVariableIsEmpty("PODLORD_ZITADEL_TEST_USERNAME")
+            || qEnvironmentVariableIsEmpty("PODLORD_ZITADEL_TEST_PASSWORD"))))) return 77;
     const bool passed = scenario == "parse" ? parse()
+        : scenario.startsWith("live_zitadel_") ? liveZitadel(scenario)
         : scenario.startsWith("workspace_auto_") || scenario == "workspace_confirmation" ? workspaceOidc(scenario)
         : scenario.startsWith("start_") ? invalidStart(scenario)
         : scenario.startsWith("aks_") ? aksParse(scenario)

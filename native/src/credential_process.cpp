@@ -122,7 +122,7 @@ bool CredentialProcess::cancel(const QString& credential) {
     job->process->kill(); return true;
 #endif
 }
-bool CredentialProcess::start(ClusterConnection connection, const QString& session) {
+bool CredentialProcess::start(ClusterConnection connection, const QString& session, const QString& language) {
     if (!connection.exec) return false;
     const auto id = connection.credentialId;
     if (connection.exec->gke) {
@@ -173,7 +173,7 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
 #else
         const bool browser = false;
 #endif
-        auto* login = new NativeOidcLogin(std::move(connection), browser ? NativeOidcLogin::Flow::Browser : NativeOidcLogin::Flow::Device, this);
+        auto* login = new NativeOidcLogin(std::move(connection), browser ? NativeOidcLogin::Flow::Browser : NativeOidcLogin::Flow::Device, this, language);
         nativeJobs_.insert(id, login);
         connect(login, &NativeOidcLogin::instructionChanged, this, &CredentialProcess::changed);
         connect(login, &NativeOidcLogin::completed, this, [this, id, session, guard = QPointer<NativeOidcLogin>(login)](Result<ClusterConnection> result) {

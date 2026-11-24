@@ -20,7 +20,7 @@ WorkspaceRuntime::WorkspaceRuntime(QString selectedProfile, std::function<QDateT
             if (!connection || connection->credentialId != credential || !connection->exec
                 || !connection->exec->oidc || !connection->exec->oidc->clientSecret.isEmpty()) continue;
             automaticOidcAttempts.insert(credential);
-            credentials.start(*connection, window->active_);
+            credentials.start(*connection, window->active_, window->settings_.language);
             break;
         }
     });

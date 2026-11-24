@@ -14,7 +14,7 @@ public:
     explicit CredentialProcess(QObject* parent = nullptr);
     ~CredentialProcess() override;
     /** Starts one explicitly confirmed command per credential context, without a shell or stdin. */
-    bool start(ClusterConnection connection, const QString& session);
+    bool start(ClusterConnection connection, const QString& session, const QString& language = {});
     bool cancel(const QString& credential);
     bool invalidate(const QString& credential);
     /** Cancels owned authentication and forgets its result, including late completions. */

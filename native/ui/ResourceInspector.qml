@@ -418,7 +418,7 @@ Pane {
             objectName: "inspectorLinks"
             prefix: "inspectorLink"; tableModel: workspace.inspectorLinkTable; columns: workspace.inspectorLinkColumns
             rowHeight: Math.max(72, Math.ceil(workspace.textSizes.cell * 3.3) + 12)
-            wrapCells: true
+            wrapColumn: 6
             sortColumn: workspace.inspectorLinkSortColumn; sortDirection: workspace.inspectorLinkSortDirection
             emptyObjectName: "emptyInspectorLinks"
             emptyText: workspace.uiText["inspector.noLinks"]

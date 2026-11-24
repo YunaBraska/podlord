@@ -774,6 +774,13 @@ bool execute(const QString& requestedScenario) {
     file.close();
     const auto profile = temporary.filePath("profile");
     QDateTime reference = QDateTime::currentDateTimeUtc();
+    if (scenario == "map_managed_provenance") {
+        podlord::KubeconfigStore store(profile);
+        if (!std::holds_alternative<podlord::SourceSnapshot>(store.importFile(source))) return false;
+        const QByteArray managed = "apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: https://wlc.example:6443}\nusers:\n- name: workload\n  user: {token: managed-test-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: workload}\n";
+        if (!std::holds_alternative<podlord::SourceSnapshot>(store.importManagedKubeconfig(
+            source, "local", "uid-workload", "wlc.example:6443", managed))) return false;
+    }
     if (scenario == "settings_invalid") {
         if (!QDir().mkpath(profile)) return false;
         QFile invalid(QDir(profile).filePath("read-settings.json"));
@@ -802,6 +809,32 @@ bool execute(const QString& requestedScenario) {
         std::fprintf(stderr,"UI render surface unavailable: platform=%s window=%d visible=%d exposed=%d active=%d\n",
             qPrintable(QGuiApplication::platformName()),bool(window),window && window->isVisible(),window && window->isExposed(),window && window->isActive());
         return false;
+    }
+    if (scenario == "map_managed_provenance") {
+        const auto grouped = [&] {
+            if (workspace.contexts().size() != 4 || workspace.mapContexts().size() != 4) return false;
+            const auto rows = workspace.mapContexts();
+            const auto manager = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "local";
+            });
+            if (manager == rows.cend() || manager->toMap().value("groupRole") != "management") return false;
+            const auto group = manager->toMap().value("groupId").toString();
+            const auto workload = std::find_if(rows.cbegin(), rows.cend(), [&](const auto& value) {
+                const auto row = value.toMap();
+                return row.value("context") == "workload" && row.value("groupId") == group
+                    && row.value("groupRole") == "workload";
+            });
+            if (group.isEmpty() || workload == rows.cend()) return false;
+            auto* heading = item(window, "contextGroup_" + group);
+            auto* title = item(window, "mapTitle");
+            auto* managerCard = item(window, "contextMapCard_" + manager->toMap().value("id").toString());
+            auto* workloadCard = item(window, "contextMapCard_" + workload->toMap().value("id").toString());
+            return heading && title && heading->mapToScene({0, 0}).y()
+                    >= title->mapToScene({0, title->height()}).y()
+                && managerCard && workloadCard && managerCard->height() > 80 && workloadCard->height() > 80
+                && displayedWithin(window->contentItem(), managerCard);
+        };
+        return waitFor(grouped) && saveShellFrame(window, scenario, item(window, "contextMapCards"));
     }
     QString renameStage = "source import/open";
     bool renamePassed = false;
@@ -5909,6 +5942,22 @@ bool execute(const QString& requestedScenario) {
             if (scenario.contains("_color_")) return eventColor("inspectorEventCell_0_1") && server.requests.size() == calls;
             const auto operation = scenario.section('_', -1);
             if (operation == "messages") {
+                auto* linkGrid = item(window, "inspectorLinks");
+                auto* firstCell = item(window, "inspectorLinkCell_0_5");
+                if (!linkGrid || linkGrid->property("wrapColumn").toInt() != 6 || !firstCell) {
+                    std::fprintf(stderr, "Links layout: grid=%d wrap=%d first=%d\n", bool(linkGrid),
+                        linkGrid ? linkGrid->property("wrapColumn").toInt() : -1, bool(firstCell));
+                    return false;
+                }
+                const auto children = firstCell->childItems();
+                const auto label = std::find_if(children.cbegin(), children.cend(), [](auto* child) {
+                    return child->metaObject()->indexOfProperty("wrapMode") >= 0;
+                });
+                if (label == children.cend() || (*label)->property("wrapMode").toInt() != 0) {
+                    std::fprintf(stderr, "Links first cell wrap: child=%d mode=%d\n", label != children.cend(),
+                        label != children.cend() ? (*label)->property("wrapMode").toInt() : -1);
+                    return false;
+                }
                 if (event || model->index(0, 0).data().toString() != "alpha"
                     || model->index(0, 1).data().toString() != QStringLiteral("●")
                     || model->index(0, 5).data().toString() != "Pod/alpha"
