@@ -170,8 +170,8 @@ public:
                         && (scenario.startsWith("map_auto_import") || scenario.startsWith("map_auto_retire") || scenario == "map_auto_uid_rotation")) {
                         if (scenario == "map_auto_import_forbidden") status = 403;
                         const QByteArray user = scenario == "map_auto_import_invalid"
-                            ? "exec: {command: /bin/echo, apiVersion: client.authentication.k8s.io/v1beta1}"
-                            : "token: managed-test-token-" + QByteArray::number(managedSecretVersion);
+                            ? QByteArrayLiteral("exec: {command: /bin/echo, apiVersion: client.authentication.k8s.io/v1beta1}")
+                            : QByteArrayLiteral("token: managed-test-token-") + QByteArray::number(managedSecretVersion);
                         const QByteArray url = scenario == "map_auto_import_mismatch" ? "https://other.example:6443" : "https://wlc.example:6443";
                         const QByteArray yaml = "apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: " + url + "}\nusers:\n- name: managed\n  user: {"
                             + user + "}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: managed}\n";
@@ -4084,9 +4084,9 @@ bool execute(const QString& requestedScenario) {
             else QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start - QPoint(60, 0));
             if (!waitFor([&] { return view->property("contentX").toDouble() > previousX + 20 && !view->property("moving").toBool(); })
                 || !workspace.inspectorPath().isEmpty() || server.requests.size() != requests) {
-                std::fprintf(stderr, "Table drag: touch=%d before=%g after=%g moving=%d inspector=%s requests=%d/%d\n",
+                std::fprintf(stderr, "Table drag: touch=%d before=%g after=%g moving=%d inspector=%s requests=%lld/%lld\n",
                     touchInput, previousX, view->property("contentX").toDouble(), view->property("moving").toBool(),
-                    qPrintable(workspace.inspectorPath()), server.requests.size(), requests);
+                    qPrintable(workspace.inspectorPath()), static_cast<long long>(server.requests.size()), static_cast<long long>(requests));
                 return false;
             }
             if (!show(column("name"))) return false;

@@ -1404,13 +1404,6 @@ void ResourceClient::dispatch() {
     }
     connect(reply, &QNetworkReply::finished, this, [this, reply, task, payload, tlsErrors, parallel, url, authorization = connection.authorization] {
         Task completion = task; completion.foreground = parallel ? reads_.value(reply).foreground : running_->foreground;
-        if (states_[task.id].revision != task.revision) {
-            reply->deleteLater();
-            if (parallel) reads_.remove(reply); else running_.reset();
-            emit changed(task.id);
-            dispatch(); scheduleSync(); scheduleLogs();
-            return;
-        }
         const auto remaining = reply->readAll();
         if (task.read == Read::ManagedKubeconfig && !payload->limited) payload->bytes.append(remaining);
         const auto& received = task.read == Read::ManagedKubeconfig ? payload->bytes : remaining;
