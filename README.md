@@ -51,13 +51,12 @@ sh scripts/test-native-kubernetes.sh
 ```
 
 The first command builds and runs native tests, benchmarks and coverage reports.
-The second exercises real, disposable local Kubernetes and requires Docker or
-Colima for tests only. Owned test containers and data must be cleaned up.
+The second exercises real, disposable local Kubernetes and requires the Docker
+CLI with a compatible local runtime. Owned test containers and data are cleaned up.
 
-Native coverage targets 95% lines and 85% branches overall, with 90% branch
-targets for new production logic. Misses are reported for review and do not
-hide a functional result or block a release. Counts include meaningful style
-variants, not that many different product features.
+Native qualification requires 95% line and 85% branch coverage overall, plus
+90% branch coverage for named critical components. A miss fails qualification.
+Basic and Fusion style runs check the same behavior under different UI styles.
 
 ## Qualification and Release
 
