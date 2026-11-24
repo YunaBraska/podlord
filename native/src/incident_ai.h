@@ -73,6 +73,7 @@ public:
     void refreshModels();
     void ensureModelsFresh();
     void observe(const QString& context, const QJsonArray& rows, const QString& language, bool force = false);
+    bool preparing(const QString& context) const { return pendingObservations_.contains(context); }
     void prepareManual(const QString& context, const QString& path);
     void observeDiagnostic(const QString& error, const QString& language);
     void setDraftError(const QString& context, const QString& path, const QString& error);
@@ -101,6 +102,8 @@ private:
     void refreshReasoning();
     void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
+    void observePrepared(const QString& context, const QString& language, bool force,
+                         bool expired, bool retryElapsed, QJsonArray safeRows);
     std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
@@ -123,6 +126,9 @@ private:
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
     QMap<QString, QJsonArray> rawSnapshots_;
+    struct PendingObservation final { QString language, refreshPath; quint64 revision = 0; };
+    QMap<QString, PendingObservation> pendingObservations_;
+    quint64 nextObservationRevision_ = 0;
     std::optional<Incident> diagnostic_;
     struct DraftError final { QString context, path, message; };
     std::optional<DraftError> draftError_;

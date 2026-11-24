@@ -318,7 +318,8 @@ void RadarIsland::synchronize() {
                 const auto scope=cache->metadata(index,Qt::UserRole+3);
                 const auto uid=row["uid"].toString();
                 const auto identity=identityScope_+":"+kind+":"+scope+":"+name+":"+(uid.isEmpty() ? "-" : uid);
-                rows.append({cache->metadata(index,Qt::UserRole),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
+                rows.append({cache->metadata(index,Qt::UserRole),kind,name,scope,row["cluster"].toString(cluster),
+                    row["owner"].toString(),identity,row["kubernetesEvent"].toBool()});
             }
         }
         if (rows!=signature_) {
@@ -378,9 +379,10 @@ void RadarIsland::layout(const QList<Row>& rows) {
             const std::array<double,3> coast{range("coast-two:"+shoreKey,-std::numbers::pi,std::numbers::pi),
                 range("coast-three:"+shoreKey,-std::numbers::pi,std::numbers::pi),range("coast-five:"+shoreKey,-std::numbers::pi,std::numbers::pi)};
             QHash<QString,QPoint> local;
-            QList<Row> resources;
+            QList<Row> resources, events;
             for (const auto& row:district.rows)
                 if (row.kind=="Namespace" && row.name==district.key) local.insert(row.path,QPoint{});
+                else if (row.kubernetesEvent) events.append(row);
                 else resources.append(row);
             const double direction=-std::numbers::pi/2+cluster.districts.size()*2*std::numbers::pi/groupedCluster->size()+range(district.group+":namespace-angle",-.16,.16);
             const int arms=resources.size()<=3 ? int(resources.size()) : std::clamp(int(std::ceil(std::sqrt(resources.size())/1.2)),3,10);
@@ -390,13 +392,23 @@ void RadarIsland::layout(const QList<Row>& rows) {
                 if (local.isEmpty()) { local.insert(row.path,QPoint{}); continue; }
                 const double family=range(district.group+":"+row.kind+":"+row.owner+":coast-branch",-.7,.7);
                 const double theta=direction+family+(arms==1 ? 0 : (arm/double(arms-1)-.5)*spread)+range(row.identity+":branch",-.04,.04);
-                const double distance=8+ring(row.kind)*6.2+depth*6.4+(row.kind=="Event" ? 8 : 0),drift=range(row.identity+":drift",-3.5,3.5);
+                const double distance=8+ring(row.kind)*6.2+depth*6.4,drift=range(row.identity+":drift",-3.5,3.5);
                 local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,frontier,row.identity,coast));
             }
             int left=0,right=0,top=0,bottom=0;
             for (const auto& point:occupied) {
                 left=std::min(left,point.x()); right=std::max(right,point.x());
                 top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
+            }
+            if (!events.isEmpty()) {
+                // Leave open water between the connected land and the Event markers.
+                const int firstEventRow=local.isEmpty() ? 0 : bottom+3;
+                const int eventColumns=std::max((right-left+2)/2,int(std::ceil(std::sqrt(events.size()))));
+                for (int index=0;index<events.size();++index) {
+                    const QPoint point(left+2*(index%eventColumns),firstEventRow+2*(index/eventColumns));
+                    local.insert(events[index].path,point);
+                    right=std::max(right,point.x()); bottom=std::max(bottom,point.y());
+                }
             }
             district.anchor={2-left,4-top};
             for (const auto& row:district.rows) district.cells.append(local.value(row.path)+district.anchor);
@@ -445,6 +457,7 @@ void RadarIsland::layout(const QList<Row>& rows) {
             QRectF land;
             for (int index=0;index<district.rows.size();++index) {
                 const auto point=districtOrigin+district.cells[index]; resource(district.rows[index],point);
+                if (district.rows[index].kubernetesEvent) continue;
                 const QRectF body(world(point)-QPointF(2.75,2.75),QSizeF(5.5,5.5));
                 land=land.isEmpty() ? body : land.united(body);
             }

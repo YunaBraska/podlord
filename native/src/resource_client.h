@@ -4,6 +4,7 @@
 #include "pod_logs.h"
 #include <QElapsedTimer>
 #include <QJsonArray>
+#include <QFutureWatcher>
 #include "background_http.h"
 #include <QSet>
 #include <QPointer>
@@ -197,6 +198,9 @@ private:
         QDateTime lastDiscovery;
         QList<QDateTime> requestStarts;
         QDateTime presentationExpiry;
+        quint64 presentationRevision = 0;
+        quint64 presentationJob = 0;
+        bool presentationRunning = false;
     };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
@@ -222,12 +226,18 @@ private:
         std::optional<Change> change;
         QJsonArray patch;
     };
+    struct PreparedList final {
+        QJsonArray rows;
+        QString continuation, error;
+    };
     PlatformNetworkAccessManager network_;
     QMap<QString, State> states_;
     QList<Task> queue_;
     QVariantList completedRequests_;
     std::optional<Task> running_;
     QMap<QNetworkReply*, Task> reads_;
+    QMap<QFutureWatcher<PreparedList>*, Task> preparing_;
+    quint64 nextPresentationRevision_ = 0;
     QTimer gate_;
     QTimer expiry_;
     QTimer sync_;
@@ -263,8 +273,10 @@ private:
     void discardHiddenReads();
     void dispatch();
     void recordRequestStarted(const Task& task);
-    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail);
-    void consume(const Task& task, const QJsonObject& document);
+    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail,
+                const std::optional<PreparedList>& prepared = std::nullopt);
+    void consume(const Task& task, const QJsonObject& document, const PreparedList* prepared = nullptr);
+    static PreparedList prepareList(const Task& task, const QByteArray& bytes);
     void fail(const Task& task, QString message);
     QString logKey(const QString& id, const QString& path) const;
     const PodLogHistory* logHistory(const QString& id, const QString& path) const;

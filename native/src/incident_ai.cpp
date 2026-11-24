@@ -4,6 +4,7 @@
 #include "session_store.h"
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFutureWatcher>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -14,6 +15,7 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <algorithm>
+#include <QtConcurrent>
 
 namespace podlord {
 constexpr qint64 cacheLifetimeSeconds = 90LL * 24 * 60 * 60;
@@ -840,6 +842,7 @@ void IncidentAi::stopObserving(const QString& context) {
     }
     snapshots_.remove(context);
     rawSnapshots_.remove(context);
+    pendingObservations_.remove(context);
     activeKeys_.remove(context);
     for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
     for (auto item = manualVisible_.begin(); item != manualVisible_.end();) item = item->context == context ? manualVisible_.erase(item) : ++item;
@@ -849,7 +852,8 @@ void IncidentAi::stopObserving(const QString& context) {
 }
 void IncidentAi::retainContexts(const QSet<QString>& contexts) {
     bool changedState = false;
-    const auto observed = snapshots_.keys();
+    QStringList observed = snapshots_.keys();
+    for (const auto& context : pendingObservations_.keys()) if (!observed.contains(context)) observed.append(context);
     for (const auto& context : observed) if (!contexts.contains(context)) { stopObserving(context); changedState = true; }
     if (changedState) emit changed();
 }
@@ -1009,25 +1013,7 @@ void IncidentAi::refreshReasoning() {
         emit changed();
     });
 }
-void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force) {
-    if (!enabled(context) && model().isEmpty()) return;
-    const auto now = QDateTime::currentDateTimeUtc();
-    bool expired = false;
-    for (auto item = records_.begin(); item != records_.end();) {
-        if (item->created.secsTo(now) >= cacheLifetimeSeconds) { item = records_.erase(item); expired = true; }
-        else ++item;
-    }
-    if (expired) save();
-    bool retryElapsed = false;
-    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) {
-        if (item.value() <= now) { item = retryAfter_.erase(item); retryElapsed = true; }
-        else ++item;
-    }
-    const auto previous = snapshots_.constFind(context);
-    if (!force && !expired && !retryElapsed && activeKeys_.contains(context)
-        && previous != snapshots_.cend() && previous->second == language
-        && rawSnapshots_.value(context) == rows) return;
-    rawSnapshots_[context] = rows;
+static QJsonArray screenedRows(const QJsonArray& rows) {
     static const QList<QPair<QString, QRegularExpression>> eventPatterns{
         {"registry-auth-rejected", QRegularExpression("unauthorized|denied|authentication required|no basic auth credentials")},
         {"image-not-found", QRegularExpression("manifest unknown|image not found|404 not found")},
@@ -1112,6 +1098,52 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         }
         safeRows.append(safe);
     }
+    return safeRows;
+}
+void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force) {
+    if (!enabled(context) && model().isEmpty()) return;
+    const auto now = QDateTime::currentDateTimeUtc();
+    bool expired = false;
+    for (auto item = records_.begin(); item != records_.end();) {
+        if (item->created.secsTo(now) >= cacheLifetimeSeconds) { item = records_.erase(item); expired = true; }
+        else ++item;
+    }
+    if (expired) save();
+    bool retryElapsed = false;
+    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) {
+        if (item.value() <= now) { item = retryAfter_.erase(item); retryElapsed = true; }
+        else ++item;
+    }
+    const auto previous = snapshots_.constFind(context);
+    if (!force && !expired && !retryElapsed && rawSnapshots_.value(context) == rows
+        && ((activeKeys_.contains(context) && previous != snapshots_.cend() && previous->second == language)
+            || (pendingObservations_.contains(context) && pendingObservations_.value(context).language == language))) return;
+    rawSnapshots_[context] = rows;
+    const auto refreshPath = pendingObservations_.value(context).refreshPath;
+    const auto revision = ++nextObservationRevision_;
+    pendingObservations_[context] = {language, refreshPath, revision};
+    if (rows.size() < 2000) {
+        pendingObservations_.remove(context);
+        observePrepared(context, language, force, expired, retryElapsed, screenedRows(rows));
+        if (!refreshPath.isEmpty()) refresh(context, refreshPath);
+        return;
+    }
+    auto* watcher = new QFutureWatcher<QJsonArray>(this);
+    connect(watcher, &QFutureWatcher<QJsonArray>::finished, this,
+        [this, watcher, context, language, force, expired, retryElapsed, revision] {
+            auto safeRows = watcher->result();
+            watcher->deleteLater();
+            const auto pending = pendingObservations_.value(context);
+            if (pending.revision != revision) return;
+            pendingObservations_.remove(context);
+            observePrepared(context, language, force, expired, retryElapsed, std::move(safeRows));
+            if (!pending.refreshPath.isEmpty()) refresh(context, pending.refreshPath);
+        });
+    watcher->setFuture(QtConcurrent::run([rows] { return screenedRows(rows); }));
+}
+void IncidentAi::observePrepared(const QString& context, const QString& language, bool force,
+                                 bool expired, bool retryElapsed, QJsonArray safeRows) {
+    const auto previous = snapshots_.constFind(context);
     const bool changedSnapshot = previous == snapshots_.cend() || previous->first != safeRows || previous->second != language;
     bool changedEvidence = force || expired || retryElapsed || !activeKeys_.contains(context)
         || previous == snapshots_.cend() || previous->second != language || previous->first.size() != safeRows.size();
@@ -1145,12 +1177,14 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     QMap<QString, QJsonObject> nodes, claims, volumes;
     QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
     QSet<QString> observedSecrets;
+    static const QRegularExpression safeEventReason("^[A-Za-z][A-Za-z0-9]{0,30}$");
     for (const auto& value : safeRows) {
         const auto row = value.toObject();
         if (!row["uid"].toString().isEmpty()) byUid.insert(row["uid"].toString(), row);
         if (row["kubernetesEvent"].toBool()) {
             if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
-                && warningProblemCodes.contains(row["eventReason"].toString()) && !row["eventTargetUid"].toString().isEmpty())
+                && safeEventReason.match(row["eventReason"].toString()).hasMatch()
+                && !row["eventTargetUid"].toString().isEmpty())
                 warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
             continue;
         }
@@ -1172,7 +1206,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     for (const auto& value : safeRows) {
         const auto row = value.toObject();
         if (row["kubernetesEvent"].toBool()) continue;
-        if (row.isEmpty() || !QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "Node", "PersistentVolumeClaim"}.contains(row["kind"].toString())) continue;
+        if (row.isEmpty() || row["kind"].toString().isEmpty() || row["path"].toString().isEmpty()) continue;
         const auto reasons = warningReasons.value(row["uid"].toString());
         if (row["problemSeverity"].toInt() == 0 && reasons.isEmpty()) continue;
         QString code;
@@ -1180,8 +1214,13 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             const auto issues = row["issue"].toString().split(',', Qt::SkipEmptyParts);
             for (const auto& issue : issues) if (resourceProblemCodes.contains(issue.trimmed())) { code = issue.trimmed(); break; }
             if (code.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) code = row["status"].toString();
+            static const QRegularExpression readiness("^Ready [0-9]{1,3}/[0-9]{1,3}$");
+            if (code.isEmpty()) for (const auto& issue : issues)
+                if (readiness.match(issue.trimmed()).hasMatch()) { code = issue.trimmed(); break; }
         }
         if (code.isEmpty() && !reasons.isEmpty()) { auto ordered = reasons.values(); ordered.sort(); code = ordered.first(); }
+        if (code.isEmpty() && row["problemSeverity"].toInt() > 0)
+            code = row["problemSeverity"].toInt() > 1 ? "Critical resource health" : "Warning resource health";
         if (code.isEmpty()) continue;
         auto root = row;
         QSet<QString> visited;
@@ -1395,6 +1434,14 @@ void IncidentAi::prepareManual(const QString& context, const QString& path) {
 }
 bool IncidentAi::refresh(const QString& context, const QString& path) {
     if (!modelReady_) return false;
+    if (preparing(context)) {
+        const auto rows = rawSnapshots_.value(context);
+        if (!std::any_of(rows.cbegin(), rows.cend(), [&](const auto& value) {
+            return value.toObject()["path"] == path;
+        })) return false;
+        pendingObservations_[context].refreshPath = path;
+        return true;
+    }
     const auto found = visible_.constFind(context + '\n' + path);
     const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
     const auto recognized = !hasDraftError && enabled(context) && found != visible_.cend() && activeKeys_.value(context).contains(found->key);

@@ -296,6 +296,20 @@ Pane {
                 }
             }
     }
+    SelectableText {
+        Layout.fillWidth: true
+        visible: valuesPage.selected && !workspace.valuesVisible
+        text: workspace.uiText["inspector.values"]
+        font.bold: true
+    }
+    InspectorPage {
+        id: valuesPage
+        selected: workspace.valuesVisible || (workspace.inspectorPage === "overview" && workspace.valuesAvailable)
+        Layout.fillHeight: workspace.valuesVisible
+        Layout.preferredHeight: item && item.compact
+            ? item.implicitHeight + Math.max(0, Math.min(3, item.count) - 1) * item.rowHeight : -1
+        sourceComponent: ResourceValuesView { compact: workspace.inspectorPage === "overview" }
+    }
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: inspector.width < 600 ? 44 : 38
@@ -494,15 +508,6 @@ Pane {
         FlatButton { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
     SelectableText { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus }
-    InspectorPage {
-        id: valuesPage
-        Layout.fillWidth: true
-        Layout.fillHeight: true
-        selected: workspace.valuesVisible
-        sourceComponent: ResourceValuesView {
-            id: values
-        }
-    }
     InspectorPage {
         id: logsPage
         selected: workspace.logsVisible

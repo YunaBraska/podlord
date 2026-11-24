@@ -197,23 +197,31 @@ Pane {
                 Layout.fillWidth: true
                 SelectableText { objectName: "filterTitle"; text: workspace.uiText["filters.title"]; font.bold: true; Layout.fillWidth: true }
             }
-            GridLayout {
+            RowLayout {
                 Layout.fillWidth: true
-                columns: width >= problemsMode.implicitWidth + activityMode.implicitWidth + rowLimit.implicitWidth + 2 * columnSpacing ? 3 : 2
-                columnSpacing: 4; rowSpacing: 4
-                ScopeCheckBox { id: problemsMode; objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
-                ScopeCheckBox { id: activityMode; objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+                spacing: 4
+                ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
+                ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                HoverHandler { id: rowLimitHover }
+                SelectableText {
+                    id: rowLimitLabel
+                    objectName: "resourceLimitLabel"
+                    Layout.fillWidth: true
+                    text: workspace.uiText["filters.tableRows"]
+                }
                 SpinBox {
-                    id: rowLimit
                     objectName: "resourceLimit"
-                    Layout.columnSpan: parent.columns === 2 ? 2 : 1
-                    Layout.fillWidth: true; Layout.minimumWidth: implicitWidth
+                    Layout.minimumWidth: implicitWidth
                     from: 1; to: 5000; editable: true
                     value: workspace.resourceLimit
                     enabled: workspace.currentSession !== "" && !workspace.busy
-                    Accessible.name: "Displayed resource row limit"
-                    Accessible.description: "Limits table rows only. Radar, filters and alarms use all resources."
-                    ToolTip.visible: hovered || activeFocus; ToolTip.text: Accessible.name
+                    Accessible.name: rowLimitLabel.text
+                    Accessible.description: workspace.uiText["filters.tableRowsHelp"]
+                    ToolTip.visible: rowLimitHover.hovered || activeFocus
+                    ToolTip.text: Accessible.description
                     onValueModified: workspace.setResourceLimit(String(value))
                 }
             }

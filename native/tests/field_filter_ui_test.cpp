@@ -406,14 +406,15 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     if (!click(window, expander && expander->isVisible() ? "toggleLandscapeFilters" : "toggleSidebar")) return false;
                 }
                 if (!waitFor([&] {
-                    const auto* activity = item(window, "activityOnly");
+                    const auto* label = item(window, "resourceLimitLabel");
                     const auto* firstFilter = item(window, "sidebarField_cluster");
-                    if (!activity || !firstFilter || !control->isVisible()) return false;
+                    if (!label || !label->isVisible() || label->property("text").toString() != workspace.uiText().value("filters.tableRows")
+                        || !firstFilter || !control->isVisible()) return false;
                     const auto origin = control->mapToItem(window->contentItem(), QPointF{});
-                    const auto activityOrigin = activity->mapToItem(window->contentItem(), QPointF{});
-                    if (origin.y() >= firstFilter->mapToItem(window->contentItem(), QPointF{}).y()) return false;
-                    return scenario == "limit_narrow" || (origin.x() >= activityOrigin.x() + activity->width()
-                        && qAbs(origin.y() + control->height()/2 - activityOrigin.y() - activity->height()/2) < 8);
+                    const auto labelOrigin = label->mapToItem(window->contentItem(), QPointF{});
+                    return origin.y() < firstFilter->mapToItem(window->contentItem(), QPointF{}).y()
+                        && origin.x() >= labelOrigin.x() + label->width()
+                        && qAbs(origin.y() + control->height()/2 - labelOrigin.y() - label->height()/2) < 8;
                 }) || !podlord::test::scrollIntoView(window, control)) return false;
                 control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
                 return waitFor([&] { return workspace.property("resourceLimit").toInt() == 1025 && displayed->rowCount() == 1025
@@ -705,10 +706,30 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return false;
         }
         if (scenario.startsWith("value_copy_")) {
+            if (scenario.endsWith("_narrow_overview")) window->resize(402, 778);
             const auto path = server.secretValues ? QStringLiteral("/api/v1/namespaces/team-b/secrets/team-a") : QStringLiteral("/api/v1/namespaces/team-b/configmaps/team-a");
-            if (!workspace.inspectPath(path) || !waitFor([&] { return workspace.canEditYaml() && workspace.resourceValues().size() >= 3; })
-                || !click(window, "valuesButton")) return false;
+            if (!workspace.inspectPath(path) || !waitFor([&] { return workspace.canEditYaml() && workspace.resourceValues().size() >= 3; })) return false;
             const int calls = server.requests;
+            if (scenario.endsWith("_overview")) {
+                const auto id = server.secretValues ? QStringLiteral("data/text") : QStringLiteral("data/message");
+                const auto visibleValue = server.secretValues ? QStringLiteral("[hidden]") : QStringLiteral("ordinary configuration");
+                const auto copiedValue = server.secretValues ? QStringLiteral("decoded-value") : visibleValue;
+                const auto valueVisible = [&] {
+                    const auto* value = item(window, "value_" + id);
+                    return value && value->isVisible() && value->property("text").toString() == visibleValue;
+                };
+                QGuiApplication::clipboard()->clear();
+                const auto copyVisible = [&] {
+                    auto* copy = item(window, "copy_" + id);
+                    return copy && !podlord::test::visibleBounds(window, copy).isEmpty();
+                };
+                const auto frame = qEnvironmentVariable("PODLORD_VALUES_FRAME");
+                if (!waitFor(valueVisible) || (frame.size() && !window->grabWindow().save(frame))) return false;
+                return workspace.inspectorPage() == "overview" && waitFor(valueVisible) && waitFor(copyVisible) && click(window, "copy_" + id)
+                    && waitFor([&] { return QGuiApplication::clipboard()->text() == copiedValue; }) && valueVisible()
+                    && workspace.inspectorPage() == "overview" && server.requests == calls;
+            }
+            if (!click(window, "valuesButton")) return false;
             const auto key = scenario.contains("_binary_") ? QStringLiteral("binary") : scenario.contains("_empty_") ? QStringLiteral("empty") : QStringLiteral("text");
             const auto id = (server.secretValues ? QStringLiteral("data/") : QStringLiteral("binaryData/")) + key;
             if (!waitFor([&] { return item(window, "value_" + id) && item(window, "value_" + id)->isVisible(); })) return false;
@@ -807,7 +828,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     || sounds.first().at(1).toString() != "default-problem-color" || !focus.isEmpty()
                     || progress.isEmpty() || workspace.property("loadingProgress").toDouble() != 1) return false;
                 bool partial = false; double previous = 0;
-                for (const double value : progress) { if (value < previous || value >= 1) return false; partial = partial || value > 0; previous = value; }
+                for (const double value : progress) { if (value < previous || value > 1) return false; partial = partial || (value > 0 && value < 1); previous = value; }
                 const auto effect = workspace.alerts()->effect("/api/v1/namespaces/team-a/pods/alpha");
                 return partial && effect.value("color").toString() != "fresh" && !effect.contains("animation");
             }

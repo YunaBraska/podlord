@@ -128,6 +128,7 @@ ColumnLayout {
     }
     property bool findOpen: false
     property bool inlineTools: true
+    property bool showHeader: true
     property bool findShortcutEnabled: true
     readonly property bool containsActiveFocus: {
         let target = grid.Window.window ? grid.Window.window.activeFocusItem : null
@@ -561,7 +562,7 @@ ColumnLayout {
         }
     }
     Item {
-        implicitHeight: scrollingHeader.implicitHeight + grid.rowHeight + horizontalScroll.implicitHeight
+        implicitHeight: (grid.showHeader ? scrollingHeader.implicitHeight : 0) + grid.rowHeight + horizontalScroll.implicitHeight
         Layout.fillHeight: true
         Layout.fillWidth: true
         RowLayout {
@@ -574,7 +575,7 @@ ColumnLayout {
                     ? Math.min(grid.pinnedWidth, Math.max(0, grid.width - 120)) : grid.width
                 Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; syncView: pinnedTable; clip: true; resizableColumns: false; delegate: headerDelegate }
+                HorizontalHeaderView { id: pinnedHeader; objectName: grid.prefix + "PinnedHeaderView"; Layout.fillWidth: true; visible: grid.showHeader; syncView: pinnedTable; clip: true; resizableColumns: false; delegate: headerDelegate }
                 ResourceTableView {
                     id: pinnedTable
                     animate: false
@@ -604,7 +605,7 @@ ColumnLayout {
                 visible: grid.hasScrollingColumns
                 Layout.fillWidth: true; Layout.fillHeight: true
                 spacing: 0
-                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; syncView: table; clip: true; resizableColumns: false; delegate: headerDelegate }
+                HorizontalHeaderView { id: scrollingHeader; objectName: grid.prefix + "HeaderView"; Layout.fillWidth: true; visible: grid.showHeader; syncView: table; clip: true; resizableColumns: false; delegate: headerDelegate }
                 ResourceTableView {
                     id: table
                     animate: false

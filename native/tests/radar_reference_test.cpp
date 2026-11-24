@@ -95,6 +95,53 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
     }
     return result;
 }
+bool eventsOffLand() {
+    const QString eventPath = "/api/v1/namespaces/default/events/observed-first";
+    const QString eventOnlyPath = "/api/v1/namespaces/other/events/observed-second";
+    QJsonArray rows;
+    for (int index = 0; index < 12; ++index) {
+        const auto name = "pod-" + QString::number(index);
+        rows.append(QJsonObject{{"path", "/api/v1/namespaces/default/pods/" + name},
+            {"name", name}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", name}});
+    }
+    rows.append(QJsonObject{{"path", "/apis/example/v1/namespaces/default/events/custom"},
+        {"name", "custom"}, {"namespace", "default"}, {"kind", "Event"}, {"uid", "custom"}});
+    podlord::ResourceTable table;
+    podlord::ResourceFilter filter;
+    filter.setSourceModel(&table);
+    podlord::RadarIsland radar;
+    radar.setWidth(640); radar.setHeight(480); radar.setSource(&filter);
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == rows.size(); }, 3000)) return false;
+    const auto land = coordinates(radar.tiles());
+    rows.append(QJsonObject{{"path", eventPath}, {"name", "observed-first"}, {"namespace", "default"},
+        {"kind", "Event"}, {"uid", "event-1"}, {"kubernetesEvent", true}});
+    rows.append(QJsonObject{{"path", eventOnlyPath}, {"name", "observed-second"}, {"namespace", "other"},
+        {"kind", "Event"}, {"uid", "event-2"}, {"kubernetesEvent", true}});
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == rows.size(); }, 3000)) return false;
+    const auto withEvents = coordinates(radar.tiles());
+    for (auto point = land.cbegin(); point != land.cend(); ++point) {
+        if (point.value() != withEvents.value(point.key())) return setupFailure("Event changed resource island geometry");
+        for (const auto& path : {eventPath, eventOnlyPath}) {
+            const auto offset = withEvents.value(path) - point.value();
+            if (std::abs(offset.x()) + std::abs(offset.y()) <= 7) return setupFailure("Event occupied or touched resource land");
+        }
+    }
+    if (!radar.fitView()) return false;
+    QImage image(640, 480, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    radar.paint(&painter);
+    painter.end();
+    const auto pose = radar.viewPose();
+    for (const auto& path : {eventPath, eventOnlyPath}) {
+        const auto point = QPointF(320, 240) + (withEvents.value(path) + QPointF(pose.value("x").toDouble(), pose.value("y").toDouble())) * pose.value("zoom").toDouble();
+        if (!image.rect().contains(point.toPoint()) || image.pixelColor(point.toPoint()).alpha() == 0
+            || radar.resourceAt(point.x(), point.y()) != path) return setupFailure("Event was not painted and selectable after fit");
+    }
+    if (!filter.filter({}, {{"name", "observed-"}}) || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 2; }, 3000)) return false;
+    const auto filtered = coordinates(radar.tiles());
+    return filtered.value(eventPath) == withEvents.value(eventPath) && filtered.value(eventOnlyPath) == withEvents.value(eventOnlyPath);
+}
 bool highlightFill() {
     QJsonArray rows;
     QStringList paths;
@@ -602,6 +649,7 @@ bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "projection_identity_proxy") return projectionIdentity(true);
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size() == 2 && args[1] == "highlight_fill") return highlightFill();
+    if (args.size() == 2 && args[1] == "events_off_land") return eventsOffLand();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && args[1]=="proxy_metadata") return proxyMetadata();

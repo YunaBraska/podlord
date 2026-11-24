@@ -21,6 +21,13 @@ Use a cache-first resource service with a prioritized request queue and a proces
 - `Retry-After` from Kubernetes is honored before the next request instead of immediately surfacing a noisy UI error.
 - Real k3d tests run without test-level API stampedes.
 
+List JSON validation and resource projection run in bounded background jobs before
+their results enter the canonical cache. A newer collection read wins over an
+older result, and projection results check their presentation revision. Large table
+snapshots are prepared in the same background path. The UI receives only the
+current session's completed projection. This adds no second persisted resource cache.
+Prepared table publication notifies only changed rows when practical.
+
 ## Consequences
 
 Positive:

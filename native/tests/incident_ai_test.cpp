@@ -6,10 +6,14 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSignalSpy>
+#include <QSemaphore>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThreadPool>
+#include <QtConcurrent>
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
@@ -101,6 +105,38 @@ void scenario(const QString& name) {
     server.hold = name == "cancel" || name == "close" || name == "resolve" || name == "status_isolated";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
+    if (name == "large_observation_close") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled("context", true)
+            && QTest::qWaitFor([&] { return ai.ready(); }, 2000), "Local model unavailable");
+        auto snapshot = rows();
+        for (int index = 0; index < 8000; ++index) {
+            const auto resource = QString("config-%1").arg(index);
+            snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", resource}, {"namespace", "team"},
+                {"path", "/api/v1/namespaces/team/configmaps/" + resource}, {"uid", resource}});
+        }
+        auto* pool = QThreadPool::globalInstance();
+        pool->waitForDone();
+        const int maximum = pool->maxThreadCount();
+        pool->setMaxThreadCount(1);
+        QSemaphore entered, release;
+        auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
+        const bool started = entered.tryAcquire(1, 1000);
+        bool preparing = false;
+        if (started) {
+            ai.observe("context", snapshot, "en");
+            preparing = ai.preparing("context");
+            ai.retainContexts({});
+        }
+        release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum);
+        require(started && preparing, "Large observation did not start in the background");
+        QTest::qWait(300);
+        require(!ai.preparing("context") && server.chats == 0
+            && ai.result("context", "/api/v1/namespaces/team/pods/pod-one").isEmpty(),
+            "A closed context was analyzed after its background observation finished");
+        return;
+    }
     if (name == "large_dynamic_update") {
         server.hold = true;
         podlord::IncidentAi ai(profile, endpoint);
@@ -119,7 +155,28 @@ void scenario(const QString& name) {
             snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", name}, {"namespace", "team"},
                 {"path", "/api/v1/namespaces/team/configmaps/" + name}, {"uid", name}});
         }
+        QElapsedTimer clock; clock.start();
+        qint64 lastTick = 0, longestGap = 0;
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat, &QTimer::timeout, &ai, [&] {
+            const auto tick = clock.elapsed();
+            longestGap = std::max(longestGap, tick - lastTick);
+            lastTick = tick;
+        });
+        heartbeat.start();
+        QTest::qWait(50);
+        longestGap = 0; lastTick = clock.elapsed();
+        QElapsedTimer initial; initial.start();
         ai.observe("context", snapshot, "en");
+        std::printf("AI initial observation for %lld resources: %lld ms\n",
+            static_cast<long long>(snapshot.size()), static_cast<long long>(initial.elapsed()));
+        require(initial.elapsed() < 40 && QTest::qWaitFor([&] { return !ai.preparing("context"); }, 5000),
+            "Large AI snapshot blocked the caller or did not finish");
+        QTest::qWait(50);
+        heartbeat.stop();
+        std::printf("AI first observation, longest UI event gap: %lld ms\n", static_cast<long long>(longestGap));
+        require(longestGap < 80, "AI observation blocked the UI event loop");
         QSignalSpy changed(&ai, &podlord::IncidentAi::changed);
         ai.prepareManual("context", "/api/v1/namespaces/team/pods/failed-0");
         require(changed.isEmpty(), "An automatic incident was prepared again as a manual review");
@@ -134,6 +191,7 @@ void scenario(const QString& name) {
         pod["metricAt"] = QDateTime::currentDateTimeUtc().addSecs(-5).toString(Qt::ISODateWithMs);
         snapshot.replace(2, pod);
         ai.observe("context", snapshot, "en");
+        require(QTest::qWaitFor([&] { return !ai.preparing("context"); }, 5000), "First metric update did not finish");
         changed.clear();
         pod["restarts"] = 2;
         pod["cpu"] = 120;
@@ -143,11 +201,19 @@ void scenario(const QString& name) {
         ai.observe("context", snapshot, "en");
         std::printf("AI dynamic update for %lld resources: %lld ms\n",
             static_cast<long long>(snapshot.size()), static_cast<long long>(timer.elapsed()));
+        require(timer.elapsed() < 40 && QTest::qWaitFor([&] { return !ai.preparing("context"); }, 5000),
+            "Large AI metric update blocked the caller or did not finish");
         require(changed.isEmpty(), "A counter or metric update recomputed unchanged incident evidence");
         pod["issue"] = "CrashLoopBackOff";
         snapshot.replace(2, pod);
         ai.observe("context", snapshot, "en");
-        require(!changed.isEmpty(), "A changed incident was not reconsidered");
+        require(QTest::qWaitFor([&] { return !ai.preparing("context") && !changed.isEmpty(); }, 5000),
+            "A changed incident was not reconsidered");
+        const auto path = snapshot.at(2).toObject()["path"].toString();
+        ai.observe("context", snapshot, "en", true);
+        require(ai.preparing("context") && ai.refresh("context", path)
+            && QTest::qWaitFor([&] { return !ai.preparing("context"); }, 5000),
+            "Manual refresh did not wait for the current observation");
         return;
     }
     if (name == "uuid_node_name") {
@@ -300,6 +366,24 @@ void scenario(const QString& name) {
         require(ai.setModel("local-test:9b"), "User could not select the installed model");
         require(QTest::qWaitFor([&] { return ai.reasoningOptions().contains("medium") && server.chats == 1; }, 2000),
             "Selected model did not analyze the observed problem");
+        return;
+    }
+    if (name == "auto_generic_warning") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled("context", true), "Automatic model unavailable");
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["status"] = "Running";
+        pod["issue"] = "Ready 0/1";
+        pod["problemSeverity"] = 1;
+        pod["ready"] = "0/1";
+        snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "de");
+        require(QTest::qWaitFor([&] { return server.chats == 1
+            && !ai.result("context", pod["path"].toString()).value("summary").toString().isEmpty(); }, 3000),
+            "A consented warning needed a manual refresh");
+        require(server.submitted.contains("Ready 0/1"), "Warning evidence was not sent");
         return;
     }
     if (name == "manual_healthy") {

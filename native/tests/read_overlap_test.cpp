@@ -353,7 +353,64 @@ bool run(const QString& scenario) {
                 {"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}},
             QJsonObject{{"name", "beta"}, {"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
     }
+    if (scenario == "large_list_nonblocking" || scenario == "rebind_stale_projection") {
+        QJsonArray items;
+        for (int index = 0; index < 20000; ++index) items.append(QJsonObject{
+            {"apiVersion", "v1"}, {"kind", "Pod"},
+            {"metadata", QJsonObject{{"name", QString("pod-%1").arg(index)}, {"namespace", "default"},
+                                      {"uid", QString("uid-%1").arg(index)}, {"resourceVersion", "1"}}},
+            {"status", QJsonObject{{"phase", "Running"}}}});
+        server.responseBytes.insert("/api/v1/pods", QJsonDocument(QJsonObject{
+            {"metadata", QJsonObject{}}, {"items", items}}).toJson(QJsonDocument::Compact));
+    }
     if (!client.configure(settings)) return false;
+    if (scenario == "rebind_stale_projection") {
+        Kubernetes replacement;
+        if (!replacement.listen(QHostAddress::LocalHost, 0)) return false;
+        replacement.podNamespace = "other";
+        auto renewed = connection;
+        renewed.server = QUrl(QString("http://127.0.0.1:%1").arg(replacement.serverPort()));
+        renewed.credentialId = "replacement";
+        bool rebound = false, projectionPending = false;
+        QObject::connect(&client, &podlord::ResourceClient::changed, &client, [&](const QString& id) {
+            if (rebound || id != "session" || !client.rows(id).isEmpty()) return;
+            for (const auto& value : client.requestAudit(id)) {
+                const auto request = value.toMap();
+                if (request.value("path") != "/api/v1/pods" || request.value("status") != "Success") continue;
+                projectionPending = client.loading(id);
+                rebound = true;
+                QTimer::singleShot(0, &client, [&] { client.open("session", renewed, {}); });
+                break;
+            }
+        });
+        if (!client.open("session", connection, {}) || !waitFor([&] {
+            return rebound && projectionPending && !client.loading("session") && client.rows("session").size() == 1
+                && client.rows("session").first().toObject()["path"] == "/api/v1/namespaces/other/pods/alpha";
+        }, 30000)) return false;
+        QTest::qWait(500);
+        return client.rows("session").size() == 1
+            && client.rows("session").first().toObject()["path"] == "/api/v1/namespaces/other/pods/alpha";
+    }
+    if (scenario == "large_list_nonblocking") {
+        QElapsedTimer elapsed; elapsed.start();
+        qint64 lastTick = elapsed.elapsed(), longestGap = 0;
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat, &QTimer::timeout, &client, [&] {
+            const auto now = elapsed.elapsed();
+            longestGap = std::max(longestGap, now - lastTick);
+            lastTick = now;
+        });
+        heartbeat.start();
+        if (!client.open("session", connection, {})) return false;
+        const bool published = waitFor([&] { return client.rows("session").size() == 20000; }, 30000);
+        heartbeat.stop();
+        if (!published || longestGap > 80) {
+            std::fprintf(stderr, "Large list: published=%d, longest UI event gap=%lld ms\n", published, static_cast<long long>(longestGap));
+            return false;
+        }
+        return true;
+    }
     QList<qint64> starts;
     QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
     if (scenario == "parallel" || scenario == "limit" || scenario == "coalesce") server.allDelay = 2000;

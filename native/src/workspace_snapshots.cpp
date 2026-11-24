@@ -50,6 +50,12 @@ bool ResourceTable::publishPrepared(const PreparedSnapshot& snapshot, bool repla
     if (!replace && !unchanged) return false;
     const int previous = rowCount(), next = int(snapshot.rows.size());
     const int retained = std::min(previous, next);
+    QList<QPair<int, int>> changedRanges;
+    if (replace && !unchanged) for (int row = 0; row < retained; ++row) {
+        if (rows_[row] == snapshot.rows[row]) continue;
+        if (!changedRanges.isEmpty() && changedRanges.last().second == row - 1) changedRanges.last().second = row;
+        else changedRanges.append({row, row});
+    }
     if (replace && next != previous) {
         // Structural observers must see the incoming retained values, while Qt's
         // before/after checks require them not to change inside begin/end.
@@ -69,7 +75,9 @@ bool ResourceTable::publishPrepared(const PreparedSnapshot& snapshot, bool repla
     // Every retained display field is complete and immutable. Age is always evaluated live.
     rows_ = snapshot.rows; cluster_ = snapshot.cluster;
     sortValues_ = snapshot.sortValues; sortValueColumn_ = snapshot.sortColumn;
-    if (replace && !unchanged && retained > 0) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
+    if (changedRanges.size() > 32) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
+    else for (const auto& [first, last] : changedRanges)
+        emit dataChanged(index(first, 0), index(last, columnCount() - 1));
     return true;
 }
 
@@ -112,10 +120,7 @@ void Workspace::prepareSnapshot() {
             if (result.source == client_.rows(session) && result.cluster == activeCluster(session)) {
                 if (active_ == session) rows_.retainPreparedSort(result);
                 preparedSnapshots_.insert(session, result);
-                if (active_ == session) {
-                    rows_.publishPrepared(result);
-                    publishRelated();
-                }
+                if (active_ == session) publish();
             }
         }
         watcher->deleteLater();

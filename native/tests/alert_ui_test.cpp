@@ -156,6 +156,7 @@ public:
     QString radarScenario;
     bool secondFailed = false;
     bool holdPodResponses = false;
+    QByteArray fixedPods;
     QList<QPair<QPointer<QTcpSocket>, QByteArray>> heldPodResponses;
     const QDateTime created=QDateTime::currentDateTimeUtc().addSecs(-3600);
     const QDateTime measured=QDateTime::currentDateTimeUtc();
@@ -168,6 +169,13 @@ public:
                     socket->disconnect(this); ++requests;
                     const auto path = QUrl::fromEncoded(bytes->split(' ')[1]).path();
                     if (path=="/external-image") ++externalImageRequests;
+                    if (path=="/api/v1/pods" && !fixedPods.isEmpty()) {
+                        const auto payload=fixedPods;
+                        socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+                            + QByteArray::number(payload.size()) + "\r\n\r\n" + payload);
+                        socket->disconnectFromHost(); connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);
+                        return;
+                    }
                     QJsonObject body;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", metricScenario.isEmpty() || metricScenario=="metric_empty" ? QJsonArray{} : QJsonArray{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "metrics.k8s.io/v1beta1"}}}}}}};
@@ -297,7 +305,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     };
     QTemporaryDir temporary; if (!temporary.isValid()) return setupFailure("temporary-profile");
     Kubernetes server; if (realConfig.isEmpty() && !server.listen(QHostAddress::LocalHost, 0)) return setupFailure("fixture-listen");
-    if (scenario.startsWith("metric_")) server.metricScenario=scenario;
+    if (scenario.startsWith("metric_")) server.metricScenario=scenario == "metric_many_refresh_nonblocking" ? "metric_many" : scenario;
     if (scenario == "dashboard") server.metricScenario="metric_dashboard";
     if (scenario == "baseline_problem_sound") server.phase="Failed";
     if (scenario == "baseline_warning_sound") server.healthScenario="health_pod_not_ready";
@@ -331,7 +339,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return workspace.importFile(realConfig.isEmpty() ? source.fileName() : realConfig) && waitFor([&] { return !workspace.busy() && !workspace.contexts().isEmpty(); })
             && workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
             && waitFor([&] { return realConfig.isEmpty() ? scenario=="radar_loading_partial" ? workspace.totalResourceCount()==1 && workspace.loading()
-                : workspace.totalResourceCount() == (scenario=="metric_many" || scenario=="reference_zoom_preview_many" ? 5000 : scenario.startsWith("health_restart_") || scenario=="radar_health_restarts" ? 6
+                : workspace.totalResourceCount() == (scenario=="metric_many" || scenario=="metric_many_refresh_nonblocking" || scenario=="reference_zoom_preview_many" ? 5000 : scenario.startsWith("health_restart_") || scenario=="radar_health_restarts" ? 6
                     : scenario.startsWith("radar_focus_") || scenario=="reference_zoom_preview_unsaved" ? 2 : 1) && !workspace.loading()
                 : workspace.totalResourceCount()>=1051; }, realConfig.isEmpty() ? 9000 : 180000);
     };
@@ -1379,6 +1387,41 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         std::fprintf(stdout,"5000 cached Pods, public tab switch to rendered frame: first=%lld us, p50=%lld us, p95=%lld us, max=%lld us\n",first,timings[15],timings[28],timings.last());
         for (auto it=pages.begin();it!=pages.end();++it) { auto sorted=it.value(); const auto cold=sorted.first(); std::sort(sorted.begin(),sorted.end()); std::fprintf(stdout,"%s: first=%lld us, p50=%lld us, p95=%lld us\n",qPrintable(it.key()),cold,sorted[5],sorted[9]); }
         return server.requests==requests && workspace.resourceCount()==5000;
+    }
+    if (scenario=="metric_many_refresh_nonblocking") {
+        QJsonArray items;
+        for (int index=0;index<5000;++index) items.append(QJsonObject{
+            {"apiVersion","v1"}, {"kind","Pod"},
+            {"metadata",QJsonObject{{"name",index==0 ? QString("alpha") : QString("load-%1").arg(index)},
+                                    {"namespace","default"},{"uid",index==0 ? QString("uid-alpha") : QString("uid-load-%1").arg(index)},
+                                    {"resourceVersion","2"}}},
+            {"status",QJsonObject{{"phase","Failed"}}}});
+        server.fixedPods=QJsonDocument(QJsonObject{{"metadata",QJsonObject{}},{"items",items}}).toJson(QJsonDocument::Compact);
+        QTest::qWait(800);
+        QElapsedTimer elapsed; elapsed.start();
+        qint64 lastTick=elapsed.elapsed(), longestGap=0;
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat,&QTimer::timeout,&workspace,[&] {
+            const auto now=elapsed.elapsed();
+            longestGap=std::max(longestGap,now-lastTick);
+            lastTick=now;
+        });
+        heartbeat.start();
+        QTest::qWait(1000);
+        std::printf("Idle longest UI event gap: %lld ms\n",static_cast<long long>(longestGap));
+        longestGap=0; lastTick=elapsed.elapsed();
+        const auto requested=server.requests;
+        QElapsedTimer refreshElapsed; refreshElapsed.start();
+        const bool accepted=workspace.refresh();
+        std::printf("Refresh command returned in %lld ms\n",static_cast<long long>(refreshElapsed.elapsed()));
+        if (!accepted || !waitFor([&] {
+            return server.requests>requested && !workspace.loading() && workspace.table()->rowCount()==5000
+                && workspace.table()->index(0,3).data().toString()=="Failed";
+        },30000)) return false;
+        heartbeat.stop();
+        std::printf("5000 Pod refresh, longest UI event gap: %lld ms\n", static_cast<long long>(longestGap));
+        return longestGap<=80;
     }
     if (scenario=="metric_repeat") {
         QSignalSpy changed(&workspace, &podlord::Workspace::resourcePresentationChanged);

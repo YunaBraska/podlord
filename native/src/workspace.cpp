@@ -1293,8 +1293,19 @@ bool Workspace::publish() {
     const auto nav = currentNavigation();
     visibleTable_.setLimit(nav.limit);
     const auto prepared = preparedSnapshots_.constFind(active_);
-    const bool ready = prepared != preparedSnapshots_.cend() && prepared->source == snapshot && prepared->cluster == cluster
-        && rows_.publishPrepared(*prepared, sessionChanged);
+    const bool matching = prepared != preparedSnapshots_.cend() && prepared->source == snapshot && prepared->cluster == cluster;
+    if (!matching && snapshot.size() >= 2000) {
+        if (sessionChanged) {
+            rows_.publish({}, cluster, true);
+            eventRows_.publish({}, cluster, true);
+            healthSummary_ = {{"total", snapshot.size()}};
+            publishInspector(false, true);
+            emit resourcePresentationChanged(); emit changed();
+        }
+        prepareSnapshot();
+        return true;
+    }
+    const bool ready = matching && rows_.publishPrepared(*prepared, true);
     if (!ready) rows_.publish(snapshot, cluster, sessionChanged);
     QJsonArray eventSnapshot;
     int healthy=0, warning=0, critical=0;

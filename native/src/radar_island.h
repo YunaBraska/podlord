@@ -122,6 +122,7 @@ signals:
 private:
     struct Row final {
         QString path, kind, name, scope, cluster, owner, identity;
+        bool kubernetesEvent = false;
         bool operator==(const Row&) const = default;
     };
     struct Marker final { QPointF world; QRectF labelBounds; QString kind, group, label; bool overview = false; QRectF area; };

@@ -1553,6 +1553,9 @@ the raw action remains available. Unknown keys/representations and a closed
 Inspector cannot overwrite the clipboard. These actions read only the active
 cached document and neither refresh nor save it. The complete values-table
 toolbox and installed visual parity remain separate acceptance gates.
+The Overview shows a compact key/value list for ConfigMaps and Secrets. Its
+copy action uses the same preferred representation and masking rules as the
+Values tab. The compact list omits table search and column controls.
 
 ### Welche Import- und Session-Aktionen sind im nativen Client ergänzt?
 
