@@ -675,7 +675,9 @@ QString Workspace::error() const {
         const auto result = credentials_.result(connection->credentialId);
         if (const auto* failure = std::get_if<Failure>(&result); failure && failure->code != StoreError::NotFound) return failure->message;
     }
-    return error_.isEmpty() ? client_.portForwardError(active_) : error_;
+    if (!error_.isEmpty()) return error_;
+    if (!sourceImportError_.isEmpty()) return sourceImportError_;
+    return client_.portForwardError(active_);
 }
 QString Workspace::status() const { return authenticationRunning() ? "Signing in…" : client_.status(active_); }
 QString Workspace::currentSession() const { return active_; }
@@ -1684,6 +1686,27 @@ bool Workspace::cancelSourceImport() {
 }
 bool Workspace::quickImportFile(const QString& path) {
     return importFiles({path});
+}
+bool Workspace::importStartupFiles(QStringList paths) {
+    paths.removeDuplicates();
+    if (paths.isEmpty() || busy_ || !pendingImportPaths_.isEmpty()) return false;
+    for (const auto& path : paths) if (!retainDocumentReadAccess(path)) {
+        sourceImportError_ = error_ = "Cannot access the selected file. Choose it again.";
+        emit changed(); return false;
+    }
+    return importSource([paths = std::move(paths)](const KubeconfigStore& store) {
+        SourceImportReport report;
+        for (const auto& path : paths) {
+            const auto imported = store.importPath(path);
+            if (const auto* failure = std::get_if<Failure>(&imported)) report.errors.append({path, *failure});
+            else {
+                const auto& next = std::get<SourceImportReport>(imported);
+                report.sources.append(next.sources);
+                report.errors.append(next.errors);
+            }
+        }
+        return Result<SourceImportReport>{report};
+    });
 }
 QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
 QUrl Workspace::defaultKubeconfigFolder() const {

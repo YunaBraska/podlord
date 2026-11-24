@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
     QObject::connect(&startupImport, &QTimer::timeout, &workspace, [&] {
         if (workspace.busy()) return;
         auto pending = std::move(app.pendingFiles); app.pendingFiles.clear();
-        if (!pending.isEmpty()) workspace.importFiles(pending);
+        if (!pending.isEmpty()) workspace.importStartupFiles(pending);
     });
     app.filesAvailable();
     const auto result = app.exec();

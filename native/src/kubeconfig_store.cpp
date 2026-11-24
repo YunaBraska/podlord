@@ -797,9 +797,8 @@ Result<SourceSnapshot> KubeconfigStore::importContent(QString path, const QByteA
         if (const auto* failure = std::get_if<Failure>(&loaded)) return *failure;
         previous = std::get<SourceSnapshot>(loaded);
     }
-    const auto prefix = hash(source.sourcePath.toUtf8()) + "-";
     std::optional<SourceSnapshot> latest;
-    for (auto it = priorMembership.lowerBound(prefix); it != priorMembership.cend() && it.key().startsWith(prefix); ++it) {
+    for (auto it = priorMembership.cbegin(); it != priorMembership.cend(); ++it) {
         const auto prior = readOwned(QDir(std::get<QString>(directory)).filePath(it.key() + ".json"));
         if (const auto* snapshot = std::get_if<SourceSnapshot>(&prior)) {
             if (!latest || snapshot->importedAt > latest->importedAt) latest = *snapshot;

@@ -913,7 +913,7 @@ ApplicationWindow {
             IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
             IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
             SelectableText { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
-            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy; onClicked: authentication.open() }
+            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
         RowLayout {

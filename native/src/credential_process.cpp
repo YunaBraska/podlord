@@ -167,11 +167,9 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
         results_.remove(id);
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
         const bool browser = !connection.exec->oidc->deviceCodeGrant;
-#elif defined(Q_OS_MACOS)
+#else
         const bool browser = !connection.exec->oidc->deviceCodeGrant
             && connection.exec->oidc->redirectUri.scheme() == "http";
-#else
-        const bool browser = false;
 #endif
         auto* login = new NativeOidcLogin(std::move(connection), browser ? NativeOidcLogin::Flow::Browser : NativeOidcLogin::Flow::Device, this, language);
         nativeJobs_.insert(id, login);

@@ -758,6 +758,8 @@ public:
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importFiles(const QStringList& paths);
+    /** Imports command-line or operating-system document inputs as immutable snapshots without an interactive context-replacement decision. */
+    bool importStartupFiles(QStringList paths);
     Q_INVOKABLE bool resolveSourceImport(const QVariantList& decisions);
     Q_INVOKABLE bool cancelSourceImport();
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false, bool duplicate = false);
