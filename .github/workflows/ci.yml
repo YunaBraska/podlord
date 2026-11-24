@@ -29,3 +29,18 @@ jobs:
     uses: ./.github/workflows/native-qualify.yml
     with:
       version: ${{ inputs.version || '0.1.0' }}
+  build:
+    if: ${{ always() }}
+    needs: native-preflight
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the complete native candidate
+        shell: sh
+        env:
+          NATIVE_RESULT: ${{ needs.native-preflight.result }}
+        run: |
+          set -eu
+          case "$NATIVE_RESULT" in
+            success|cancelled) exit 0 ;;
+            *) printf 'Native qualification did not succeed: %s\n' "$NATIVE_RESULT" >&2; exit 1 ;;
+          esac
