@@ -6012,6 +6012,12 @@ bool execute(const QString& requestedScenario) {
             const auto operation = scenario.section('_', -1);
             if (operation == "messages") {
                 auto* linkGrid = item(window, "inspectorLinks");
+                auto* table = item(window, "inspectorLinkTable");
+                if (!table) return false;
+                QQmlExpression reveal(qmlContext(table), table, "positionViewAtIndex(model.index(0, 5), TableView.Contain)");
+                reveal.evaluate();
+                if (reveal.hasError()) return false;
+                if (!waitFor([&] { return item(window, "inspectorLinkCell_0_5") != nullptr; })) return false;
                 auto* firstCell = item(window, "inspectorLinkCell_0_5");
                 if (!linkGrid || linkGrid->property("wrapColumn").toInt() != 6 || !firstCell) {
                     std::fprintf(stderr, "Links layout: grid=%d wrap=%d first=%d\n", bool(linkGrid),
