@@ -384,7 +384,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
         if (inspectorPage() == "ai" && !incidentAiConfigured()) setInspectorPage("overview");
         const auto context = sessionConfiguration(active_).value("contextId").toString();
-        if (!context.isEmpty() && !inspectorPath().isEmpty())
+        if (inspectorPage() == "ai" && !context.isEmpty() && !inspectorPath().isEmpty())
             runtime_->incidentAi.prepareManual(context, inspectorPath());
     });
     connect(this, &Workspace::inspectorPresentationChanged, this, &Workspace::incidentAiChanged);
@@ -492,7 +492,6 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
             const auto context = sessionConfiguration(id).value("contextId").toString();
             runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
         }
-        preparedSnapshots_.remove(id);
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
     });
@@ -930,7 +929,18 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     return true;
 }
 bool Workspace::publishRelated() {
-    const ResourceGraph graph(client_.rows(active_));
+    const auto prepared = preparedSnapshots_.constFind(active_);
+    if (prepared == preparedSnapshots_.cend() || !prepared->graph) {
+        const bool hadRelated = !connectedResourceDepths_.isEmpty() || !filePods_.isEmpty()
+            || !inspectorEvents_.isEmpty() || !inspectorLinks_.isEmpty();
+        connectedResourceDepths_.clear(); filePods_.clear(); inspectorEvents_.clear(); inspectorLinks_.clear();
+        if (hadRelated) {
+            inspectorEventRows_.publish({}); inspectorLinkRows_.publish({}); emit inspectorRelatedChanged();
+        }
+        if (!inspectorPath().isEmpty()) prepareSnapshot();
+        return true;
+    }
+    const auto& graph = *prepared->graph;
     const auto depths = graph.depths(inspectorPath());
     const bool depthsChanged = depths != connectedResourceDepths_;
     if (depthsChanged) connectedResourceDepths_ = depths;
@@ -1041,6 +1051,10 @@ bool Workspace::setInspectorPage(const QString& page) {
     if (currentNavigation().page == page) return true;
     if (page != "files") { auto* previousFiles = files_; files_ = nullptr; delete previousFiles; }
     client_.hideLogs(viewId_); navigation_[active_].page = page;
+    if (page == "ai") {
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        runtime_->incidentAi.prepareManual(context, inspectorPath());
+    }
     publishRelated(); publishLogs(); emit changed();
     if (page == "files" && !filePods_.isEmpty()) {
         const auto path = filePods_.first().toMap().value("path").toString();

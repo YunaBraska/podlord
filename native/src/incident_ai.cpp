@@ -64,6 +64,36 @@ QString stableMessage(QString message) {
     message.replace(changingNumber, "#");
     return message;
 }
+QJsonObject stableObservation(QJsonObject row) {
+    for (const auto& field : {"metricAt", "eventFirstTime", "eventLastTime", "eventCount"}) row.remove(field);
+    if (row.value("restarts").isDouble()) row["restarts"] = row.value("restarts").toInt() > 0;
+    const auto references = row.value("metricReferences").toObject();
+    const auto completeness = row.value("metricComplete").toObject();
+    for (const auto& field : {"cpu", "memory"}) {
+        const auto value = row.value(field);
+        if (!value.isDouble()) continue;
+        const auto kind = row.value("kind").toString();
+        const auto reference = references.value(field).toObject();
+        const auto threshold = reference.value(kind == "Pod" ? "limit" : "capacity");
+        const bool comparable = (kind == "Pod" || kind == "Node") && threshold.isDouble()
+            && threshold.toDouble() > 0 && completeness.value(field) == true && row.value("metricStale") == false
+            && (kind != "Pod" || reference.value("limitComplete") == true);
+        row[field] = comparable ? QJsonValue(value.toDouble() >= threshold.toDouble()) : QJsonValue("measured");
+    }
+    for (const auto& field : {"conditions", "containerStates", "lastTerminations"}) {
+        auto entries = row.value(field).toArray();
+        for (qsizetype index = 0; index < entries.size(); ++index) {
+            auto entry = entries.at(index).toObject();
+            for (const auto& time : {"since", "startedAt", "finishedAt", "lastTransitionTime"}) entry.remove(time);
+            if (entry.value("restarts").isDouble()) entry["restarts"] = entry.value("restarts").toInt() > 0;
+            if (entry.value("message").isString()) entry["message"] = stableMessage(entry.value("message").toString());
+            entries.replace(index, entry);
+        }
+        if (!entries.isEmpty()) row[field] = entries;
+    }
+    if (row.value("eventMessage").isString()) row["eventMessage"] = stableMessage(row.value("eventMessage").toString());
+    return row;
+}
 QSet<QString> screenedKeySignals(const QJsonObject& row) {
     static const QRegularExpression safeKey("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
     static const QRegularExpression encodedKey("^[A-Za-z0-9_-]{32,}$");
@@ -600,7 +630,7 @@ void IncidentAi::providerChanged() {
     } else {
         status_.clear();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
     }
     emit changed();
 }
@@ -809,6 +839,7 @@ void IncidentAi::stopObserving(const QString& context) {
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
     }
     snapshots_.remove(context);
+    rawSnapshots_.remove(context);
     activeKeys_.remove(context);
     for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
     for (auto item = manualVisible_.begin(); item != manualVisible_.end();) item = item->context == context ? manualVisible_.erase(item) : ++item;
@@ -835,7 +866,7 @@ bool IncidentAi::setModel(const QString& model) {
         modelReady_ = provider_ == "chatgpt" ? chatgpt_.connected()
             : provider_ == "claude" ? claude_.configured() : openrouter_.configured();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
         emit changed();
         return true;
     }
@@ -867,7 +898,7 @@ bool IncidentAi::setReasoning(const QString& reasoning) {
     queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); diagnostic_.reset();
     contextStatus_.clear();
     const auto snapshots = snapshots_;
-    for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+    for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
     emit changed();
     return true;
 }
@@ -974,11 +1005,11 @@ void IncidentAi::refreshReasoning() {
         else thinkValue_ = QJsonValue(reasoning_);
         modelReady_ = true; status_.clear();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
         emit changed();
     });
 }
-void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language) {
+void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force) {
     if (!enabled(context) && model().isEmpty()) return;
     const auto now = QDateTime::currentDateTimeUtc();
     bool expired = false;
@@ -987,7 +1018,16 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         else ++item;
     }
     if (expired) save();
-    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) item = item.value() <= now ? retryAfter_.erase(item) : ++item;
+    bool retryElapsed = false;
+    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) {
+        if (item.value() <= now) { item = retryAfter_.erase(item); retryElapsed = true; }
+        else ++item;
+    }
+    const auto previous = snapshots_.constFind(context);
+    if (!force && !expired && !retryElapsed && activeKeys_.contains(context)
+        && previous != snapshots_.cend() && previous->second == language
+        && rawSnapshots_.value(context) == rows) return;
+    rawSnapshots_[context] = rows;
     static const QList<QPair<QString, QRegularExpression>> eventPatterns{
         {"registry-auth-rejected", QRegularExpression("unauthorized|denied|authentication required|no basic auth credentials")},
         {"image-not-found", QRegularExpression("manifest unknown|image not found|404 not found")},
@@ -1072,10 +1112,21 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         }
         safeRows.append(safe);
     }
-    const auto previous = snapshots_.constFind(context);
     const bool changedSnapshot = previous == snapshots_.cend() || previous->first != safeRows || previous->second != language;
+    bool changedEvidence = force || expired || retryElapsed || !activeKeys_.contains(context)
+        || previous == snapshots_.cend() || previous->second != language || previous->first.size() != safeRows.size();
+    if (changedSnapshot && !changedEvidence) {
+        for (qsizetype index = 0; index < safeRows.size(); ++index) {
+            const auto current = safeRows.at(index).toObject();
+            const auto old = previous->first.at(index).toObject();
+            if (current != old && stableObservation(current) != stableObservation(old)) {
+                changedEvidence = true;
+                break;
+            }
+        }
+    }
     snapshots_[context] = {safeRows, language};
-    if (changedSnapshot) {
+    if (changedEvidence && changedSnapshot) {
         for (auto item = manualVisible_.begin(); item != manualVisible_.end();) {
             if (item->context != context) { ++item; continue; }
             const auto current = manualIncident(context, item->path);
@@ -1085,6 +1136,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     }
     if (!enabled(context)) { if (changedSnapshot) emit changed(); return; }
     if (!modelReady_) return;
+    if (!changedEvidence) return;
     const ResourceGraph graph(safeRows);
     const auto problems = indexProblems(safeRows);
     for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
@@ -1325,6 +1377,11 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
 }
 void IncidentAi::prepareManual(const QString& context, const QString& path) {
     const auto id = context + '\n' + path;
+    const auto automatic = visible_.constFind(id);
+    if (automatic != visible_.cend() && activeKeys_.value(context).contains(automatic->key)) {
+        if (manualVisible_.remove(id)) emit changed();
+        return;
+    }
     const auto current = manualIncident(context, path);
     const auto previous = manualVisible_.constFind(id);
     if (!current) {

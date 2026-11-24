@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
+#include "resource_graph.h"
 #include <QtConcurrent/QtConcurrentRun>
 #include <utility>
 
@@ -33,6 +34,9 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
     }
     if (promise.isCanceled()) return;
     table.prepareSort(sortColumn);
+    if (promise.isCanceled()) return;
+    result.graph = std::make_shared<const ResourceGraph>(result.source);
+    if (promise.isCanceled()) return;
     result.rows = std::move(table.rows_); result.sortValues = std::move(table.sortValues_);
     result.sortColumn = table.sortValueColumn_;
     result.health = {{"total", result.source.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
@@ -108,7 +112,10 @@ void Workspace::prepareSnapshot() {
             if (result.source == client_.rows(session) && result.cluster == activeCluster(session)) {
                 if (active_ == session) rows_.retainPreparedSort(result);
                 preparedSnapshots_.insert(session, result);
-                if (active_ == session) rows_.publishPrepared(result);
+                if (active_ == session) {
+                    rows_.publishPrepared(result);
+                    publishRelated();
+                }
             }
         }
         watcher->deleteLater();

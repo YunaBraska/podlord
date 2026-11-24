@@ -89,7 +89,7 @@ void Workspace::ensureIncidentAiModels() { runtime_->incidentAi.ensureModelsFres
 bool Workspace::refreshIncidentAiAnalysis() {
     const auto context = sessionConfiguration(active_).value("contextId").toString();
     if (context.isEmpty() || inspectorPath().isEmpty()) return false;
-    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language), true);
     return runtime_->incidentAi.refresh(context, inspectorPath());
 }
 } // namespace podlord

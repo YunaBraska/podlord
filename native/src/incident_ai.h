@@ -72,7 +72,7 @@ public:
     void refreshUsage() { emit changed(); }
     void refreshModels();
     void ensureModelsFresh();
-    void observe(const QString& context, const QJsonArray& rows, const QString& language);
+    void observe(const QString& context, const QJsonArray& rows, const QString& language, bool force = false);
     void prepareManual(const QString& context, const QString& path);
     void observeDiagnostic(const QString& error, const QString& language);
     void setDraftError(const QString& context, const QString& path, const QString& error);
@@ -122,6 +122,7 @@ private:
     QMap<QString, Incident> manualVisible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
+    QMap<QString, QJsonArray> rawSnapshots_;
     std::optional<Incident> diagnostic_;
     struct DraftError final { QString context, path, message; };
     std::optional<DraftError> draftError_;

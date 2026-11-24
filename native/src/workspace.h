@@ -28,6 +28,7 @@
 namespace podlord {
 class WorkspaceRuntime;
 class WindowHost;
+class ResourceGraph;
 /** The inspector's sole metadata projection, retaining unchanged field delegates. */
 class InspectorFields final : public QAbstractListModel {
 public:
@@ -62,6 +63,7 @@ public:
         QString identity;
         QList<Row> rows;
         QList<QVariant> sortValues;
+        std::shared_ptr<const ResourceGraph> graph;
         int sortColumn = -1;
         QVariantMap health;
     };

@@ -1,6 +1,7 @@
 #include "incident_ai.h"
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -100,6 +101,55 @@ void scenario(const QString& name) {
     server.hold = name == "cancel" || name == "close" || name == "resolve" || name == "status_isolated";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
+    if (name == "large_dynamic_update") {
+        server.hold = true;
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled("context", true)
+            && QTest::qWaitFor([&] { return ai.ready(); }, 2000), "Local model unavailable");
+        auto snapshot = rows();
+        for (int index = 0; index < 20; ++index) {
+            const auto name = QString("failed-%1").arg(index);
+            snapshot.append(QJsonObject{{"kind", "Pod"}, {"name", name}, {"namespace", "team"},
+                {"path", "/api/v1/namespaces/team/pods/" + name}, {"uid", name},
+                {"status", "ImagePullBackOff"}, {"issue", "ImagePullBackOff"}, {"problemSeverity", 2}});
+        }
+        for (int index = 0; index < 8000; ++index) {
+            const auto name = QString("config-%1").arg(index);
+            snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", name}, {"namespace", "team"},
+                {"path", "/api/v1/namespaces/team/configmaps/" + name}, {"uid", name}});
+        }
+        ai.observe("context", snapshot, "en");
+        QSignalSpy changed(&ai, &podlord::IncidentAi::changed);
+        ai.prepareManual("context", "/api/v1/namespaces/team/pods/failed-0");
+        require(changed.isEmpty(), "An automatic incident was prepared again as a manual review");
+        QElapsedTimer repeated; repeated.start();
+        ai.observe("context", snapshot, "en");
+        std::printf("AI repeated observation for %lld resources: %lld ms\n",
+            static_cast<long long>(snapshot.size()), static_cast<long long>(repeated.elapsed()));
+        require(changed.isEmpty(), "An identical snapshot repeated incident analysis");
+        auto pod = snapshot.at(2).toObject();
+        pod["restarts"] = 1;
+        pod["cpu"] = 100;
+        pod["metricAt"] = QDateTime::currentDateTimeUtc().addSecs(-5).toString(Qt::ISODateWithMs);
+        snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "en");
+        changed.clear();
+        pod["restarts"] = 2;
+        pod["cpu"] = 120;
+        pod["metricAt"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs);
+        snapshot.replace(2, pod);
+        QElapsedTimer timer; timer.start();
+        ai.observe("context", snapshot, "en");
+        std::printf("AI dynamic update for %lld resources: %lld ms\n",
+            static_cast<long long>(snapshot.size()), static_cast<long long>(timer.elapsed()));
+        require(changed.isEmpty(), "A counter or metric update recomputed unchanged incident evidence");
+        pod["issue"] = "CrashLoopBackOff";
+        snapshot.replace(2, pod);
+        ai.observe("context", snapshot, "en");
+        require(!changed.isEmpty(), "A changed incident was not reconsidered");
+        return;
+    }
     if (name == "uuid_node_name") {
         const QString nodeName = "12345678-1234-1234-1234-123456789abc-vs284-worker-9g67q-tbw98";
         auto snapshot = rows();
