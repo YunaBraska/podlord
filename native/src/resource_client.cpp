@@ -452,6 +452,7 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
     bool reboundCache = false;
     if (!states_.contains(id)) {
         State state;
+        state.accountingEpoch = ++nextAccountingEpoch_;
         state.lastSync = now_();
         state.namespaces = std::move(namespaces);
         auto cached = states_.end();
@@ -483,6 +484,7 @@ bool ResourceClient::open(const QString& id, ClusterConnection connection, QStri
             if (reply.value().id == id) obsoleteReplies.append(reply.key());
         State fresh;
         fresh.revision = existing.revision;
+        fresh.accountingEpoch = ++nextAccountingEpoch_;
         fresh.lastSync = now_();
         fresh.namespaces = namespaces;
         fresh.connection = connection;
@@ -775,6 +777,7 @@ void ResourceClient::publishRows(const QString& id) {
         current.snapshot = std::move(projection.snapshot);
         reconcileLogs(id);
         emit rowsChanged(id);
+        emit changed(id);
         if (projection.newProblems.isEmpty() || !current.initialized || !wanted(id)) return;
         for (const auto& key : projection.relatedCollections) {
             const auto collection = current.collections.constFind(key);
@@ -1237,7 +1240,10 @@ void ResourceClient::expire() {
     QList<Task> renewals;
     for (auto it = states_.begin(); it != states_.end(); ++it) {
         bool rowsChanged = false, detailChanged = false;
-        if (it->presentationExpiry.isValid() && it->presentationExpiry<=now) rowsChanged=true;
+        if (it->presentationExpiry.isValid() && it->presentationExpiry<=now) {
+            it->presentationExpiry = {};
+            rowsChanged = true;
+        }
         for (auto& history : it->logs) {
             if (history.expire(now) && logsShown(it.key(), logKey(it.key(), history.path))) emit logsChanged(it.key(), history.path);
             for (const auto& cursor : history.cursors) next = std::min(next, std::max<qint64>(1, now.msecsTo(cursor.fetched.addSecs(60)) + 1));
@@ -1342,6 +1348,7 @@ void ResourceClient::dispatch() {
     queue_.erase(chosen);
     // Change requests retain the revision of their captured connection, including finite read-back.
     if (!running_->change) running_->revision = states_[running_->id].revision;
+    running_->accountingEpoch = states_[running_->id].accountingEpoch;
     if (!running_->received) running_->received = clock_.nsecsElapsed();
     running_->started=clock_.elapsed();
     running_->startedAt=now_();
@@ -1488,6 +1495,7 @@ void ResourceClient::dispatch() {
         if (parallel) reads_.remove(reply); else running_.reset();
         const auto current = states_.constFind(task.id);
         if (current == states_.cend() || current->revision != task.revision) {
+            discardStale(task);
             dispatch(); scheduleSync(); scheduleLogs();
             return;
         }
@@ -1501,6 +1509,7 @@ void ResourceClient::dispatch() {
                     watcher->deleteLater();
                     const auto current = states_.constFind(completion.id);
                     if (current == states_.cend() || current->revision != completion.revision) {
+                        discardStale(completion);
                         dispatch(); scheduleSync(); scheduleLogs();
                         return;
                     }
@@ -1522,6 +1531,21 @@ void ResourceClient::dispatch() {
 void ResourceClient::fail(const Task& task, QString message) {
     if (task.read == Read::Log) states_[task.id].logs[task.logKey].failures.insert(task.container, std::move(message));
     else { states_[task.id].failures.insert(task.path, std::move(message)); states_[task.id].blocked.insert(task.path); }
+}
+void ResourceClient::discardStale(const Task& task) {
+    const auto found = states_.find(task.id);
+    if (found == states_.end() || found->accountingEpoch != task.accountingEpoch) return;
+    --found->pending;
+    if (task.read == Read::Log) --found->logs[task.logKey].pending;
+    else --found->resourcePending;
+    if (collectionRead(task.read)) { --found->syncPending; ++found->syncCompleted; }
+    if (task.read == Read::Detail) emit detailFinished(task.id, task.path, false);
+    if (!task.forwardToken.isEmpty()) failForward(task.forwardToken, "Connection changed before the read finished.");
+    if (!task.terminalToken.isEmpty() && terminals_.contains(task.terminalToken))
+        terminals_.value(task.terminalToken).screen->reject("Connection changed before the read finished.");
+    if (task.fileView) task.fileView->reject("files.targetChanged");
+    updateProgress(task.id);
+    emit changed(task.id);
 }
 ResourceClient::PreparedList ResourceClient::prepareList(const Task& task, const QByteArray& bytes) {
     PreparedList prepared;

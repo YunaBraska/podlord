@@ -52,7 +52,7 @@ Pane {
             anchors.top: parent.top
             z: 4
             padding: 4
-            background: null
+            background: Rectangle { color: workspace.appearanceColors.radarGlass }
             contentItem: RowLayout {
                 spacing: 4
                 RowLayout {
@@ -132,6 +132,8 @@ Pane {
                     const item = Window.window ? Window.window.activeFocusItem : null
                     return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
                 }
+                showFilteredContext: !workspace.problemsOnly
+                labelTopInset: radarNavigation.height
                 identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"
                 captionPixelSize: workspace.textSizes.caption

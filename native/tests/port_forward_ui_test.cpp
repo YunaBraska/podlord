@@ -322,6 +322,7 @@ bool run(const QString& scenario, const QString& configPath) {
         if (!waitFor([&] { return firstSocket.bytesAvailable() == 12 && secondSocket.bytesAvailable() == 13; })
             || firstSocket.readAll() != "first-before" || secondSocket.readAll() != "second-before") return failed("established forward streams");
         holdDetail = true;
+        const auto detailBeforeRevocation = client.detail("first", podPath);
         if (!client.inspect("first", podPath) || !waitFor([&] { return !heldDetail.isNull(); })) return failed("dispatched finite request");
         if (!client.forgetCredentials(first.credentialId)) return failed("revoke context");
         if (!waitFor([&] {
@@ -333,6 +334,7 @@ bool run(const QString& scenario, const QString& configPath) {
         heldDetail->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
         heldDetail->disconnectFromHost();
         if (!waitFor([&] { return !client.loading("first"); }) || !client.authenticationRequired("first")
+            || client.detail("first", podPath) != detailBeforeRevocation
             || !client.terminal("second") || !client.terminal("second")->connected()
             || client.portForwards("second").size() != 1 || secondSocket.state() != QAbstractSocket::ConnectedState) return failed("other context changed");
         secondSocket.write("second-after");

@@ -19,6 +19,7 @@ void Workspace::refreshMapContexts(bool reorder) {
     QHash<QString, QString> managerNames, managerByOrigin, originByContext;
     QSet<QString> contextIds, importedEndpoints;
     QHash<QString, QString> endpointByContext;
+    QCryptographicHash originHasher(QCryptographicHash::Sha256);
     for (const auto& value : next) {
         const auto context = value.toMap();
         contextIds.insert(context.value("id").toString());
@@ -31,8 +32,9 @@ void Workspace::refreshMapContexts(bool reorder) {
         endpointByContext.insert(context.id, endpoint);
         importedEndpoints.insert(endpoint);
         if (!managerNames.contains(endpoint)) managerNames.insert(endpoint, context.cluster.isEmpty() ? context.displayName : context.cluster);
-        const auto origin = QCryptographicHash::hash(source.sourcePath.toUtf8() + '\0' + context.name.toUtf8(),
-            QCryptographicHash::Sha256).toHex();
+        originHasher.addData(source.sourcePath.toUtf8() + '\0' + context.name.toUtf8());
+        const auto origin = originHasher.result().toHex();
+        originHasher.reset();
         managerByOrigin.insert(QString::fromLatin1(origin), endpoint);
         if (source.sourcePath.startsWith("managed://capi/"))
             originByContext.insert(context.id, source.sourcePath.mid(QStringLiteral("managed://capi/").size(), 64));

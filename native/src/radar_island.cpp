@@ -12,6 +12,7 @@
 #include <numbers>
 #include <tuple>
 #include <typeinfo>
+#include <utility>
 
 namespace podlord {
 namespace {
@@ -247,6 +248,14 @@ void RadarIsland::setFocusedPath(const QString& path) {
     if (focusedPath_==path) return;
     focusedPath_=path; update(); emit focusedPathChanged();
 }
+void RadarIsland::setShowFilteredContext(bool show) {
+    if (showFilteredContext_==show) return;
+    showFilteredContext_=show; update(); emit showFilteredContextChanged();
+}
+void RadarIsland::setLabelTopInset(qreal inset) {
+    if (!std::isfinite(inset) || inset < 0 || labelTopInset_==inset) return;
+    labelTopInset_=inset; update(); emit labelTopInsetChanged();
+}
 void RadarIsland::setSource(QAbstractItemModel* source) {
     if (source_==source) return;
     source_=source;
@@ -395,20 +404,38 @@ void RadarIsland::layout(const QList<Row>& rows) {
                 const double distance=8+ring(row.kind)*6.2+depth*6.4,drift=range(row.identity+":drift",-3.5,3.5);
                 local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,frontier,row.identity,coast));
             }
+            if (!events.isEmpty()) {
+                QList<QPoint> shore = occupied.values();
+                std::sort(shore.begin(), shore.end(), [](const QPoint& a,const QPoint& b) {
+                    return std::tuple{a.y(),a.x()} < std::tuple{b.y(),b.x()};
+                });
+                QSet<QPoint> visited = occupied;
+                QList<std::pair<QPoint,int>> wave;
+                for (const auto& point:shore) wave.append({point,0});
+                QList<QPoint> coast;
+                for (int head=0;head<wave.size() && coast.size()<events.size()*4;++head) {
+                    const auto [point,distance]=wave[head];
+                    for (const auto& delta:{QPoint(0,-1),QPoint(1,0),QPoint(0,1),QPoint(-1,0)}) {
+                        const auto next=point+delta;
+                        if (visited.contains(next)) continue;
+                        visited.insert(next); wave.append({next,distance+1});
+                        if (distance>=2) coast.append(next);
+                    }
+                }
+                QPointF center;
+                for (const auto& point:occupied) center+=point;
+                center/=occupied.size();
+                std::sort(coast.begin(),coast.end(),[&](const QPoint& a,const QPoint& b) {
+                    const auto angle=[&](const QPoint& point) { return std::atan2(point.y()-center.y(),point.x()-center.x()); };
+                    return std::tuple{angle(a),a.y(),a.x()} < std::tuple{angle(b),b.y(),b.x()};
+                });
+                for (int index=0;index<events.size();++index)
+                    local.insert(events[index].path,coast[(qint64(index)*coast.size()+coast.size()/2)/events.size()]);
+            }
             int left=0,right=0,top=0,bottom=0;
-            for (const auto& point:occupied) {
+            for (const auto& point:std::as_const(local)) {
                 left=std::min(left,point.x()); right=std::max(right,point.x());
                 top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
-            }
-            if (!events.isEmpty()) {
-                // Leave open water between the connected land and the Event markers.
-                const int firstEventRow=local.isEmpty() ? 0 : bottom+3;
-                const int eventColumns=std::max((right-left+2)/2,int(std::ceil(std::sqrt(events.size()))));
-                for (int index=0;index<events.size();++index) {
-                    const QPoint point(left+2*(index%eventColumns),firstEventRow+2*(index/eventColumns));
-                    local.insert(events[index].path,point);
-                    right=std::max(right,point.x()); bottom=std::max(bottom,point.y());
-                }
             }
             district.anchor={2-left,4-top};
             for (const auto& row:district.rows) district.cells.append(local.value(row.path)+district.anchor);
@@ -664,7 +691,7 @@ void RadarIsland::paint(QPainter* painter) {
     inBuckets(viewport.adjusted(-labelMargin,-labelMargin,labelMargin,labelMargin).intersected(terrainBounds_),[&](const QPoint& area) { visibleMarkers.append(markerBuckets_.value(area)); });
     std::sort(visibleMarkers.begin(),visibleMarkers.end());
     visibleMarkers.erase(std::unique(visibleMarkers.begin(),visibleMarkers.end()),visibleMarkers.end());
-    inBuckets(viewport.adjusted(-step,-step,step,step).intersected(terrainBounds_),[&](const QPoint& area) {
+    if (showFilteredContext_) inBuckets(viewport.adjusted(-step,-step,step,step).intersected(terrainBounds_),[&](const QPoint& area) {
         const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
         for (const auto& path:*found) {
             if (filtered_.contains(path)) continue;
@@ -677,6 +704,7 @@ void RadarIsland::paint(QPainter* painter) {
         const auto& marker=markers_[index];
         if (!viewport.intersects(marker.area)) continue;
         const bool active=groups_.contains(marker.group);
+        if (!showFilteredContext_ && !active) continue;
         if (viewport.contains(marker.world)) tile(marker.world,active ? terrainColor(marker.kind) : dimmed);
         const bool clusterLabel=marker.overview;
         if ((clusterLabel && zoom_>=1.35) || (!clusterLabel && zoom_<.85)) continue;
@@ -694,7 +722,7 @@ void RadarIsland::paint(QPainter* painter) {
             label.moveCenter(center);
             label.moveLeft(std::clamp(label.left(),4.,width()-label.width()-4));
             label.moveTop(std::clamp(label.top(),4.,height()-label.height()-4));
-            if (label.adjusted(-4,-4,4,4).intersects(land)
+            if (label.top() < labelTopInset_ + 4 || label.adjusted(-4,-4,4,4).intersects(land)
                 || std::any_of(labels.cbegin(),labels.cend(),[&](const auto& shown) { return shown.first.adjusted(-4,-2,4,2).intersects(label); })) continue;
             const auto topLeft=(label.topLeft()-QPointF(width()/2,height()/2))/zoom_-pan_;
             const QRectF query(topLeft,label.size()/zoom_);

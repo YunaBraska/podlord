@@ -194,6 +194,7 @@ private:
         double progress = 0;
         bool initialized = false;
         quint64 revision = 0;
+        quint64 accountingEpoch = 0;
         QDateTime lastSync;
         QDateTime lastDiscovery;
         QList<QDateTime> requestStarts;
@@ -213,6 +214,7 @@ private:
         QJsonArray page;
         QSet<QString> tokens;
         quint64 revision = 0;
+        quint64 accountingEpoch = 0;
         QString logKey, container;
         QString forwardToken, streamToken, selector;
         QString terminalToken;
@@ -238,6 +240,7 @@ private:
     QMap<QNetworkReply*, Task> reads_;
     QMap<QFutureWatcher<PreparedList>*, Task> preparing_;
     quint64 nextPresentationRevision_ = 0;
+    quint64 nextAccountingEpoch_ = 0;
     QTimer gate_;
     QTimer expiry_;
     QTimer sync_;
@@ -273,6 +276,7 @@ private:
     void discardHiddenReads();
     void dispatch();
     void recordRequestStarted(const Task& task);
+    void discardStale(const Task& task);
     void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail,
                 const std::optional<PreparedList>& prepared = std::nullopt);
     void consume(const Task& task, const QJsonObject& document, const PreparedList* prepared = nullptr);

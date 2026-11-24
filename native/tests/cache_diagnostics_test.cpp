@@ -214,6 +214,8 @@ bool run(const QString& scenario) {
             if (client.cacheDiagnostics() != retained || client.requestAudit("cached") != audit || requests != calls) return false;
             if (!client.synchronize()) return false;
         }
+        if (!waitFor([&] { return !client.loading("cached") && client.rows("cached").isEmpty()
+            && !client.containsResource("cached", podPath); })) return false;
         const auto expired = client.cacheDiagnostics();
         return client.rows("cached").isEmpty() && !client.containsResource("cached", podPath)
             && expired.value("collections").toLongLong() == 0 && expired.value("resources").toLongLong() == 0

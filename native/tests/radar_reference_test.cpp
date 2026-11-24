@@ -142,6 +142,33 @@ bool eventsOffLand() {
     const auto filtered = coordinates(radar.tiles());
     return filtered.value(eventPath) == withEvents.value(eventPath) && filtered.value(eventOnlyPath) == withEvents.value(eventOnlyPath);
 }
+bool filteredContextVisibility() {
+    const QString first = "/api/v1/namespaces/default/pods/first";
+    const QString second = "/api/v1/namespaces/default/pods/second";
+    podlord::ResourceTable table;
+    podlord::ResourceFilter filter;
+    filter.setSourceModel(&table);
+    podlord::RadarIsland radar;
+    radar.setWidth(800); radar.setHeight(800); radar.setSource(&filter);
+    const QJsonArray rows{
+        QJsonObject{{"path", first}, {"name", "first"}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", "first"}},
+        QJsonObject{{"path", second}, {"name", "second"}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", "second"}}};
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 2; }, 3000)) return false;
+    const auto positions = coordinates(radar.tiles());
+    if (!filter.filter({}, {{"name", "\"first\""}})
+        || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 1; }, 3000)) return false;
+    const auto paint = [&] {
+        QImage image(800, 800, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image); radar.paint(&painter);
+        return image;
+    };
+    const auto point = (QPointF(400, 400) + positions.value(second)).toPoint();
+    if (paint().pixelColor(point).alpha() == 0) return setupFailure("normal filter lost background context");
+    radar.setShowFilteredContext(false);
+    return paint().pixelColor(point).alpha() == 0
+        || setupFailure("Problems filter still painted an unrelated resource");
+}
 bool highlightFill() {
     QJsonArray rows;
     QStringList paths;
@@ -650,6 +677,7 @@ bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size() == 2 && args[1] == "highlight_fill") return highlightFill();
     if (args.size() == 2 && args[1] == "events_off_land") return eventsOffLand();
+    if (args.size() == 2 && args[1] == "filtered_context_visibility") return filteredContextVisibility();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && args[1]=="proxy_metadata") return proxyMetadata();

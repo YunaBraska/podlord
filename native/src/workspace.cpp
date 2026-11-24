@@ -491,6 +491,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (runtime_->owners.value(id) == this) {
             const auto context = sessionConfiguration(id).value("contextId").toString();
             runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
+            for (const auto& value : client_.rows(id)) client_.requestManagedKubeconfig(id, value.toObject());
         }
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
@@ -545,20 +546,11 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
             if (!std::holds_alternative<QString>(sample)) return;
             const auto& origin = std::get<QString>(sample);
             const auto prefix = origin.left(origin.lastIndexOf('/') + 1);
-            const auto clusterRows = client_.rows(id);
             for (const auto& source : sources_.sources) {
                 if (!source.current || !source.sourcePath.startsWith(prefix) || source.contexts.isEmpty()
                     || sources_.replacements.contains(source.contexts.first().id)) continue;
                 const auto uid = source.sourcePath.mid(prefix.size());
                 if ((complete && observed.contains(uid)) || (!complete && !removed.contains(uid))) continue;
-                const QUrl server(source.contexts.first().server);
-                const auto endpoint = server.host().toLower() + ':' + QString::number(server.port(443));
-                const bool stillObserved = std::any_of(clusterRows.cbegin(), clusterRows.cend(), [&](const auto& value) {
-                    const auto row = value.toObject(), target = row["controlPlaneEndpoint"].toObject();
-                    return row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/")
-                        && target["host"].toString().toLower() + ':' + QString::number(target["port"].toInt()) == endpoint;
-                });
-                if (stillObserved) continue;
                 const auto affected = managedRetirementContextIds(sources_, source.contexts.first().id);
                 QStringList sessions;
                 for (const auto& session : catalog_.sessions)

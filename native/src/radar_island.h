@@ -64,6 +64,8 @@ class RadarIsland : public QQuickPaintedItem {
     Q_PROPERTY(QVariantMap linkedDepths READ linkedDepths WRITE setLinkedDepths NOTIFY linkedDepthsChanged)
     Q_PROPERTY(QString hoveredPath READ hoveredPath WRITE setHoveredPath NOTIFY hoveredPathChanged)
     Q_PROPERTY(QString focusedPath READ focusedPath WRITE setFocusedPath NOTIFY focusedPathChanged)
+    Q_PROPERTY(bool showFilteredContext READ showFilteredContext WRITE setShowFilteredContext NOTIFY showFilteredContextChanged)
+    Q_PROPERTY(qreal labelTopInset READ labelTopInset WRITE setLabelTopInset NOTIFY labelTopInsetChanged)
 public:
     explicit RadarIsland(QQuickItem* parent = nullptr);
     ~RadarIsland() override;
@@ -83,6 +85,8 @@ public:
     QVariantMap linkedDepths() const { return linkedDepths_; }
     QString hoveredPath() const { return hoveredPath_; }
     QString focusedPath() const { return focusedPath_; }
+    bool showFilteredContext() const { return showFilteredContext_; }
+    qreal labelTopInset() const { return labelTopInset_; }
     static bool validPose(const QVariantMap& pose);
     int currentIndex() const;
     void setSource(QAbstractItemModel* source);
@@ -95,6 +99,8 @@ public:
     void setLinkedDepths(const QVariantMap& depths);
     void setHoveredPath(const QString& path);
     void setFocusedPath(const QString& path);
+    void setShowFilteredContext(bool show);
+    void setLabelTopInset(qreal inset);
     Q_INVOKABLE bool pan(double dx, double dy);
     Q_INVOKABLE bool zoomAt(double factor, double x, double y);
     Q_INVOKABLE bool focusResource(int index, double zoom = 0);
@@ -119,6 +125,8 @@ signals:
     void linkedDepthsChanged();
     void hoveredPathChanged();
     void focusedPathChanged();
+    void showFilteredContextChanged();
+    void labelTopInsetChanged();
 private:
     struct Row final {
         QString path, kind, name, scope, cluster, owner, identity;
@@ -147,6 +155,8 @@ private:
     QString inspectedPath_, hoveredPath_, focusedPath_;
     QVariantMap linkedDepths_;
     bool effectsEnabled_ = true;
+    bool showFilteredContext_ = true;
+    qreal labelTopInset_ = 0;
     QList<Row> signature_;
     QHash<QString, QPointF> positions_;
     QHash<QPoint, QList<QString>> resourceBuckets_;

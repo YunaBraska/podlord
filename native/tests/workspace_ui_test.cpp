@@ -941,11 +941,14 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("drop_config_locked_")) return enter.isAccepted() && drop.isAccepted()
             && waitFor([&] { return !workspace.busy() && workspace.error().contains("lock"); })
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty();
-        const int expected = scenario == "drop_config_invalid" || scenario == "drop_config_missing" ? 0 : scenario == "drop_config_multiple" ? 2 : 1;
+        const bool invalidDrop = scenario == "drop_config_invalid" || scenario == "drop_config_missing";
+        const int expected = invalidDrop ? 0 : scenario == "drop_config_multiple" ? 2 : 1;
         return enter.isAccepted() && drop.isAccepted()
             && waitFor([&] { return !workspace.busy() && workspace.contexts().size() == expected; })
             && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty()
-            && workspace.sourceImportNotice().isEmpty() && workspace.error().isEmpty()
+            && workspace.sourceImportNotice().isEmpty()
+            && (invalidDrop ? !workspace.sourceImportError().isEmpty() && workspace.error() == workspace.sourceImportError()
+                            : workspace.error().isEmpty())
             && (!item(window,"mapBack") || !item(window,"mapBack")->isVisible())
             && (!item(window,"mapForward") || !item(window,"mapForward")->isVisible());
     }
@@ -1065,7 +1068,8 @@ bool execute(const QString& requestedScenario) {
         if (!QMetaObject::invokeMethod(&workspace, "quickImportFile", Q_RETURN_ARG(bool, admitted), Q_ARG(QString, input))
             || !admitted || !waitFor([&] { return !workspace.busy(); })) return false;
         if (scenario == "quick_file_invalid" || scenario == "quick_file_missing")
-            return workspace.contexts().isEmpty() && workspace.tabs().isEmpty() && workspace.error().isEmpty()
+            return workspace.contexts().isEmpty() && workspace.tabs().isEmpty()
+                && !workspace.error().isEmpty() && workspace.sourceImportError() == workspace.error()
                 && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
         return workspace.contexts().size() == 1 && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty()
             && server.requests.isEmpty();
@@ -1471,13 +1475,18 @@ bool execute(const QString& requestedScenario) {
                     && manualContext().value("name") == "My workload"
                     && std::holds_alternative<podlord::ClusterConnection>(current)
                     && std::get<podlord::ClusterConnection>(current).authorization == "Bearer managed-test-token-2";
-            }, 15000)) return false;
+            }, 15000)) {
+                std::fprintf(stderr, "Managed UID rotation failed: busy=%d count=%lld error=%s sourceError=%s reads=%lld\n",
+                    workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                    qPrintable(workspace.sourceImportError()), static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) { return path.startsWith(secretPath); })));
+                return false;
+            }
             const auto catalog = podlord::KubeconfigStore(profile).list();
             if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
             QStringList owned;
             for (const auto& source : std::get<podlord::SourceCatalog>(catalog).sources)
                 if (source.sourcePath.startsWith("managed://capi/")) owned.append(source.ownedPath);
-            if (owned.size() < 2) return false;
+            if (owned.size() != 1) return false;
             server.managedClusterPresent = false;
             reference = reference.addSecs(901);
             if (!workspace.refresh() || !waitFor([&] {
@@ -1486,11 +1495,19 @@ bool execute(const QString& requestedScenario) {
                     && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
                         return value.toMap().value("source") == "Cluster API";
                     });
-            }, 15000)) return false;
+            }, 15000)) {
+                std::fprintf(stderr, "Managed UID retirement failed: busy=%d count=%lld error=%s sourceError=%s\n",
+                    workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                    qPrintable(workspace.sourceImportError()));
+                return false;
+            }
             const auto restored = podlord::KubeconfigStore(profile).connection(original);
-            return std::holds_alternative<podlord::ClusterConnection>(restored)
+            const bool passed = std::holds_alternative<podlord::ClusterConnection>(restored)
                 && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token"
                 && std::all_of(owned.cbegin(), owned.cend(), [](const auto& path) { return !QFileInfo::exists(path); });
+            if (!passed) std::fprintf(stderr, "Managed UID retirement left generated snapshots or credentials: snapshots=%lld, restored=%d\n",
+                static_cast<long long>(owned.size()), std::holds_alternative<podlord::ClusterConnection>(restored));
+            return passed;
         }
         if (scenario == "map_auto_retire") {
             server.managedClusterPresent = false;
@@ -2731,7 +2748,7 @@ bool execute(const QString& requestedScenario) {
             return stable && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
         }
         if (scenario == "shell_quick_invalid_existing") {
-            const auto session = workspace.currentSession(), notice = workspace.sourceImportNotice(), error = workspace.error();
+            const auto session = workspace.currentSession();
             const auto contexts = workspace.contexts();
             if (!workspace.filter("alpha")) return false;
             const auto path = temporary.filePath("invalid");
@@ -2740,7 +2757,8 @@ bool execute(const QString& requestedScenario) {
             invalid.close();
             if (!workspace.quickImportFile(path) || !waitFor([&] { return !workspace.busy(); })) return false;
             return workspace.currentSession() == session && workspace.contexts() == contexts && workspace.filterText() == "alpha"
-                && workspace.sourceImportNotice() == notice && workspace.error() == error && server.requests.size() == calls;
+                && workspace.sourceImportNotice().isEmpty() && !workspace.error().isEmpty()
+                && workspace.sourceImportError() == workspace.error() && server.requests.size() == calls;
         }
         if (scenario == "shell_quick_sessions" || scenario == "shell_quick_reopen" || scenario == "shell_quick_context") {
             const auto session = workspace.currentSession();
