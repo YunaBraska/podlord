@@ -774,12 +774,21 @@ bool execute(const QString& requestedScenario) {
     file.close();
     const auto profile = temporary.filePath("profile");
     QDateTime reference = QDateTime::currentDateTimeUtc();
-    if (scenario == "map_managed_provenance") {
+    if (scenario == "map_managed_provenance" || scenario == "map_group_scroll_desktop") {
         podlord::KubeconfigStore store(profile);
         if (!std::holds_alternative<podlord::SourceSnapshot>(store.importFile(source))) return false;
-        const QByteArray managed = "apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: https://wlc.example:6443}\nusers:\n- name: workload\n  user: {token: managed-test-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: workload}\n";
-        if (!std::holds_alternative<podlord::SourceSnapshot>(store.importManagedKubeconfig(
-            source, "local", "uid-workload", "wlc.example:6443", managed))) return false;
+        const int workloadCount = scenario == "map_group_scroll_desktop" ? 12 : 1;
+        for (int index = 0; index < workloadCount; ++index) {
+            const auto suffix = index ? "-" + QByteArray::number(index) : QByteArray{};
+            const auto name = "workload" + suffix;
+            const auto host = "wlc" + suffix + ".example";
+            const QByteArray managed = "apiVersion: v1\nkind: Config\nclusters:\n- name: " + name
+                + "\n  cluster: {server: https://" + host + ":6443}\nusers:\n- name: " + name
+                + "\n  user: {token: managed-test-token}\ncontexts:\n- name: " + name
+                + "\n  context: {cluster: " + name + ", user: " + name + "}\n";
+            if (!std::holds_alternative<podlord::SourceSnapshot>(store.importManagedKubeconfig(
+                source, "local", "uid-" + name, QString::fromUtf8(host) + ":6443", managed))) return false;
+        }
     }
     if (scenario == "settings_invalid") {
         if (!QDir().mkpath(profile)) return false;
@@ -832,9 +841,34 @@ bool execute(const QString& requestedScenario) {
             return heading && title && heading->mapToScene({0, 0}).y()
                     >= title->mapToScene({0, title->height()}).y()
                 && managerCard && workloadCard && managerCard->height() > 80 && workloadCard->height() > 80
+                && qAbs(managerCard->mapToScene({0, 0}).y() - workloadCard->mapToScene({0, 0}).y()) < 1
+                && workloadCard->mapToScene({0, 0}).x() > managerCard->mapToScene({0, 0}).x()
                 && displayedWithin(window->contentItem(), managerCard);
         };
         return waitFor(grouped) && saveShellFrame(window, scenario, item(window, "contextMapCards"));
+    }
+    if (scenario == "map_group_scroll_desktop") {
+        QString groupId;
+        const auto grouped = [&] {
+            if (workspace.contexts().size() != 15 || workspace.mapContexts().size() != 15) return false;
+            const auto rows = workspace.mapContexts();
+            const auto manager = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "local";
+            });
+            if (manager == rows.cend()) return false;
+            groupId = manager->toMap().value("groupId").toString();
+            auto* strip = item(window, "contextGroupCards_" + groupId);
+            return strip && strip->property("count").toInt() == 15
+                && strip->property("contentWidth").toReal() > strip->width();
+        };
+        if (!waitFor(grouped)) return false;
+        auto* strip = item(window, "contextGroupCards_" + groupId);
+        const auto center = strip->mapToScene({strip->width() / 2, strip->height() / 2});
+        QWheelEvent wheel(center, window->mapToGlobal(center.toPoint()), QPoint(-1200, 0), QPoint(-2400, 0),
+            Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(window, &wheel);
+        return waitFor([&] { return strip->property("contentX").toReal() > 0; })
+            && saveShellFrame(window, scenario, item(window, "contextMapCards"));
     }
     QString renameStage = "source import/open";
     bool renamePassed = false;
@@ -1318,7 +1352,7 @@ bool execute(const QString& requestedScenario) {
             return QString{};
         };
         if (!waitFor([&] { return grouped() && item(window, "contextGroup_" + groupId())
-            && item(window, "contextMapCards")->property("count").toInt() >= 3; })) return false;
+            && item(window, "contextMapCards")->property("count").toInt() >= 2; })) return false;
         if (!importWorkload("https://other.example:6443")
             || !waitFor([&] { const auto rows = workspace.mapContexts(); return std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
                 return !value.toMap().value("groupId").toString().isEmpty();
@@ -1326,8 +1360,11 @@ bool execute(const QString& requestedScenario) {
         const bool ready = importWorkload("https://wlc.example:6443") && waitFor([&] {
             auto* group = item(window, "contextGroup_" + groupId());
             auto* grid = item(window, "contextMapCards");
-            return grouped() && group && group->isVisible() && grid && grid->property("count").toInt() >= 3
-                && (scenario != "map_auto_group_phone" || (grid->width() <= 320 && grid->property("contentHeight").toReal() > grid->height()
+            auto* strip = item(window, "contextGroupCards_" + groupId());
+            return grouped() && group && group->isVisible() && grid && grid->property("count").toInt() >= 2
+                && strip && strip->property("count").toInt() == 4
+                && (scenario != "map_auto_group_phone" || (grid->width() <= 320
+                    && strip->property("contentWidth").toReal() > strip->width()
                     && displayedWithin(window->contentItem(), group)));
         });
         if (!ready) {
@@ -1338,7 +1375,16 @@ bool execute(const QString& requestedScenario) {
                 grid ? grid->property("contentHeight").toReal() : -1, grid ? grid->property("contentY").toReal() : -1,
                 group ? group->mapToScene(QPointF{}).y() : -1);
         }
-        return ready && saveShellFrame(window,scenario,item(window,"contextMapCards"));
+        if (!ready) return false;
+        if (scenario == "map_auto_group_phone") {
+            auto* strip = item(window, "contextGroupCards_" + groupId());
+            const auto center = strip->mapToScene({strip->width() / 2, strip->height() / 2});
+            QWheelEvent wheel(center, window->mapToGlobal(center.toPoint()), QPoint(-240, 0), QPoint(-480, 0),
+                Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(window, &wheel);
+            if (!waitFor([&] { return strip->property("contentX").toReal() > 0; })) return false;
+        }
+        return saveShellFrame(window,scenario,item(window,"contextMapCards"));
     }
     if (scenario == "map_auto_import_new" || scenario == "map_auto_retire_new") {
         const auto management = workspace.contexts().first().toMap().value("id").toString();

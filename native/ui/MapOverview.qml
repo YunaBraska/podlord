@@ -30,8 +30,9 @@ Pane {
         }
         for (const group of groups) {
             rows.push({heading: true, id: group.id, name: group.name, contexts: []})
-            appendCards(group.contexts.filter(context => context.groupRole === "management"))
-            appendCards(group.contexts.filter(context => context.groupRole === "workload"))
+            rows.push({heading: false, id: group.id, scrollable: true, contexts:
+                group.contexts.filter(context => context.groupRole === "management")
+                    .concat(group.contexts.filter(context => context.groupRole === "workload"))})
         }
         appendCards(ungroupedContexts)
         return rows
@@ -94,9 +95,16 @@ Pane {
                     font.bold: true
                     color: workspace.appearanceColors.accent
                 }
-                Row {
+                ListView {
+                    objectName: groupRow.modelData.scrollable ? "contextGroupCards_" + groupRow.modelData.id : ""
+                    anchors.fill: parent
                     visible: !groupRow.modelData.heading
-                    Repeater { model: groupRow.modelData.contexts; delegate: contextCard }
+                    orientation: ListView.Horizontal
+                    clip: true; cacheBuffer: 0; spacing: 8
+                    interactive: groupRow.modelData.scrollable === true
+                    model: visible ? groupRow.modelData.contexts : []
+                    delegate: contextCard
+                    ScrollBar.horizontal: ScrollBar { policy: groupRow.modelData.scrollable ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                 }
             }
         }
