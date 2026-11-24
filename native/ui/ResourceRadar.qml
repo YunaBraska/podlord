@@ -275,7 +275,7 @@ Pane {
                     viewPose: grid.viewPose
                     color: "#061621"
                     visible: grid.count > 0
-                    speedPercent: workspace.radarWaterEnabled ? workspace.radarWaterSpeedPercent : 0
+                    speedPercent: workspace.radarWaterEnabled && !workspace.problemsOnly ? workspace.radarWaterSpeedPercent : 0
                     playing: grid.renderActive && visible && speedPercent > 0 && !mapDrag.active && !workspace.alerts.reducedMotion
                     Connections {
                         target: workspace

@@ -833,7 +833,14 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 return partial && effect.value("color").toString() != "fresh" && !effect.contains("animation");
             }
             if (!click(window, "problemsOnly") || !waitFor([&] { return workspace.resourceCount() == 1; })) return false;
-            if (scenario == "mode_problems") return workspace.property("problemsOnly").toBool() && server.requests == requests;
+            if (scenario == "mode_problems") {
+                auto* water = item(window, "radarWater");
+                if (!water || !workspace.radarWaterEnabled() || workspace.radarWaterSpeedPercent() <= 0
+                    || water->property("speedPercent").toInt() != 0) return false;
+                if (!click(window, "problemsOnly") || workspace.problemsOnly()) return false;
+                return waitFor([&] { return water->property("speedPercent").toInt() == workspace.radarWaterSpeedPercent(); })
+                    && server.requests == requests;
+            }
             if (scenario == "mode_activity") return click(window, "activityOnly") && waitFor([&] { return workspace.resourceCount() == 2; })
                 && !workspace.property("problemsOnly").toBool() && workspace.property("activityOnly").toBool() && server.requests == requests;
             if (scenario == "mode_reset") return click(window, "resetResourceFilters") && workspace.resourceCount() == 3
