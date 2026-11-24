@@ -30,6 +30,7 @@ signals:
     void changed();
     void analysisSent(const QString& identity);
 private:
+    void restore(const CredentialStore::ReadResult& loaded);
     bool save();
     void loadModels(const QString& after, QVariantList collected);
     void finishLogin(const QString& status);

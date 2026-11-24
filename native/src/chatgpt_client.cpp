@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <array>
 #include <utility>
+#include <QtConcurrent>
 
 namespace podlord {
 namespace {
@@ -54,15 +56,8 @@ void limitReply(QNetworkReply* reply, qint64 maxBytes) {
         if (received > maxBytes) reply->abort();
     });
 }
-} // namespace
-
-ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObject* parent, CredentialStore* credentials)
-    : QObject(parent), profile_(std::move(profile)), authBase_(std::move(authBase)), apiBase_(std::move(apiBase)),
-      credentials_(credentials ? credentials : &systemCredentials_) {
-    loginTimer_.setSingleShot(true);
-    connect(&loginTimer_, &QTimer::timeout, this, [this] { finishLogin("ChatGPT sign-in timed out. Try again."); });
-    if (!validBase(authBase_) || !validBase(apiBase_)) { writable_ = false; status_ = "Invalid ChatGPT endpoint."; return; }
-    const auto loaded = credentials_->readMigrating(profile_, "chatgpt", "chatgpt-auth.json", 2 * 1024 * 1024,
+CredentialStore::ReadResult loadChatGpt(CredentialStore& credentials, const QString& profile) {
+    return credentials.readMigrating(profile, "chatgpt", "chatgpt-auth.json", 2 * 1024 * 1024,
         [](const QByteArray& legacy) {
             auto root = QJsonDocument::fromJson(legacy).object();
             if (root.value("version") != 1 || !root.value("hostId").toString().startsWith("urn:uuid:")
@@ -83,6 +78,34 @@ ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObje
             root.insert("accounts", accounts);
             return QJsonDocument(root).toJson(QJsonDocument::Compact);
         });
+}
+} // namespace
+
+ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObject* parent, CredentialStore* credentials)
+    : QObject(parent), profile_(std::move(profile)), authBase_(std::move(authBase)), apiBase_(std::move(apiBase)),
+      credentials_(credentials ? credentials : &systemCredentials_) {
+    loginTimer_.setSingleShot(true);
+    connect(&loginTimer_, &QTimer::timeout, this, [this] { finishLogin("ChatGPT sign-in timed out. Try again."); });
+    if (!validBase(authBase_) || !validBase(apiBase_)) { writable_ = false; status_ = "Invalid ChatGPT endpoint."; return; }
+    if (!credentials) {
+        writable_ = false;
+        auto* watcher = new QFutureWatcher<CredentialStore::ReadResult>(this);
+        connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher] {
+            writable_ = true;
+            restore(watcher->result());
+            watcher->deleteLater();
+            emit changed();
+            if (connected()) refreshModels();
+        });
+        watcher->setFuture(QtConcurrent::run([profile = profile_] {
+            SystemCredentialStore store;
+            return loadChatGpt(store, profile);
+        }));
+        return;
+    }
+    restore(loadChatGpt(*credentials_, profile_));
+}
+void ChatGptClient::restore(const CredentialStore::ReadResult& loaded) {
     if (!loaded.ok) { writable_ = false; status_ = loaded.error; return; }
     if (!loaded.found) return;
     savedBytes_ = loaded.data;

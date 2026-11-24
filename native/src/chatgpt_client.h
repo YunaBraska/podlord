@@ -34,6 +34,7 @@ signals:
     void changed();
     void analysisSent(const QString& subject);
 private:
+    void restore(const CredentialStore::ReadResult& loaded);
     struct Account {
         QString clientId, subject, email, idToken, accessToken, refreshToken, scopes;
         QDateTime expiresAt;
