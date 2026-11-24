@@ -412,25 +412,25 @@ void RadarIsland::layout(const QList<Row>& rows) {
                 QSet<QPoint> visited = occupied;
                 QList<std::pair<QPoint,int>> wave;
                 for (const auto& point:shore) wave.append({point,0});
-                QList<QPoint> coast;
-                for (int head=0;head<wave.size() && coast.size()<events.size()*4;++head) {
+                QList<QPoint> eventCoast;
+                for (int head=0;head<wave.size() && eventCoast.size()<events.size()*4;++head) {
                     const auto [point,distance]=wave[head];
                     for (const auto& delta:{QPoint(0,-1),QPoint(1,0),QPoint(0,1),QPoint(-1,0)}) {
                         const auto next=point+delta;
                         if (visited.contains(next)) continue;
                         visited.insert(next); wave.append({next,distance+1});
-                        if (distance>=2) coast.append(next);
+                        if (distance>=2) eventCoast.append(next);
                     }
                 }
                 QPointF center;
                 for (const auto& point:occupied) center+=point;
                 center/=occupied.size();
-                std::sort(coast.begin(),coast.end(),[&](const QPoint& a,const QPoint& b) {
+                std::sort(eventCoast.begin(),eventCoast.end(),[&](const QPoint& a,const QPoint& b) {
                     const auto angle=[&](const QPoint& point) { return std::atan2(point.y()-center.y(),point.x()-center.x()); };
                     return std::tuple{angle(a),a.y(),a.x()} < std::tuple{angle(b),b.y(),b.x()};
                 });
                 for (int index=0;index<events.size();++index)
-                    local.insert(events[index].path,coast[(qint64(index)*coast.size()+coast.size()/2)/events.size()]);
+                    local.insert(events[index].path,eventCoast[(qint64(index)*eventCoast.size()+eventCoast.size()/2)/events.size()]);
             }
             int left=0,right=0,top=0,bottom=0;
             for (const auto& point:std::as_const(local)) {
