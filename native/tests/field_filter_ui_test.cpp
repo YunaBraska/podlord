@@ -835,8 +835,11 @@ bool run(const QString& scenario, const QString& referencePresets) {
             if (!click(window, "problemsOnly") || !waitFor([&] { return workspace.resourceCount() == 1; })) return false;
             if (scenario == "mode_problems") {
                 auto* water = item(window, "radarWater");
+                auto* radar = qobject_cast<podlord::RadarIsland*>(item(window, "resourceRadar"));
+                const auto path = workspace.table()->index(0, 0).data(Qt::UserRole).toString();
                 if (!water || !workspace.radarWaterEnabled() || workspace.radarWaterSpeedPercent() <= 0
-                    || water->property("speedPercent").toInt() != 0) return false;
+                    || water->property("speedPercent").toInt() != 0 || !radar || path.isEmpty()
+                    || !waitFor([&] { return !radar->resourceInfo(path, false).isEmpty(); })) return false;
                 if (!click(window, "problemsOnly") || workspace.problemsOnly()) return false;
                 return waitFor([&] { return water->property("speedPercent").toInt() == workspace.radarWaterSpeedPercent(); })
                     && server.requests == requests;

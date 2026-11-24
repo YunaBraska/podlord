@@ -133,6 +133,9 @@ Pane {
                     return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
                 }
                 showFilteredContext: !workspace.problemsOnly
+                onShowFilteredContextChanged: if (!showFilteredContext) Qt.callLater(function() {
+                    if (grid.visible && !grid.showFilteredContext) grid.fitView()
+                })
                 labelTopInset: radarNavigation.height
                 identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"

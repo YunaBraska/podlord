@@ -597,10 +597,20 @@ bool RadarIsland::traverseVisible(int direction) {
 bool RadarIsland::fitView() {
     if (!isVisible() || !source_ || width()<=16 || height()<=32) return false;
     if (dirty_) synchronize();
-    const auto& bounds=terrainBounds_;
+    QRectF bounds=terrainBounds_;
+    if (!showFilteredContext_) {
+        bounds={};
+        for (auto path=filtered_.cbegin();path!=filtered_.cend();++path) {
+            const auto point=positions_.constFind(path.key());
+            if (point==positions_.cend()) continue;
+            const QRectF cell(*point-QPointF(8,8),QSizeF(16,16));
+            bounds=bounds.isEmpty() ? cell : bounds.united(cell);
+        }
+    }
     if (bounds.isEmpty()) return false;
     const auto center=bounds.center();
-    const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-32)/bounds.height()),minimumZoom,maximumZoom);
+    const double maximum=showFilteredContext_ ? maximumZoom : std::min(maximumZoom,zoom_);
+    const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-32)/bounds.height()),minimumZoom,maximum);
     setViewPose({{"x",-center.x()},{"y",-center.y()+8/zoom},{"zoom",zoom}});
     return true;
 }
