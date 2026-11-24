@@ -252,10 +252,6 @@ void RadarIsland::setShowFilteredContext(bool show) {
     if (showFilteredContext_==show) return;
     showFilteredContext_=show; update(); emit showFilteredContextChanged();
 }
-void RadarIsland::setLabelTopInset(qreal inset) {
-    if (!std::isfinite(inset) || inset < 0 || labelTopInset_==inset) return;
-    labelTopInset_=inset; update(); emit labelTopInsetChanged();
-}
 void RadarIsland::setSource(QAbstractItemModel* source) {
     if (source_==source) return;
     source_=source;
@@ -732,7 +728,7 @@ void RadarIsland::paint(QPainter* painter) {
             label.moveCenter(center);
             label.moveLeft(std::clamp(label.left(),4.,width()-label.width()-4));
             label.moveTop(std::clamp(label.top(),4.,height()-label.height()-4));
-            if (label.top() < labelTopInset_ + 4 || label.adjusted(-4,-4,4,4).intersects(land)
+            if (label.adjusted(-4,-4,4,4).intersects(land)
                 || std::any_of(labels.cbegin(),labels.cend(),[&](const auto& shown) { return shown.first.adjusted(-4,-2,4,2).intersects(label); })) continue;
             const auto topLeft=(label.topLeft()-QPointF(width()/2,height()/2))/zoom_-pan_;
             const QRectF query(topLeft,label.size()/zoom_);

@@ -4683,7 +4683,7 @@ bool execute(const QString& requestedScenario) {
                 };
                 auto* map=item(window,"resourceRadar");
                 auto* pane=map;
-                while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+                while (pane && !pane->property("expanded").isValid()) pane=pane->parentItem();
                 geometry("source-sidebar",window->findChild<QQuickItem*>("workspaceSidebarHost"));
                 geometry("host",pane ? pane->parentItem() : nullptr);
                 geometry("pane",pane);
@@ -4752,7 +4752,7 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (scenario == "radar_overlay_navigation") {
             if (item(window,"resetRadar")) return failed("removed reset control must not exist");
-            const auto* navigation=item(window,"radarNavigationOverlay");
+            const auto* navigation=item(window,"radarNavigation");
             if (!navigation) return failed("radar navigation remains available");
             for (const auto* control : navigation->findChildren<QQuickItem*>())
                 if (control->isVisible() && control->property("text").toString().trimmed().endsWith('%'))
@@ -4765,13 +4765,24 @@ bool execute(const QString& requestedScenario) {
             const auto viewport = radar->mapRectToScene(radar->boundingRect());
             for (const auto* name : {"radarZoomOut", "radarZoom"}) {
                 auto* control = item(window, name);
-                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
-                    return failed("navigation must overlay the drawing area");
+                if (!control || !control->isVisible() || control->mapRectToScene(control->boundingRect()).bottom() > viewport.top())
+                    return failed("navigation must leave the drawing area clear");
             }
             if (mapRadar) for (const auto* name : {"mapOverview"}) {
                 auto* control = item(window, name);
-                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
-                    return failed("map history must overlay the drawing area");
+                if (!control || !control->isVisible() || control->mapRectToScene(control->boundingRect()).bottom() > viewport.top())
+                    return failed("map navigation must leave the drawing area clear");
+            }
+            if (mapRadar) {
+                auto* title = item(window, "mapTitle");
+                auto* overview = item(window, "mapOverview");
+                if (!title || !title->isVisible() || !overview || title->mapRectToScene(title->boundingRect()).bottom() > viewport.top())
+                    return failed("map title must leave the drawing area clear");
+                const auto context = workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+                if (!workspace.renameSourceContext(context, QString(160, 'W')) || !waitFor([&] {
+                    return !workspace.busy() && title->property("text").toString().contains(QString(16, 'W'));
+                }) || title->mapRectToScene(title->boundingRect()).right() > overview->mapRectToScene(overview->boundingRect()).left())
+                    return failed("long map title must yield to navigation controls");
             }
             const auto before = radar->property("viewPose").toMap()["zoom"].toDouble();
             return click(window, item(window, "radarZoom"))
@@ -4829,7 +4840,7 @@ bool execute(const QString& requestedScenario) {
             auto* water=item(window,"radarWater");
             auto* info=window->findChild<QQuickItem*>("radarInfoPanel");
             auto* pane=radar;
-            while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+            while (pane && !pane->property("expanded").isValid()) pane=pane->parentItem();
             const auto renderedFrame=[&] {
                 QSignalSpy frames(window,&QQuickWindow::frameSwapped);
                 window->update();
@@ -4851,11 +4862,10 @@ bool execute(const QString& requestedScenario) {
                 if (!requireDetails) return !info->isVisible();
                 const auto details=scene(info);
                 const auto* filterHost=item(window,"radarDetailsOverlayHost");
-                const auto* navigation=item(window,"radarNavigationOverlay");
                 return info->isVisible() && details.width()>0 && details.height()>0 && windowBounds.contains(details)
                     && podlord::test::visibleBounds(window,info).contains(details)
                     && (filterHost && filterHost->isVisible() ? scene(const_cast<QQuickItem*>(filterHost)).contains(details) && !map.intersects(details)
-                        : !map.intersects(details) || (mapRadar && map.contains(details) && navigation && !scene(const_cast<QQuickItem*>(navigation)).intersects(details)));
+                        : !map.intersects(details) || (mapRadar && map.contains(details)));
             };
             if (!geometryValid(false)) return failed("geometry/starved, clipped or reserved empty info");
             if (mapRadar) {
@@ -5154,9 +5164,8 @@ bool execute(const QString& requestedScenario) {
                 const auto popup=tip->mapRectToScene(QRectF(QPointF{},tip->size()));
                 const auto viewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
                 const auto* filterHost=item(window,"radarDetailsOverlayHost");
-                const auto* navigation=item(window,"radarNavigationOverlay");
                 const bool outsideMap=filterHost && filterHost->isVisible() ? filterHost->mapRectToScene(QRectF(QPointF{},filterHost->size())).contains(popup) && !viewport.intersects(popup)
-                    : !viewport.intersects(popup) || (mapRadar && viewport.contains(popup) && navigation && !navigation->mapRectToScene(QRectF(QPointF{},navigation->size())).intersects(popup));
+                    : !viewport.intersects(popup) || (mapRadar && viewport.contains(popup));
                 return viewport==initialViewport && outsideMap && QRectF(0,0,window->width(),window->height()).contains(popup);
             })) {
                 const auto* host=item(window,"radarDetailsOverlayHost");

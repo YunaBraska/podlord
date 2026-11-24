@@ -142,7 +142,6 @@ Pane {
                     id: radar
                     parent: sidebar.expandedRadarHost ?? radarSlot
                     anchors.fill: parent
-                    compact: true
                     expanded: sidebar.expandedRadarHost !== null
                     detailsHost: radarDetailsHost.visible ? radarDetailsHost : null
                     visible: sidebar.radarShown
@@ -185,7 +184,12 @@ Pane {
                     text: workspace.title
                     Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 0
                     implicitHeight: Math.max(sidebar.Window.window && sidebar.Window.window.width < 900 ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
-                    contentItem: Label { text: sessionAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
+                    background: Rectangle {
+                        color: sessionAction.hovered ? workspace.appearanceColors.raised : "transparent"
+                        border.width: sessionAction.activeFocus ? 1 : 0
+                        border.color: workspace.appearanceColors.accent
+                    }
+                    contentItem: Label { text: sessionAction.text; textFormat: Text.PlainText; horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
                     enabled: workspace.currentSession !== "" && !workspace.busy
                     Accessible.name: workspace.uiText["context.rename"] + ": " + text
                     onClicked: renameRequested()
@@ -233,6 +237,11 @@ Pane {
                     Layout.fillWidth: true; showText: true
                     glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: !workspace.problemsOnly && !workspace.activityOnly && workspace.filterText === "" && Object.keys(workspace.resourceFieldFilters).length === 0 ? workspace.uiText["filters.allResources"] : workspace.selectedFilterPreset || workspace.uiText["filters.savedFilters"]
                     checkable: true; checked: sidebar.presetsExpanded
+                    background: Rectangle {
+                        color: preset.hovered ? workspace.appearanceColors.raised : "transparent"
+                        border.width: preset.activeFocus ? 1 : 0
+                        border.color: workspace.appearanceColors.accent
+                    }
                     Accessible.description: checked ? "Expanded saved filters" : "Collapsed saved filters"
                     enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""
                     onClicked: {
@@ -338,7 +347,8 @@ Pane {
                     Accessible.description: checked ? "Expanded filter values" : "Collapsed filter values"
                     background: Rectangle {
                         color: fieldButton.down || fieldButton.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.panel
-                        border.color: fieldButton.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+                        border.width: fieldButton.activeFocus ? 1 : 0
+                        border.color: workspace.appearanceColors.accent
                     }
                     contentItem: RowLayout {
                         spacing: 8

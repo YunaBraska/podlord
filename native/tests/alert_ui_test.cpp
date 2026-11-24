@@ -1075,11 +1075,11 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     && item(window, "resourceFilter")->isVisible(); }) && server.requests == requests;
         }
         if (scenario=="radar_loading_partial") {
-            const auto* summary=item(window, "radarHealthSummary");
-            if (!summary || !summary->property("text").toString().contains("1 resources") || !summary->property("text").toString().contains("Loading")
+            const auto* radar=item(window, "resourceRadar");
+            if (!radar || radar->property("count").toInt()!=1 || !workspace.loading()
                 || !workspace.alerts()->matches().isEmpty() || !focus.isEmpty()) return false;
             if (!waitFor([&] { return !workspace.loading() && workspace.resourceCount()==2; })) return false;
-            return summary->property("text").toString().contains("2 resources") && !summary->property("text").toString().contains("Loading");
+            return radar->property("count").toInt()==2;
         }
         if (scenario=="radar_refresh_preserves_alarm") {
             const auto problemCount=[&] {

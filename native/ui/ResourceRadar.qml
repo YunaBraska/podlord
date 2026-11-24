@@ -9,7 +9,6 @@ import Podlord.Graphics 1.0
 Pane {
     id: radarPane
     enabled: visible
-    property bool compact: false
     property bool expanded: false
     readonly property Item navigationHost: navigationSlot
     readonly property bool shortLandscape: Window.window && Window.window.width > Window.window.height && Window.window.height < 500
@@ -21,9 +20,9 @@ Pane {
         const row = offset === 0 ? 0 : navigationIndex < 0 ? (offset < 0 ? count - 1 : 0) : (navigationIndex + offset + count) % count
         if (grid.selectResource(row) && grid.focusResource(row)) radarInfo.showInfo(focusTarget)
     }
-    padding: compact ? 4 : 12
+    padding: 4
     function dismissInfo(restoreFocus = false) {
-        if (restoreFocus && radarPane.visible && grid.renderActive) radarNavigation.forceActiveFocus()
+        if (restoreFocus && radarPane.visible && grid.renderActive) grid.forceActiveFocus()
         if (infoPopup) infoPopup.close()
         if (radarInfo) radarInfo.showInfo(null)
     }
@@ -43,76 +42,32 @@ Pane {
     }
     background: Rectangle { color: workspace.appearanceColors.radarGlass; border.color: workspace.appearanceColors.border }
     contentItem: ColumnLayout {
-        ToolBar {
-            id: radarNavigation
-            objectName: "radarNavigationOverlay"
-            parent: grid
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            z: 4
-            padding: 4
-            background: Rectangle { color: workspace.appearanceColors.radarGlass }
-            contentItem: RowLayout {
-                spacing: 4
-                RowLayout {
-                    id: navigationSlot
-                    Layout.fillWidth: true
-                    Layout.minimumWidth: 0
-                    visible: radarPane.expanded && children.length > 0
-                }
-                RowLayout {
-                    Layout.fillWidth: !radarPane.expanded
-                    SelectableText { text: "Radar"; font.bold: true; visible: !radarPane.compact }
-                    Item { Layout.fillWidth: true }
-                    IconButton {
-                        objectName: "mapOverview"
-                        visible: radarPane.expanded && !workspace.mapOverview
-                        glyph: "Cluster"
-                        text: workspace.uiText["nav.allContexts"]
-                        showText: false
-                        enabled: !workspace.busy
-                        onClicked: workspace.showMapOverview()
-                    }
-                    IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
-                    IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
-                }
-            }
-        }
         RowLayout {
+            id: radarNavigation
+            objectName: "radarNavigation"
             Layout.fillWidth: true
-            visible: !radarPane.compact
-            Rectangle {
-                id: healthBar
-                objectName: "radarHealthBar"
-                Layout.preferredWidth: 120
-                Layout.preferredHeight: 6
-                color: workspace.appearanceColors.inset
-                Row {
-                    anchors.fill: parent
-                    Repeater {
-                        model: [{count: workspace.healthSummary.healthy || 0, color: "#7DFFC3"},
-                            {count: workspace.healthSummary.warning || 0, color: "#FFE866"},
-                            {count: workspace.healthSummary.critical || 0, color: "#FF5C5C"}]
-                        Rectangle {
-                            required property var modelData
-                            width: workspace.healthSummary.total > 0 ? healthBar.width * modelData.count / workspace.healthSummary.total : 0
-                            height: healthBar.height
-                            color: modelData.color
-                        }
-                    }
-                }
-                Accessible.name: "Context resource health"
-            }
-            SelectableText {
-                objectName: "radarHealthSummary"
+            Layout.minimumWidth: 0
+            spacing: 4
+            RowLayout {
+                id: navigationSlot
                 Layout.fillWidth: true
-                text: (workspace.healthSummary.total || 0) + " resources / " + (workspace.healthSummary.healthy || 0) + " healthy / "
-                    + (workspace.healthSummary.warning || 0) + " warnings / " + (workspace.healthSummary.critical || 0) + " errors"
-                    + (workspace.loading ? " / Loading" : "")
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                Accessible.name: text
+                Layout.minimumWidth: 0
+                visible: radarPane.expanded && children.length > 0
+            }
+            RowLayout {
+                Layout.fillWidth: !radarPane.expanded
+                Item { Layout.fillWidth: true }
+                IconButton {
+                    objectName: "mapOverview"
+                    visible: radarPane.expanded && !workspace.mapOverview
+                    glyph: "Cluster"
+                    text: workspace.uiText["nav.allContexts"]
+                    showText: false
+                    enabled: !workspace.busy
+                    onClicked: workspace.showMapOverview()
+                }
+                IconButton { objectName: "radarZoomOut"; glyph: "ZoomOut"; text: "Zoom radar out"; onClicked: grid.zoomAt(1/1.18, grid.width/2, grid.height/2) }
+                IconButton { objectName: "radarZoom"; glyph: "ZoomIn"; text: "Zoom radar in"; onClicked: grid.zoomAt(1.18, grid.width/2, grid.height/2) }
             }
         }
         Item {
@@ -136,7 +91,6 @@ Pane {
                 onShowFilteredContextChanged: if (!showFilteredContext) Qt.callLater(function() {
                     if (grid.visible && !grid.showFilteredContext) grid.fitView()
                 })
-                labelTopInset: radarNavigation.height
                 identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"
                 captionPixelSize: workspace.textSizes.caption
@@ -384,8 +338,8 @@ Pane {
                 SelectableText {
                     objectName: "emptyRadar"
                     anchors.horizontalCenter: parent.horizontalCenter
-                    y: radarNavigation.height + (grid.height - radarNavigation.height - height) / 2
-                    visible: grid.count === 0 && grid.height - radarNavigation.height >= implicitHeight + 8
+                    y: (grid.height - height) / 2
+                    visible: grid.count === 0 && grid.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
                     text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources..." : workspace.totalResourceCount === 0 ? "No resources to display." : "No matching resources."
                     textFormat: Text.PlainText
@@ -425,7 +379,7 @@ Pane {
                 height: Math.max(0, Math.min(infoHeader.implicitHeight + infoLayout.spacing + infoContents.implicitHeight + radarInfo.topPadding + radarInfo.bottomPadding,
                     nearResource ? Math.min(360, parent.height - 32) : radarPane.detailsHost ? parent.height : adjacent ? grid.height : Math.min(320,
                         Math.max(grid.height * 0.45, infoHeader.implicitHeight + infoLayout.spacing + 24 + radarInfo.topPadding + radarInfo.bottomPadding),
-                        grid.height - radarNavigation.height - 8)))
+                        grid.height - 8)))
                 x: nearResource ? Math.max(16, Math.min(parent.width - width - 16,
                     resourcePosition.x + width + 28 <= parent.width ? resourcePosition.x + 12 : resourcePosition.x - width - 12))
                     : radarPane.detailsHost ? 0 : adjacent ? (onLeft ? -width - 8 : grid.width + 8) : parent.width - width - 8
@@ -586,6 +540,5 @@ Pane {
                 }
             }
         }
-        SelectableText { Layout.fillWidth: true; visible: !radarPane.compact; text: "Drag or arrow keys: pan. Scroll or trackpad: zoom. + / -: zoom. 0: reset. Home / End: focus resource. Enter: inspect."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     }
 }
