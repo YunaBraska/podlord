@@ -623,6 +623,7 @@ void RadarIsland::project(bool refresh) {
     const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
     // Subclasses can override roles without declaring another Q_OBJECT.
     const bool passthrough=proxy && typeid(*proxy)==typeid(ResourceFilter);
+    const bool problemsMode=passthrough && static_cast<const ResourceFilter*>(proxy)->mode()=="problems";
     if (isVisible() && width()>0 && height()>0) {
         const auto onScreen=worldViewport();
         const auto viewport=onScreen.adjusted(-step,-step,step,step);
@@ -648,6 +649,7 @@ void RadarIsland::project(bool refresh) {
                 if (tone=="status") { if (health==1 || health==2) tile.color=tile.announce; }
                 else if (tone=="fresh") tile.color=QColor::fromRgb(0x7DFFC3);
                 else if (!tone.isEmpty()) { const QColor color(tone); if (color.isValid()) tile.color=color; }
+                if (problemsMode) tile.color=tile.announce;
                 if (effectsEnabled_ && alerts_ && !alerts_->reducedMotion() && onScreen.intersects(QRectF(point-QPointF(2.75,2.75),QSizeF(5.5,5.5)))) {
                     const auto animation=effect.value(QStringLiteral("animation")).toString();
                     if (animation=="blink") tile.animation=Animation::Blink;
@@ -699,8 +701,7 @@ void RadarIsland::paint(QPainter* painter) {
     for (const int index:visibleMarkers) {
         const auto& marker=markers_[index];
         if (!viewport.intersects(marker.area)) continue;
-        const bool active=groups_.contains(marker.group);
-        if (viewport.contains(marker.world)) tile(marker.world,active ? terrainColor(marker.kind) : dimmed);
+        if (viewport.contains(marker.world)) tile(marker.world,dimmed);
         const bool clusterLabel=marker.overview;
         if ((clusterLabel && zoom_>=1.35) || (!clusterLabel && zoom_<.85)) continue;
         QRectF label=marker.labelBounds;

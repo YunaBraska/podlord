@@ -117,6 +117,7 @@ public:
     static QStringList exactValues(const QString& expression);
     static Result<QString> selectValue(const QString& expression, const QString& value, bool selected);
     QString error() const { return error_; }
+    QString mode() const { return mode_; }
 signals:
     void filterStateChanged();
 protected:
