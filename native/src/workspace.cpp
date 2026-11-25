@@ -1286,7 +1286,7 @@ bool Workspace::publish() {
     visibleTable_.setLimit(nav.limit);
     const auto prepared = preparedSnapshots_.constFind(active_);
     const bool matching = prepared != preparedSnapshots_.cend() && prepared->source == snapshot && prepared->cluster == cluster;
-    if (!matching && snapshot.size() >= 2000) {
+    if (!matching && snapshot.size() >= 256) {
         if (sessionChanged) {
             rows_.publish({}, cluster, true);
             eventRows_.publish({}, cluster, true);

@@ -26,11 +26,11 @@ TabButton {
         color: tab.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
     }
     background: Rectangle {
-        color: tab.checked || tab.down ? workspace.appearanceColors.selection
-            : tab.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-        border.color: tab.checked || tab.activeFocus ? workspace.appearanceColors.accent : workspace.appearanceColors.border
+        color: tab.down ? workspace.appearanceColors.selection
+            : tab.hovered ? workspace.appearanceColors.raised : "transparent"
+        border.color: tab.activeFocus ? workspace.appearanceColors.accent : "transparent"
         Rectangle {
-            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
             height: 2
             visible: tab.checked
             color: workspace.appearanceColors.accent

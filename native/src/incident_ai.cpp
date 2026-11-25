@@ -1126,7 +1126,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     const auto refreshPath = pendingObservations_.value(context).refreshPath;
     const auto revision = ++nextObservationRevision_;
     pendingObservations_[context] = {language, refreshPath, revision};
-    if (rows.size() < 2000) {
+    if (rows.size() < 256) {
         pendingObservations_.remove(context);
         observePrepared(context, language, force, expired, retryElapsed, screenedRows(rows));
         if (!refreshPath.isEmpty()) refresh(context, refreshPath);

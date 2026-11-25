@@ -32,6 +32,9 @@ Pane {
     }
     onVisibleChanged: if (visible) capturePreview(workspace.currentSession); else dismissInfo()
     Connections { target: workspace; function onMapPreviewRequested(session) { radarPane.capturePreview(session) } }
+    Connections { target: grid; function onCurrentResourceChanged() {
+        if (workspace.mapPreviewNeeded) radarPane.capturePreview(workspace.currentSession)
+    } }
     function focusPath(path, percent) {
         const index = workspace.alertResourceIndex(path)
         return index >= 0 && grid.focusResource(index, percent / 100)
@@ -341,7 +344,7 @@ Pane {
                     objectName: "emptyRadar"
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: (grid.height - height) / 2
-                    visible: grid.count === 0 && grid.height >= implicitHeight + 8
+                    visible: radarPane.expanded && grid.count === 0 && grid.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
                     text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources..." : workspace.totalResourceCount === 0 ? "No resources to display." : "No matching resources."
                     textFormat: Text.PlainText

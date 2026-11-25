@@ -755,6 +755,9 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 clip: true
+                padding: 0
+                implicitHeight: window.controlHeight
+                background: Item {}
                     spacing: 0
                     function indexForCurrentSession() {
                         for (var i = 0; i < workspace.tabs.length; ++i) {
@@ -823,6 +826,7 @@ ApplicationWindow {
                                     IconButton {
                                         objectName: "detachSession_" + modelData.id
                                         glyph: "External"
+                                        quiet: true
                                         text: "Open " + modelData.name + " in a separate window"
                                         visible: workspace.windowActionsAvailable
                                         enabled: workspace.sessionWindowActionsReady
@@ -833,6 +837,7 @@ ApplicationWindow {
                                     IconButton {
                                         objectName: "closeSession_" + modelData.id
                                         glyph: "Close"
+                                        quiet: true
                                         text: workspace.uiText["action.close"]
                                         Accessible.name: "Close " + modelData.name
                                         enabled: !workspace.busy

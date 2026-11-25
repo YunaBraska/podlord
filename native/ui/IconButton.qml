@@ -10,6 +10,7 @@ ToolButton {
     property bool showText: false
     property bool activeIndicator: false
     property bool destructive: false
+    property bool quiet: false
     property color glyphColor: destructive ? workspace.appearanceColors.danger : workspace.appearanceColors.text
     readonly property int targetSize: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
     implicitWidth: Math.max(targetSize, implicitContentWidth + leftPadding + rightPadding)
@@ -21,8 +22,8 @@ ToolButton {
     PlainToolTip { target: control }
     background: Rectangle {
         color: control.down || control.checked ? workspace.appearanceColors.selection
-            : control.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-        border.color: control.destructive ? workspace.appearanceColors.danger
+            : control.hovered ? workspace.appearanceColors.raised : control.quiet ? "transparent" : workspace.appearanceColors.inset
+        border.color: control.quiet && !control.activeFocus ? "transparent" : control.destructive ? workspace.appearanceColors.danger
             : control.checked || control.activeIndicator || control.activeFocus
             ? workspace.appearanceColors.accent : workspace.appearanceColors.border
     }

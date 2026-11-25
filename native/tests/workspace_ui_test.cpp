@@ -356,11 +356,13 @@ public:
                             if (path == "/apis/example.test/v1/widgets") document["items"] = QJsonArray{pod("custom-widget", kind, "example.test/v1")};
                         }
                     }
-                    if ((scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
+                    if ((scenario == "radar_many" || scenario.startsWith("radar_loading_") || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
                         QJsonArray values;
                         const int start = url.query().contains("continue=") ? 500 : 0;
-                        for (int index = start; index < start + 500; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
+                        const int count = scenario == "radar_loading_large" ? 5000 : scenario == "radar_loading_responsive" ? 1904 : 500;
+                        for (int index = start; index < start + count; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
                         document["items"] = values;
+                        if (scenario.startsWith("radar_loading_")) document["metadata"] = QJsonObject{};
                     }
                     if (scenario.startsWith("inspector_related_") || scenario.startsWith("filter_event_")) {
                         if (scenario.startsWith("inspector_related_alias_") && path == "/apis") {
@@ -1663,6 +1665,19 @@ bool execute(const QString& requestedScenario) {
         && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty();
     const auto openAction=scenario.startsWith("map_") || scenario=="gke_prompt" || workspace.appStore() ? "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString() : "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString();
     if (!workspace.setWorkspacePage("map")) return false;
+    QElapsedTimer loadClock;
+    qint64 lastLoadTick = 0, longestLoadGap = 0;
+    QTimer loadHeartbeat;
+    if (scenario.startsWith("radar_loading_")) {
+        loadClock.start();
+        loadHeartbeat.setInterval(10);
+        QObject::connect(&loadHeartbeat, &QTimer::timeout, &workspace, [&] {
+            const auto now = loadClock.elapsed();
+            longestLoadGap = std::max(longestLoadGap, now - lastLoadTick);
+            lastLoadTick = now;
+        });
+        loadHeartbeat.start();
+    }
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
     if (scenario == "initial_load_navigation") {
@@ -3010,10 +3025,26 @@ bool execute(const QString& requestedScenario) {
         }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario == "radar_loading_large" ? 5001 : scenario == "radar_loading_responsive" ? 1905 : scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
-        && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
-        std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
+        && workspace.resourceCount() == expectedRows
+        && (scenario != "radar_loading_large" || workspace.totalResourceCount() == expectedRows)
+        && !workspace.loading(); }, 10000)) {
+        std::fprintf(stderr, "Resource load failed: %s %s, total=%d, visible=%d, table=%d, loading=%d, requests=%lld\n",
+            qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage")), workspace.totalResourceCount(),
+            workspace.resourceCount(), item(window, "resourceTable")->property("rows").toInt(), workspace.loading(),
+            static_cast<long long>(server.requests.size())); return false;
+    }
+    if (scenario.startsWith("radar_loading_")) {
+        auto* radar = window->findChild<podlord::RadarIsland*>("resourceRadar");
+        if (!radar || !waitFor([&] { return radar->tiles()->rowCount() == expectedRows; })) return false;
+        loadHeartbeat.stop();
+        std::printf("Resource loading: %d rows, longest UI event gap %lld ms.\n", expectedRows, static_cast<long long>(longestLoadGap));
+        if (longestLoadGap > 100) {
+            std::fprintf(stderr, "Resource loading blocked UI events for %lld ms.\n", static_cast<long long>(longestLoadGap));
+            return false;
+        }
+        return true;
     }
     if (scenario.startsWith("dock_")) {
         const bool compact = scenario=="dock_narrow" || scenario=="dock_compact";
@@ -3494,8 +3525,20 @@ bool execute(const QString& requestedScenario) {
                 || window->findChild<QObject*>("fieldFiltersPopup") || item(window, "refreshFieldFilterValues")) { std::fputs("Inline cluster field did not open.\n",stderr); return false; }
             if (!saveShellFrame(window, scenario + "-open")
                 || !type(window, item(window, "fieldFilterExpression"), "__absent__")
-                || !waitFor([&] { return workspace.resourceCount() == 0; })
-                || !click(window, field) || !waitFor([&] { return !item(window, "fieldFiltersInline"); })
+                || !waitFor([&] { return workspace.resourceCount() == 0; })) return false;
+            auto* emptyRadar = item(window, "resourceRadar");
+            if (!emptyRadar) return false;
+            const auto image = window->grabWindow();
+            const auto center = emptyRadar->mapToScene(QPointF(emptyRadar->width() / 2, emptyRadar->height() / 2)) * image.devicePixelRatio();
+            int brightPixels = 0;
+            for (int y = qMax(0, int(center.y()) - 18); y < qMin(image.height(), int(center.y()) + 18); ++y)
+                for (int x = qMax(0, int(center.x()) - 90); x < qMin(image.width(), int(center.x()) + 90); ++x)
+                    if (image.pixelColor(x, y).lightness() > 120) ++brightPixels;
+            if (brightPixels > 10) {
+                std::fputs("Empty radar still paints resource labels.\n", stderr);
+                return false;
+            }
+            if (!click(window, field) || !waitFor([&] { return !item(window, "fieldFiltersInline"); })
                 || !click(window, field)) { std::fputs("Inline cluster filter could not roundtrip.\n",stderr); return false; }
             const auto* input = item(window, "fieldFilterExpression");
             const bool retained = input && input->property("text").toString() == "__absent__"
@@ -3556,6 +3599,17 @@ bool execute(const QString& requestedScenario) {
         auto* secondTab=item(window,"activateSession_"+second);
         if (!firstTab || !secondTab || qAbs(secondTab->mapToScene(QPointF{}).x()-firstTab->mapToScene(QPointF(firstTab->width(),0)).x())>1) {
             std::fputs("Session tabs do not form one contiguous strip.\n",stderr); return false;
+        }
+        auto* strip = item(window, "sessionTabs");
+        for (auto* tab : {firstTab, secondTab}) {
+            const auto* name = item(window, "closeSession_" + (tab == firstTab ? first : second));
+            const auto top = tab->mapToItem(strip, QPointF{}).y();
+            if (!name || qAbs(top) > 1 || qAbs(tab->height() - strip->height()) > 1
+                || qAbs(name->mapToItem(tab, QPointF(0, name->height() / 2)).y() - tab->height() / 2) > 1) {
+                std::fprintf(stderr, "Session tab or action is not vertically centered: top=%.1f, tab=%.1f, strip=%.1f.\n",
+                    top, tab->height(), strip->height());
+                return false;
+            }
         }
         for (auto* tab:{firstTab,secondTab}) {
             auto* accessible=tab ? QAccessible::queryAccessibleInterface(tab) : nullptr;

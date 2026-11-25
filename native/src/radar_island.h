@@ -4,6 +4,8 @@
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QQuickPaintedItem>
+#include <QFutureWatcher>
+#include <QPromise>
 #include <QSortFilterProxyModel>
 #include <QSet>
 #include <QTimer>
@@ -139,6 +141,7 @@ private:
         QRectF bounds;
     };
     QCache<QString, Terrain> terrains_{3};
+    QFutureWatcher<Terrain>* terrainPreparation_ = nullptr;
     RadarTiles tiles_{this};
     QPointer<QAbstractItemModel> source_;
     QList<QMetaObject::Connection> connections_;
@@ -166,12 +169,12 @@ private:
     QString currentPath_;
     QString identityScope_;
     double zoom_ = 1;
-    bool pending_ = false, dirty_ = true, geometryDirty_ = true, filteredDirty_ = true;
+    bool pending_ = false, dirty_ = true, geometryDirty_ = true, filteredDirty_ = true, fitPending_ = false, sourceEmpty_ = true;
     void setIdentityScope(const QString& scope);
     void observeSource();
     void schedule();
     void synchronize();
-    void layout(const QList<Row>& rows);
+    static void layout(QPromise<Terrain>& promise, QList<Row> rows, QString scope);
     void project(bool refresh = false);
     void syncAnimationClock();
     QRectF worldViewport() const;
