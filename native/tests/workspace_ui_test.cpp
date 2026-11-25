@@ -191,9 +191,10 @@ public:
                         }
                     } else if (path == "/apis/example.test/v1/widgets") {
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("custom-widget", "Widget", "example.test/v1")}}};
-                        if (scenario == "radar_loading_incremental") {
+                        if (scenario == "radar_loading_incremental" || scenario == "radar_loading_20k") {
                             QJsonArray values;
-                            for (int index = 0; index < 2500; ++index)
+                            const int count = scenario == "radar_loading_20k" ? 10000 : 2500;
+                            for (int index = 0; index < count; ++index)
                                 values.append(pod(QString("widget-%1").arg(index, 4, 10, QChar('0')), "Widget", "example.test/v1"));
                             document["items"] = values;
                         }
@@ -365,7 +366,7 @@ public:
                     if ((scenario == "radar_many" || scenario.startsWith("radar_loading_") || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
                         QJsonArray values;
                         const int start = url.query().contains("continue=") ? 500 : 0;
-                        const int count = scenario == "radar_loading_large" ? 5000
+                        const int count = scenario == "radar_loading_20k" ? 10000 : scenario == "radar_loading_large" ? 5000
                             : scenario == "radar_loading_incremental" ? 2500 : scenario == "radar_loading_responsive" ? 1904 : 500;
                         for (int index = start; index < start + count; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
                         document["items"] = values;
@@ -1675,6 +1676,7 @@ bool execute(const QString& requestedScenario) {
     if (!workspace.setWorkspacePage("map")) return false;
     QElapsedTimer loadClock;
     qint64 lastLoadTick = 0, longestLoadGap = 0;
+    bool prematureCompletion = false;
     QTimer loadHeartbeat;
     if (scenario.startsWith("radar_loading_")) {
         loadClock.start();
@@ -1683,6 +1685,7 @@ bool execute(const QString& requestedScenario) {
             const auto now = loadClock.elapsed();
             longestLoadGap = std::max(longestLoadGap, now - lastLoadTick);
             lastLoadTick = now;
+            prematureCompletion = prematureCompletion || (workspace.syncLoading() && workspace.loadingProgress() >= 1);
         });
         loadHeartbeat.start();
     }
@@ -3050,11 +3053,11 @@ bool execute(const QString& requestedScenario) {
         }
         return true;
     }
-    const int expectedRows = scenario == "radar_loading_large" ? 5001 : scenario == "radar_loading_incremental" ? 5000 : scenario == "radar_loading_responsive" ? 1905 : scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    const int expectedRows = scenario == "radar_loading_20k" ? 20000 : scenario == "radar_loading_large" ? 5001 : scenario == "radar_loading_incremental" ? 5000 : scenario == "radar_loading_responsive" ? 1905 : scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
     if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
         && workspace.resourceCount() == expectedRows
         && (scenario != "radar_loading_large" || workspace.totalResourceCount() == expectedRows)
-        && !workspace.loading(); }, 10000)) {
+        && !workspace.loading(); }, scenario == "radar_loading_20k" ? 60000 : 10000)) {
         std::fprintf(stderr, "Resource load failed: %s %s, total=%d, visible=%d, table=%d, loading=%d, requests=%lld\n",
             qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage")), workspace.totalResourceCount(),
             workspace.resourceCount(), item(window, "resourceTable")->property("rows").toInt(), workspace.loading(),
@@ -3062,10 +3065,26 @@ bool execute(const QString& requestedScenario) {
     }
     if (scenario.startsWith("radar_loading_")) {
         auto* radar = window->findChild<podlord::RadarIsland*>("resourceRadar");
-        if (!radar || !waitFor([&] { return radar->tiles()->rowCount() == expectedRows; })) return false;
+        if (!radar || !waitFor([&] {
+                const auto tiles = radar->tiles()->rowCount();
+                return radar->source() && radar->source()->rowCount() == expectedRows
+                    && (scenario == "radar_loading_20k" ? radar->focusResource(expectedRows - 1) : tiles == expectedRows);
+            }, scenario == "radar_loading_20k" ? 60000 : 10000)) {
+            std::fprintf(stderr, "Radar incomplete: tiles=%d, rows=%d, total=%d, elapsed=%lld ms.\n",
+                radar ? radar->tiles()->rowCount() : -1, workspace.resourceCount(), workspace.totalResourceCount(),
+                static_cast<long long>(loadClock.elapsed()));
+            return false;
+        }
         loadHeartbeat.stop();
-        std::printf("Resource loading: %d rows, longest UI event gap %lld ms.\n", expectedRows, static_cast<long long>(longestLoadGap));
-        if (longestLoadGap > 100) {
+        const auto loadingDuration = loadClock.elapsed();
+        const auto visibleTiles = radar->tiles()->rowCount();
+        const bool extremitiesReachable = scenario != "radar_loading_20k"
+            || radar->focusResource(0);
+        std::printf("Resource loading: %d rows in %lld ms, %d visible tiles, longest UI event gap %lld ms, premature completion %d.\n",
+            expectedRows, static_cast<long long>(loadingDuration), visibleTiles,
+            static_cast<long long>(longestLoadGap), prematureCompletion);
+        if (!extremitiesReachable) return false;
+        if (longestLoadGap > 100 || prematureCompletion) {
             std::fprintf(stderr, "Resource loading blocked UI events for %lld ms.\n", static_cast<long long>(longestLoadGap));
             return false;
         }
