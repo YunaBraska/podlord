@@ -21,7 +21,8 @@ Row {
         return Math.ceil(Math.max((metric.bar ? 112 : 68) * workspace.textScale, content))
     }
     readonly property real cardHeight: Math.max(strip.Window.window && strip.Window.window.touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.caption * 1.3) + 10)
-    readonly property var availableMetrics: workspace.pulseMetrics.filter(metric => metric.bar ? metric.available === true : Number(metric.usage) > 0)
+    readonly property var availableMetrics: workspace.pulseMetrics.filter(metric =>
+        metric.id === "pods" || metric.id === "nodes" ? Number(metric.usage) > 0 : metric.available === true)
     readonly property int visibleCount: {
         let used = 0
         let count = 0

@@ -556,7 +556,7 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
         scheduleSync(); return true;
     }
     it->syncTotal = 0; it->syncCompleted = 0;
-    if (!it->initialized) it->progress = 0;
+    it->progress = 0;
     if (!foreground && !it->collections.isEmpty()) {
         const auto now = now_();
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
@@ -589,6 +589,7 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
         enqueue(core);
         Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
     }
+    if (!it->syncPending) it->progress = 1;
     scheduleSync(); return true;
 }
 bool ResourceClient::isVisible(const QString& id) const {
@@ -769,6 +770,7 @@ void ResourceClient::publishRows(const QString& id) {
         if (current.presentationJob != revision) return;
         current.presentationRunning = false;
         if (revision != current.presentationRevision) { publishRows(id); return; }
+        updateProgress(id);
         current.resources = std::move(projection.resources);
         current.presentationExpiry = projection.expiry;
         if (current.presentationExpiry.isValid()) {
@@ -1029,7 +1031,8 @@ bool ResourceClient::syncLoading(const QString& id) const {
 }
 double ResourceClient::loadingProgress(const QString& id) const {
     const auto state = states_.constFind(id);
-    return state == states_.cend() ? 0 : state->progress;
+    if (state == states_.cend()) return 0;
+    return syncLoading(id) ? std::min(state->progress, 0.99) : state->progress;
 }
 bool ResourceClient::initialSyncComplete(const QString& id) const {
     const auto state = states_.constFind(id);
@@ -1040,7 +1043,9 @@ bool ResourceClient::parallelRead(const Task& task) { return !task.change && tas
 void ResourceClient::updateProgress(const QString& id) {
     auto& state = states_[id];
     if (!state.syncTotal) return;
-    if (!state.syncPending && state.open && !state.suspended) { state.progress = 1; state.initialized = true; }
+    if (!state.syncPending && !state.presentationRunning && state.open && !state.suspended) {
+        state.progress = 1; state.initialized = true;
+    }
     else if (state.syncPending) state.progress = std::max(state.progress, double(state.syncCompleted) / (state.syncTotal + 1));
 }
 bool ResourceClient::authenticationRequired(const QString& id) const {
@@ -1320,7 +1325,10 @@ bool ResourceClient::enqueue(Task task) {
     ++state.pending;
     if (task.read == Read::Log) ++state.logs[task.logKey].pending;
     else ++state.resourcePending;
-    if (collectionRead(task.read)) { ++state.syncPending; ++state.syncTotal; }
+    if (collectionRead(task.read)) {
+        if (!state.syncPending && state.progress >= 1) state.progress = 0;
+        ++state.syncPending; ++state.syncTotal;
+    }
     queue_.append(std::move(task));
     emit changed(queue_.last().id);
     if (!running_) dispatch();

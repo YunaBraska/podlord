@@ -176,11 +176,13 @@ QVariantList ResourceMetricSummary::presentation() const {
         QString display = measured ? formatMetricQuantity(total.used, metric == 0, true) : "Unavailable";
         if (referenced) display += " / " + formatMetricQuantity(total.reference, metric == 0, true);
         if (measured && (total.observed < total.eligible || total.incomplete)) display += " [partial]";
-        const auto maximum=std::max(measured ? total.used : 0,referenced ? total.reference : 0);
+        const bool comparable=measured && referenced && total.reference>0
+            && total.observed==total.eligible && total.referenced==total.eligible
+            && !total.incomplete && !total.stale;
         const QString label=metric==0 ? "CPU" : metric==1 ? "Memory" : "Storage";
         const auto description = label + ": " + usage + " (" + scope + ")";
-        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},{"available",measured},
-            {"fraction",measured && maximum>0 ? total.used/maximum : 0},{"description",description}});
+        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",comparable},{"available",measured},
+            {"fraction",comparable ? total.used/total.reference : 0},{"description",description}});
     }
     result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Matching Pods"}});
     result.append(QVariantMap{{"id","nodes"},{"label","Nodes"},{"usage",QString::number(counts[0])},{"bar",false},{"fraction",0},{"description","Matching Nodes"}});

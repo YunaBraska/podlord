@@ -98,6 +98,7 @@ bool run(const QString& scenario) {
         if (scenario=="summary_missing") { result.remove("cpu"); rows=QJsonArray{result}; }
         if (scenario=="summary_zero") { result["cpu"]=0; rows=QJsonArray{result}; }
         if (scenario=="summary_stale") { result["metricStale"]=true; rows=QJsonArray{result}; }
+        if (scenario=="summary_usage_only") { result.remove("metricReferences"); rows=QJsonArray{result}; }
         if (scenario=="summary_partial") {
             auto missing=result; missing["uid"]="uid-beta"; missing["name"]="beta"; missing.remove("cpu"); rows.append(missing);
         }
@@ -130,6 +131,8 @@ bool run(const QString& scenario) {
         if (scenario=="summary_partial") return usage.contains("incomplete");
         if (scenario=="summary_stale") return !usage.contains("stale")
             && !summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
+        if (scenario=="summary_usage_only") return usage=="25 mCPU"
+            && summary[0].toMap()["available"].toBool() && !summary[0].toMap()["bar"].toBool();
         if (scenario=="summary_node") return usage.startsWith("1000 mCPU / 4000 mCPU") && summary[3].toMap()["usage"]=="1" && summary[4].toMap()["usage"]=="1";
         if (scenario=="summary_overflow") return usage.startsWith("Unavailable (overflow)");
         if (scenario=="summary_storage") return summary[2].toMap()["usage"]=="Unavailable / 3 GiB";

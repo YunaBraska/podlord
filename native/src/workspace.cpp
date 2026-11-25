@@ -484,14 +484,27 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         publishInspector(); emit yamlEditChanged(); emit changed();
         if (mapPreviewNeeded()) emit mapPreviewRequested(id);
     } });
-    connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+    rowUpdateTimer_.setSingleShot(true);
+    connect(&rowUpdateTimer_, &QTimer::timeout, this, [this] {
+        if (pendingRows_.isEmpty()) return;
+        const auto id = pendingRows_.takeFirst();
         if (workspacePage() == "map" && mapOverview()) refreshMapContexts(false);
         if (runtime_->owners.value(id) == this) {
-            observeIncidentAi(id, client_.rows(id));
-            for (const auto& value : client_.rows(id)) client_.requestManagedKubeconfig(id, value.toObject());
+            const auto snapshot = client_.rows(id);
+            observeIncidentAi(id, snapshot);
+            for (const auto& value : snapshot) {
+                const auto row = value.toObject();
+                if (row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/"))
+                    client_.requestManagedKubeconfig(id, row);
+            }
         }
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
+        if (!pendingRows_.isEmpty()) rowUpdateTimer_.start(250);
+    });
+    connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+        if (!pendingRows_.contains(id)) pendingRows_.append(id);
+        if (!rowUpdateTimer_.isActive()) rowUpdateTimer_.start(250);
     });
     connect(&client_, &ResourceClient::managedKubeconfigReceived, this,
         [this](const QString& id, const QString& uid, const QString& endpoint, const QByteArray& yaml) {
@@ -527,11 +540,16 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     connect(&client_, &ResourceClient::collectionAccepted, this, [this](const QString& id) {
         if (id==active_) { pendingMapPreview_=id; if (mapPreviewNeeded()) emit mapPreviewRequested(id); }
-        if (runtime_->owners.value(id) == this)
-            for (const auto& value : client_.rows(id)) client_.requestManagedKubeconfig(id, value.toObject());
     });
     connect(&client_, &ResourceClient::managedClustersObserved, this,
         [this](const QString& id, const QStringList& observed, const QStringList& removed, bool complete) {
+            if (runtime_->owners.value(id) == this) {
+                for (const auto& value : client_.rows(id)) {
+                    const auto row = value.toObject();
+                    if (row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/")
+                        && observed.contains(row["uid"].toString())) client_.requestManagedKubeconfig(id, row);
+                }
+            }
             if (runtime_->owners.value(id) != this || busy_ || !sourceRemoval_.isEmpty()) return;
             const auto connection = client_.connection(id);
             if (!connection) return;

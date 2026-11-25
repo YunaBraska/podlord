@@ -22,6 +22,7 @@
 #include <QVariantList>
 #include <QUrl>
 #include <QPointer>
+#include <QTimer>
 #include <memory>
 #include <optional>
 
@@ -984,6 +985,8 @@ private:
     QString dashboardSummary_;
     QVariantList pulseMetrics_;
     QVariantMap healthSummary_;
+    QTimer rowUpdateTimer_;
+    QStringList pendingRows_;
     bool dashboardDirty_ = true;
     bool publishDashboard();
     QSet<QString> revealedValues_;
