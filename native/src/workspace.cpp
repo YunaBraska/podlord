@@ -893,7 +893,11 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     overview_ = overview.join('\n');
     for (const auto& value : resourceMetricPresentation(summary)) {
         const auto metric=value.toMap();
-        fields.append(QVariantMap{{"id", "metric_"+metric["id"].toString()}, {"label", metric["label"]}, {"value", metric["usage"]}, {"metric", metric}});
+        const auto references=metric["presentReferences"].toString();
+        if (!metric["available"].toBool() && references.isEmpty()) continue;
+        QString displayed=metric["available"].toBool() ? metric["usage"].toString() : QString{};
+        if (!references.isEmpty()) displayed += (displayed.isEmpty() ? QString{} : QStringLiteral("  ·  ")) + references;
+        fields.append(QVariantMap{{"id", "metric_"+metric["id"].toString()}, {"label", metric["label"]}, {"value", displayed}, {"metric", metric}});
     }
     overviewFields_.publish(std::move(fields));
     if (revealChanged || scopeChanged || documentChanged || document.isEmpty()) {

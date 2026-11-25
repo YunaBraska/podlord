@@ -208,9 +208,10 @@ QVariantList resourceMetricPresentation(const QJsonObject& resource) {
         }
         for (const auto& key : {"request", "limit", "capacity"}) if (reference[key].isDouble()) markers.append(QVariantMap{{"label", key}, {"position", maximum>0 ? reference[key].toDouble()/maximum : 0}});
         QString measured=usage.isDouble() ? formatMetricQuantity(usage.toDouble(), QString(id)=="cpu")+(complete ? "" : " (incomplete)") : "Unavailable";
+        const bool scaled=usage.isDouble() && maximum>0 && !markers.isEmpty();
         result.append(QVariantMap{{"id", id}, {"label", QString(id)=="cpu" ? "CPU" : QString(id)=="memory" ? "Memory" : "Storage"}, {"usage", measured}, {"available", usage.isDouble()},
             {"references", labels.join("\n")}, {"presentReferences", presentLabels.join(", ")},
-            {"fraction", maximum>0 && usage.isDouble() ? usage.toDouble()/maximum : 0}, {"markers", markers}, {"source", reference["source"].toString()},
+            {"fraction", maximum>0 && usage.isDouble() ? usage.toDouble()/maximum : 0}, {"barAvailable", scaled}, {"markers", markers}, {"source", reference["source"].toString()},
             {"timestamp", usage.isDouble() ? resource["metricAt"].toString() : QString{}}, {"window", usage.isDouble() ? resource["metricWindow"].toString() : QString{}}});
     }
     return result;

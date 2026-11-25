@@ -45,6 +45,17 @@ ApplicationWindow {
     readonly property bool sidebarDocked: wideLayout || compactLandscape
     readonly property bool hasInspector: workspace.inspectorPath !== "" || !!workspace.sourceInspection.snapshotId
     readonly property bool compactInspector: (compactLandscape || width < 600) && hasInspector && !(workspace.workspacePage === "map" && workspace.mapOverview)
+    FontMetrics { id: sessionTabFont; font.family: window.font.family; font.pixelSize: window.font.pixelSize; font.bold: true }
+    function sessionTabWidth(tab) {
+        return Math.min(Math.max(120, sessionTabFont.advanceWidth(tab.name)
+            + (workspace.windowActionsAvailable ? 26 : 0) + 26 + (tab.connectionCount > 0 ? 30 : 0) + 24),
+            window.wideLayout ? 240 : 160)
+    }
+    readonly property bool tabsInHeader: workspace.tabs.length > 1 && !inputPriority && !compactInspector
+        && sessionTabs.desiredWidth > 0
+        && headerLayout.width >= navigationRow.fullWidth + sessionTabs.desiredWidth + headerMetrics.fullWidth
+            + (sidebarControl.visible ? sidebarControl.implicitWidth : 0)
+            + (closeContextControl.visible ? closeContextControl.implicitWidth : 0) + 4 * headerLayout.spacing
     readonly property real keyboardTop: Qt.inputMethod.visible
         && Qt.inputMethod.keyboardRectangle.width >= width * 0.75
         && Qt.inputMethod.keyboardRectangle.height > 0
@@ -612,7 +623,7 @@ ApplicationWindow {
             spacing: 6
             Item {
                 id: navigationSlot
-                Layout.fillWidth: true; Layout.minimumWidth: 0
+                Layout.fillWidth: !window.tabsInHeader; Layout.minimumWidth: 0
                 Layout.preferredWidth: navigationRow.fullWidth
                 Layout.preferredHeight: navigationRow.implicitHeight
                 Row {
@@ -663,10 +674,21 @@ ApplicationWindow {
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 }
             }
+            Item {
+                id: headerTabSlot
+                visible: window.tabsInHeader
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: sessionTabs.desiredWidth
+                Layout.preferredHeight: sessionTabs.implicitHeight
+            }
             PulseStrip {
                 id: headerMetrics
                 objectName: "headerMetrics"
-                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing - (sidebarControl.visible ? sidebarControl.implicitWidth + headerLayout.spacing : 0) - (closeContextControl.visible ? closeContextControl.implicitWidth + headerLayout.spacing : 0))
+                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing
+                    - (window.tabsInHeader ? sessionTabs.desiredWidth + headerLayout.spacing : 0)
+                    - (sidebarControl.visible ? sidebarControl.implicitWidth + headerLayout.spacing : 0)
+                    - (closeContextControl.visible ? closeContextControl.implicitWidth + headerLayout.spacing : 0))
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredHeight: implicitHeight
                 onDetailsRequested: workspace.setWorkspacePage("dashboard")
@@ -742,18 +764,21 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6
         spacing: 4
-        RowLayout {
+        Item {
+            id: lowerTabSlot
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             Layout.preferredHeight: sessionTabs.implicitHeight
-            spacing: 2
-            visible: !window.inputPriority && !window.compactInspector && workspace.tabs.length > 1
+            visible: !window.inputPriority && !window.compactInspector && workspace.tabs.length > 1 && !window.tabsInHeader
             TabBar {
                 id: sessionTabs
                 objectName: "sessionTabs"
                 visible: workspace.tabs.length > 1
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
+                readonly property real desiredWidth: workspace.tabs.reduce((total, tab) => total + window.sessionTabWidth(tab), 0)
+                parent: window.tabsInHeader ? headerTabSlot : lowerTabSlot
+                width: window.tabsInHeader ? Math.min(parent.width, desiredWidth) : parent.width
+                x: window.tabsInHeader ? Math.max(0, (parent.width - width) / 2) : 0
+                y: (parent.height - height) / 2
                 clip: true
                 padding: 0
                 implicitHeight: window.controlHeight
@@ -784,7 +809,7 @@ ApplicationWindow {
                             required property var modelData
                             objectName: "activateSession_" + modelData.id
                             implicitHeight: window.controlHeight
-                            implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + (connectionBadge.visible ? connectionBadge.implicitWidth : 0) + 24), window.wideLayout ? 240 : 160)
+                            implicitWidth: window.sessionTabWidth(modelData)
                             width: implicitWidth
                             leftPadding: 8
                             rightPadding: 8

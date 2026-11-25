@@ -44,6 +44,8 @@ Pane {
     id: inspector
     width: inspectorScroll.availableWidth
     height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
+    readonly property real overviewFieldWidth: width < 600 ? 100 : 260
+    readonly property real overviewMetricWidth: width < 600 ? 52 : Math.min(180, width * 0.22)
     readonly property int visibleTabCount: 4 + (workspace.incidentAiConfigured ? 1 : 0)
         + (workspace.valuesAvailable ? 1 : 0) + (workspace.podInspected ? 1 : 0)
         + (workspace.filesSupported ? 1 : 0)
@@ -319,9 +321,18 @@ Pane {
         RowLayout {
             anchors.fill: parent; anchors.margins: 6
             spacing: 12
-                SelectableText { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+            SelectableText { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.overviewFieldWidth; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
             SelectableText { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
-            SelectableText { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+            Item {
+                Layout.preferredWidth: inspector.overviewMetricWidth
+                Layout.fillHeight: true
+                SelectableText {
+                    objectName: "overviewMetricHeader"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: workspace.overviewFields.some(field => field.readiness !== undefined || field.metric?.barAvailable)
+                    text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true
+                }
+            }
         }
     }
     ListView {
@@ -357,52 +368,63 @@ Pane {
             height: Math.max(32, overviewRow.implicitHeight + 8)
             color: workspace.appearanceColors.inset
             border.color: workspace.appearanceColors.border
-            ColumnLayout {
-            id: overviewRow
-            anchors.fill: parent; anchors.margins: 4
             RowLayout {
-                Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
-                        SelectableText { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-                        SelectableText {
-                            objectName: "overview_" + modelData.id
-                            Layout.fillWidth: true
-                            text: modelData.value
-                            color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
-                            Accessible.name: modelData.label + ": " + modelData.value
-                        }
-                        IconButton {
-                            objectName: "overviewFilter_" + modelData.id
-                            Layout.preferredHeight: inspector.width < 600 ? 44 : 24
-                            visible: modelData.filterable === true
-                            enabled: !workspace.busy
-                            glyph: "Filters"
-                            text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
-                            onClicked: workspace.filterInspectorField(modelData.id)
-                        }
-                Loader {
-                    Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28)
+                id: overviewRow
+                anchors.fill: parent; anchors.margins: 4
+                spacing: 12
+                readonly property var field: modelData
+                SelectableText { Layout.preferredWidth: inspector.overviewFieldWidth; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                SelectableText {
+                    objectName: "overview_" + modelData.id
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    text: modelData.value
+                    color: workspace.inspectorFieldColor(modelData.id)
+                    Accessible.name: modelData.label + ": " + modelData.value
+                }
+                RowLayout {
+                    Layout.preferredWidth: inspector.overviewMetricWidth
                     Layout.alignment: Qt.AlignVCenter
-                    active: modelData.readiness !== undefined
-                    visible: active
-                    sourceComponent: ProgressBar {
-                        id: readinessBar
-                        objectName: "overviewReadinessBar"
-                        from: 0; to: 1; value: modelData.readiness.fraction
-                        implicitHeight: 8
-                        Accessible.name: modelData.readiness.description
-                        background: Rectangle { implicitHeight: 8; color: workspace.appearanceColors.inset; radius: 2 }
-                        contentItem: Item {
+                    spacing: 6
+                    Loader {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        active: modelData.readiness !== undefined || modelData.metric?.barAvailable === true
+                        sourceComponent: overviewRow.field.readiness !== undefined ? readinessComponent : metricComponent
+                    }
+                    Component {
+                        id: metricComponent
+                        MetricBar { metric: overviewRow.field.metric }
+                    }
+                    Component {
+                        id: readinessComponent
+                        ProgressBar {
+                            id: readinessBar
+                            objectName: "overviewReadinessBar"
+                            from: 0; to: 1; value: overviewRow.field.readiness.fraction
                             implicitHeight: 8
-                            Rectangle {
-                                objectName: "overviewReadinessFill"
-                                width: parent.width * readinessBar.visualPosition; height: parent.height; radius: 2
-                                color: workspace.appearanceColors[modelData.readiness.tone]
+                            Accessible.name: overviewRow.field.readiness.description
+                            background: Rectangle { implicitHeight: 8; color: workspace.appearanceColors.inset; radius: 2 }
+                            contentItem: Item {
+                                implicitHeight: 8
+                                Rectangle {
+                                    objectName: "overviewReadinessFill"
+                                    width: parent.width * readinessBar.visualPosition; height: parent.height; radius: 2
+                                    color: workspace.appearanceColors[overviewRow.field.readiness.tone]
+                                }
                             }
                         }
                     }
+                    IconButton {
+                        objectName: "overviewFilter_" + modelData.id
+                        Layout.preferredHeight: inspector.width < 600 ? 44 : 24
+                        visible: modelData.filterable === true
+                        enabled: !workspace.busy
+                        glyph: "Filters"
+                        text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
+                        onClicked: workspace.filterInspectorField(modelData.id)
+                    }
                 }
-            }
-            Loader { Layout.fillWidth: true; active: modelData.metric!==undefined; sourceComponent: MetricGauge { metric: modelData.metric } }
             }
         }
     }

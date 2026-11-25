@@ -35,6 +35,8 @@ Row {
     }
     readonly property var overflowMetrics: availableMetrics.slice(visibleCount)
     spacing: 6
+    readonly property real fullWidth: availableMetrics.reduce((total, metric) => total + widthFor(metric), 0)
+        + spacing * Math.max(0, availableMetrics.length - 1)
     Layout.preferredWidth: availableMetrics.slice(0, visibleCount).reduce((total, metric) => total + widthFor(metric), 0)
         + spacing * Math.max(0, visibleCount - 1)
     Layout.preferredHeight: cardHeight

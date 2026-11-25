@@ -478,7 +478,7 @@ public:
                                     if (metrics) containers.append(QJsonObject{{"name", containerName}, {"usage", QJsonObject{
                                         {"cpu", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2" : "500m"},
                                         {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2Gi" : "1024Mi"}}}});
-                                    else containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
+                                    else containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : scenario == "table_overview_metric_rows" ? "registry.example/worker:v1" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
                                         {"resources", QJsonObject{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", "16Mi"}, {"ephemeral-storage", "1Gi"}}}}}});
                                     states.append(QJsonObject{{"name", containerName}, {"ready", container < ready},
                                         {"restartCount", scenario == "table_auto_zero" ? 0 : container == 0 ? index == 0 ? 10 : 2 : 0}});
@@ -3618,6 +3618,13 @@ bool execute(const QString& requestedScenario) {
             std::fputs("Session tabs do not form one contiguous strip.\n",stderr); return false;
         }
         auto* strip = item(window, "sessionTabs");
+        window->resize(1920, 920);
+        if (!waitFor([&] {
+            const auto* header = item(window, "workspaceToolbar");
+            return header && strip && strip->isVisible()
+                && header->mapRectToScene(header->boundingRect()).contains(strip->mapRectToScene(strip->boundingRect()));
+        })) { std::fputs("Two session tabs did not use free toolbar space.\n", stderr); return false; }
+        if (!saveShellFrame(window,scenario+"-header")) return false;
         for (auto* tab : {firstTab, secondTab}) {
             const auto* name = item(window, "closeSession_" + (tab == firstTab ? first : second));
             const auto top = tab->mapToItem(strip, QPointF{}).y();
@@ -3644,6 +3651,8 @@ bool execute(const QString& requestedScenario) {
         const auto originalSize=window->size();
         window->resize(390,844);
         QTest::qWait(30);
+        if (strip->mapToScene(QPointF{}).y() < item(window,"workspaceToolbar")->mapToScene(QPointF(0,item(window,"workspaceToolbar")->height())).y())
+            return false;
         item(window,"activateSession_"+first)->forceActiveFocus(Qt::TabFocusReason);
         QTest::keyClick(window,Qt::Key_End);
         if (!waitFor([&] {
@@ -4395,15 +4404,65 @@ bool execute(const QString& requestedScenario) {
                 if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && text(window,"overview_ready")=="10/10"; })) return false;
                 return workspace.inspectorScope()==scope && qAbs(item(window,"overviewReadinessBar")->property("value").toDouble()-1)<0.001;
             }
-            if (scenario=="table_overview_metric_size") {
+            if (scenario=="table_overview_metric_rows") {
                 auto* scroll=item(window,"overviewScroll");
                 if (!podlord::test::scrollIntoView(window,scroll)) return false;
-                scroll->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
-                const bool compact=waitFor([&] { const auto* metric=item(window,"metric_storage_bar"); return metric && metric->isVisible() && metric->height()>=6 && metric->height()<=10; });
-                if (!compact) {
-                    const auto* metric=item(window,"metric_storage_bar");
-                    std::fprintf(stderr,"Rendered metric: present=%d visible=%d height=%g rows=%d scroll=%g/%g\n",metric!=nullptr,metric && metric->isVisible(),metric ? metric->height() : -1,scroll->property("count").toInt(),scroll->property("contentY").toDouble(),scroll->property("contentHeight").toDouble());
+                qreal filterX=-1;
+                for (const auto& id : {"status", "ready", "owner"}) {
+                    int row=-1;
+                    const auto fields=workspace.overviewFields();
+                    for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")==id) { row=index; break; }
+                    if (row<0) return false;
+                    QQmlExpression reveal(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(row));
+                    reveal.evaluate();
+                    if (reveal.hasError() || !waitFor([&] {
+                        auto* action=item(window,"overviewFilter_"+QString(id));
+                        return action && action->isVisible() && !podlord::test::visibleBounds(window,action).isEmpty();
+                    })) return false;
+                    const auto x=item(window,"overviewFilter_"+QString(id))->mapToScene(QPointF{}).x();
+                    if (filterX>=0 && qAbs(x-filterX)>1) return false;
+                    filterX=x;
                 }
+                int cpuRow=-1;
+                const auto fields=workspace.overviewFields();
+                for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")=="metric_cpu") { cpuRow=index; break; }
+                if (cpuRow<0) return false;
+                QQmlExpression showCpu(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(cpuRow));
+                showCpu.evaluate();
+                if (showCpu.hasError() || !waitFor([&] {
+                    const auto* bar=item(window,"metric_cpu_bar");
+                    const auto* marker=item(window,"metric_cpu_marker_request");
+                    const auto* value=item(window,"overview_metric_cpu");
+                    return bar && bar->isVisible() && marker && marker->isVisible() && value
+                        && value->property("text").toString().contains("request:")
+                        && marker->mapToItem(bar,QPointF{}).x() >= -1
+                        && marker->mapToItem(bar,QPointF{}).x() < bar->width();
+                })) return false;
+                if (!saveShellFrame(window,scenario+"-cpu",item(window,"workspaceInspector"))) return false;
+                QQmlExpression reveal(qmlContext(scroll),scroll,"positionViewAtIndex(count - 1, ListView.Center)");
+                reveal.evaluate();
+                if (reveal.hasError()) return false;
+                scroll->setProperty("currentIndex",scroll->property("count").toInt()-1);
+                const auto inViewport=[&](QQuickItem* row) {
+                    if (!row) return false;
+                    const auto center=row->mapToScene(QPointF(row->width()/2,row->height()/2));
+                    auto* inspector=item(window,"workspaceInspector");
+                    return scroll->mapRectToScene(scroll->boundingRect()).contains(center)
+                        && inspector && inspector->mapRectToScene(inspector->boundingRect()).contains(center);
+                };
+                for (int attempt=0; attempt<12 && !inViewport(item(window,"overview_metric_storage")); ++attempt) {
+                    const auto at=scroll->mapToScene(QPointF(scroll->width()/2,scroll->height()/2));
+                    QWheelEvent wheel(at,window->mapToGlobal(at.toPoint()),{},QPoint(0,-1200),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                    QCoreApplication::sendEvent(window,&wheel);
+                    QTest::qWait(25);
+                }
+                const bool compact=waitFor([&] {
+                    const auto* row=item(window,"overview_metric_storage");
+                    const auto* bar=item(window,"metric_storage_bar");
+                    return row && row->isVisible() && inViewport(const_cast<QQuickItem*>(row))
+                        && row->property("text").toString().contains("request:")
+                        && (!bar || !bar->isVisible()) && row->height() < 80;
+                });
                 return compact && server.requests.size()==calls
                     && saveShellFrame(window,scenario,item(window,"workspaceInspector"));
             }

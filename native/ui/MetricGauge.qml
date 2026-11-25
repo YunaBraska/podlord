@@ -13,32 +13,10 @@ ColumnLayout {
         SelectableText { text: gauge.metric.label; font.bold: true }
         SelectableText { objectName: "metric_" + gauge.metric.id + "_usage"; visible: !gauge.omitMissing || gauge.metric.available; Layout.minimumWidth: 0; Layout.fillWidth: true; text: gauge.metric.usage; wrapMode: TextEdit.NoWrap; clip: true; horizontalAlignment: Text.AlignRight; Accessible.name: gauge.metric.label + " observed usage: " + text }
     }
-    ProgressBar {
-        id: bar
-        objectName: "metric_" + gauge.metric.id + "_bar"
-        visible: !gauge.omitMissing || gauge.metric.available || gauge.metric.markers.length > 0
+    MetricBar {
+        metric: gauge.metric
         Layout.fillWidth: true
         Layout.preferredHeight: 8
-        from: 0; to: 1; value: gauge.metric.fraction
-        Accessible.ignored: gauge.omitMissing && !gauge.metric.available
-        Accessible.name: gauge.omitMissing && !gauge.metric.available ? gauge.metric.label + " configured references" : gauge.metric.label + " usage relative to the largest displayed reference"
-        background: Rectangle { implicitHeight: 8; color: workspace.appearanceColors.border; radius: 2 }
-        contentItem: Item {
-            implicitHeight: 8
-            Rectangle { width: parent.width * bar.visualPosition; height: parent.height; radius: 2; color: workspace.appearanceColors.accent }
-        }
-        Repeater {
-            model: gauge.metric.markers
-            Rectangle {
-                required property var modelData
-                objectName: "metric_" + gauge.metric.id + "_marker_" + modelData.label
-                width: 2; height: bar.height+4; y: -2
-                x: Math.min(bar.width-width, Math.max(0, modelData.position*bar.width-width/2))
-                color: workspace.appearanceColors.text
-                Accessible.role: Accessible.Indicator
-                Accessible.name: gauge.metric.label + " " + modelData.label + " reference marker"
-            }
-        }
     }
     SelectableText { objectName: "metric_" + gauge.metric.id + "_references"; Layout.fillWidth: true; visible: text !== ""; text: gauge.omitMissing ? gauge.metric.presentReferences : gauge.metric.references; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted; Accessible.name: text }
     SelectableText {
