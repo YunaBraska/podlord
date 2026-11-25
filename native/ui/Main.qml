@@ -1063,6 +1063,9 @@ ApplicationWindow {
                     visible: workspace.workspacePage === "resources"
                     inlineTools: false
                     tableModel: workspace.visibleResourceTable
+                    pageIndex: workspace.resourcePage
+                    pageCount: workspace.resourcePageCount
+                    onPageRequested: function(page) { workspace.setResourcePage(page) }
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }

@@ -60,7 +60,7 @@ QVariantList Workspace::tableColumns(const QString& table, const QAbstractItemMo
 QVariantList Workspace::resourceColumns() const { return tableColumns("resource", rows_); }
 void Workspace::publishResourceColumns() {
     quint64 populated = 0;
-    for (int row = 0; row < visibleTable_.rowCount(); ++row)
+    for (int row = 0; row < table_.rowCount(); ++row)
         populated |= rows_.populatedColumns(table_.mapToSource(table_.index(row, 0)).row());
     if (resourcePopulatedColumns_ == populated) return;
     resourcePopulatedColumns_ = populated;

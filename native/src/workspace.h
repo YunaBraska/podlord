@@ -214,9 +214,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
-    Q_PROPERTY(int resourceLimit READ resourceLimit NOTIFY fieldFiltersChanged)
-    Q_PROPERTY(int defaultResourceLimit READ defaultResourceLimit CONSTANT)
     Q_PROPERTY(int displayedResourceCount READ displayedResourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int resourcePage READ resourcePage NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int resourcePageCount READ resourcePageCount NOTIFY resourcePresentationChanged)
     Q_PROPERTY(QAbstractItemModel* visibleResourceTable READ visibleResourceTable CONSTANT)
     Q_PROPERTY(QString filterPickerField READ filterPickerField NOTIFY filterPickerChanged)
     Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
@@ -435,11 +435,11 @@ public:
     Q_INVOKABLE bool setFilterMode(const QString& mode);
     QStringList filterPresets() const;
     QString selectedFilterPreset() const;
-    int resourceLimit() const { return currentNavigation().limit; }
-    int defaultResourceLimit() const { return DefaultResourceDisplayLimit; }
     int displayedResourceCount() const { return visibleTable_.rowCount(); }
+    int resourcePage() const { return visibleTable_.page(); }
+    int resourcePageCount() const { return visibleTable_.pageCount(); }
+    Q_INVOKABLE bool setResourcePage(int page);
     QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
-    Q_INVOKABLE bool setResourceLimit(const QString& text);
     bool filterPresetsBusy() const { return presetsBusy_; }
     QString filterPresetsError() const { return presetsError_; }
     Q_INVOKABLE bool reloadFilterPresets();
@@ -858,7 +858,6 @@ private:
         QString filter, mode;
         QMap<QString, QString> fields;
         int column = -1;
-        int limit = DefaultResourceDisplayLimit;
         Qt::SortOrder order = Qt::AscendingOrder;
         QString inspected, terminalError, page = "overview", workspace = "map";
         QVariantMap radarView;

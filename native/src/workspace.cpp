@@ -1312,7 +1312,7 @@ bool Workspace::publish() {
         observeIncidentAi(active_, snapshot);
     }
     const auto nav = currentNavigation();
-    visibleTable_.setLimit(nav.limit);
+    if (sessionChanged) visibleTable_.setPage(0);
     const auto prepared = preparedSnapshots_.constFind(active_);
     const bool matching = prepared != preparedSnapshots_.cend() && prepared->source == snapshot && prepared->cluster == cluster;
     if (!matching && snapshot.size() >= 256) {
@@ -2196,6 +2196,7 @@ bool Workspace::sortColumn(int column) {
     if (column < 0 || column >= rows_.columnCount()) return false;
     auto& nav = navigation_[active_];
     cycleSort(column, nav.column, nav.order);
+    visibleTable_.setPage(0);
     table_.sort(nav.column, nav.order); publishResourceColumns(); queueViewSave("resource"); emit changed(); return true;
 }
 bool Workspace::sortPortColumn(int column) {
@@ -2303,8 +2304,8 @@ bool Workspace::navigateInspector(int step) {
     return allowLeave(Leave::History, path, index) && inspectHistory(path, index);
 }
 bool Workspace::copyCell(int row, int column) {
-    const auto index = table_.index(row, column);
+    const auto index = visibleTable_.index(row, column);
     if (!index.isValid()) return false;
-    QGuiApplication::clipboard()->setText(table_.data(index).toString()); return true;
+    QGuiApplication::clipboard()->setText(table_.data(visibleTable_.mapToSource(index)).toString()); return true;
 }
 } // namespace podlord

@@ -191,7 +191,7 @@ public:
 const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
 bool run(const QString& scenario, const QString& referencePresets) {
     QTemporaryDir temporary; KubernetesBoundary server;
-    server.extraConfigurations = scenario.startsWith("limit_") ? 1298 : 0;
+    server.extraConfigurations = scenario.startsWith("page_") ? 1298 : 0;
     server.delayed = scenario == "loading_alert" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
@@ -377,96 +377,66 @@ bool run(const QString& scenario, const QString& referencePresets) {
             }
             return reused;
         }
-        if (scenario.startsWith("limit_")) {
-            auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
-            if (!displayed || workspace.property("resourceLimit").toInt() != 1024 || displayed->rowCount() != 1024 || workspace.resourceCount() != 1301) return false;
+        if (scenario.startsWith("page_")) {
+            auto* displayed = workspace.visibleResourceTable();
+            if (!displayed || displayed->rowCount() != 512 || workspace.resourcePage() != 0
+                || workspace.resourcePageCount() != 3 || workspace.resourceCount() != 1301
+                || item(window, "resourceLimit") || workspace.property("resourceLimit").isValid()) return false;
             QAbstractItemModelTester consistency(displayed, QAbstractItemModelTester::FailureReportingMode::Fatal);
-            const auto setLimit = [&](const QString& text) {
-                bool accepted = false;
-                return QMetaObject::invokeMethod(&workspace, "setResourceLimit", Q_RETURN_ARG(bool, accepted), Q_ARG(QString, text)) && accepted;
-            };
-            if (scenario == "limit_default") return server.requests == requests;
-            if (scenario.startsWith("limit_normalize_")) {
-                const auto value = scenario.mid(QString("limit_normalize_").size());
-                const QMap<QString, QString> inputs{{"empty", ""}, {"zero", "0"}, {"negative", "-1"}, {"invalid", "abc"},
-                    {"overflow", "2147483648"}, {"upper", "2147483647"}, {"spaces", " 7 "}, {"one", "1"}, {"max", "5000"}};
-                const int expected = value == "upper" || value == "max" ? 5000 : value == "spaces" ? 7 : value == "one" ? 1 : 1024;
-                return inputs.contains(value) && setLimit(inputs[value]) && workspace.property("resourceLimit").toInt() == expected
-                    && displayed->rowCount() == std::min(expected, 1301) && workspace.resourceCount() == 1301 && server.requests == requests;
-            }
-            if (scenario == "limit_ui" || scenario == "limit_narrow") {
-                if (scenario == "limit_narrow") {
-                    window->resize(844, 390);
-                    if (!waitFor([&] { return item(window, "workspaceToolbar")->isVisible() && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
+            if (scenario == "page_default") return server.requests == requests;
+            if (scenario == "page_ui" || scenario == "page_narrow") {
+                if (scenario == "page_narrow") window->resize(520, 720);
+                if (!workspace.setWorkspacePage("resources")) return false;
+                auto* next = item(window, "resourceNextPage");
+                auto* previous = item(window, "resourcePreviousPage");
+                auto* range = item(window, "resourcePageRange");
+                if (!next || !previous || !next->isVisible() || previous->isEnabled()
+                    || !range || range->property("text") != "1-512 / 1301"
+                    || range->mapToScene(QPointF(range->width(), 0)).x() > window->width()) {
+                    qWarning() << "Page controls" << bool(next) << bool(previous) << (next && next->isVisible())
+                        << (previous && previous->isEnabled()) << (range ? range->property("text") : QVariant{}); return false;
                 }
-                auto* control = item(window, "resourceLimit");
-                if (!control) return false;
-                if (!control->isVisible()) {
-                    const auto* expander = item(window, "toggleLandscapeFilters");
-                    if (!click(window, expander && expander->isVisible() ? "toggleLandscapeFilters" : "toggleSidebar")) return false;
+                if (!click(window, "resourceNextPage") || !waitFor([&] { return workspace.resourcePage() == 1
+                    && displayed->rowCount() == 512 && range->property("text") == "513-1024 / 1301"; })) {
+                    qWarning() << "First page action" << workspace.resourcePage() << displayed->rowCount() << range->property("text"); return false;
                 }
-                if (!waitFor([&] {
-                    const auto* label = item(window, "resourceLimitLabel");
-                    const auto* firstFilter = item(window, "sidebarField_cluster");
-                    if (!label || !label->isVisible() || label->property("text").toString() != workspace.uiText().value("filters.tableRows")
-                        || !firstFilter || !control->isVisible()) return false;
-                    const auto origin = control->mapToItem(window->contentItem(), QPointF{});
-                    const auto labelOrigin = label->mapToItem(window->contentItem(), QPointF{});
-                    return origin.y() < firstFilter->mapToItem(window->contentItem(), QPointF{}).y()
-                        && origin.x() >= labelOrigin.x() + label->width()
-                        && qAbs(origin.y() + control->height()/2 - labelOrigin.y() - label->height()/2) < 8;
-                }) || !podlord::test::scrollIntoView(window, control)) return false;
-                control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
-                return waitFor([&] { return workspace.property("resourceLimit").toInt() == 1025 && displayed->rowCount() == 1025
-                    && item(window, "resourceTable")->property("rows").toInt() == 1025; }) && server.requests == requests;
+                if (!click(window, "resourceNextPage") || !waitFor([&] { return workspace.resourcePage() == 2
+                    && displayed->rowCount() == 277 && range->property("text") == "1025-1301 / 1301"; })) {
+                    qWarning() << "Last page action" << workspace.resourcePage() << displayed->rowCount() << range->property("text"); return false;
+                }
+                const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+                if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
+                if (!workspace.copyCell(0, 0) || QGuiApplication::clipboard()->text() != workspace.table()->index(1024, 0).data().toString()) return false;
+                return !next->isEnabled() && click(window, "resourcePreviousPage")
+                    && waitFor([&] { return workspace.resourcePage() == 1 && displayed->rowCount() == 512; })
+                    && server.requests == requests;
             }
-            if (!setLimit("7") || displayed->rowCount() != 7 || workspace.resourceCount() != 1301) return false;
-            if (scenario == "limit_sort") {
-                if (!workspace.sortColumn(0) || !workspace.sortColumn(0) || workspace.sortDirection() != "DESC") return false;
-                for (int row = 0; row < 7; ++row)
-                    if (displayed->data(displayed->index(row, 0), Qt::UserRole) != workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole)) return false;
-                return displayed->data(displayed->index(0, 0)).toString() == "team-a" && server.requests == requests;
+            if (!workspace.setResourcePage(2) || displayed->rowCount() != 277) return false;
+            if (scenario == "page_filter") {
+                const bool passed = workspace.filterField("name", "\"limit-297\"")
+                && workspace.resourcePage() == 0 && workspace.resourcePageCount() == 1
+                && displayed->rowCount() == 1 && displayed->index(0, 0).data() == "limit-297"
+                && workspace.resetResourceFilters() && displayed->rowCount() == 512 && server.requests == requests;
+                if (!passed) qWarning() << "Page filter" << workspace.resourcePage() << workspace.resourcePageCount()
+                    << displayed->rowCount() << displayed->index(0, 0).data() << workspace.resourceCount() << server.requests - requests;
+                return passed;
             }
-            if (scenario == "limit_filter") return workspace.filterField("name", "\"limit-297\"") && displayed->rowCount() == 1 && workspace.resourceCount() == 1
-                && displayed->data(displayed->index(0, 0)).toString() == "limit-297" && server.requests == requests;
-            if (scenario == "limit_picker") return workspace.prepareFilterPicker("name") && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
-            if (scenario == "limit_reset") return workspace.filterField("name", "limit-") && workspace.resetResourceFilters()
-                && workspace.property("resourceLimit").toInt() == 1024 && displayed->rowCount() == 1024 && workspace.resourceCount() == 1301 && server.requests == requests;
-            if (scenario == "limit_preset") {
-                if (!workspace.saveFilterPreset("Seven rows") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
-                    || !workspace.resetResourceFilters() || workspace.selectedFilterPreset() != "default" || !workspace.loadFilterPreset("Seven rows")) return false;
-                return workspace.selectedFilterPreset() == "Seven rows" && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == requests;
-            }
-            if (scenario == "limit_session") {
-                const auto other = workspace.contexts().last().toMap().value("id").toString();
-                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() == 1301; })
-                    || workspace.property("resourceLimit").toInt() != 1024) return false;
-                const int afterOpen = server.requests;
-                return workspace.activate(session) && waitFor([&] { return !workspace.busy(); })
-                    && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == afterOpen;
-            }
-            if (scenario == "limit_refresh") {
+            if (scenario == "page_sort") return workspace.sortColumn(0) && workspace.sortColumn(0)
+                && workspace.resourcePage() == 0 && displayed->rowCount() == 512
+                && displayed->index(0, 0).data() == workspace.table()->index(0, 0).data()
+                && server.requests == requests;
+            if (scenario == "page_picker") return workspace.prepareFilterPicker("name")
+                && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
+            if (scenario == "page_refresh") {
                 server.extraConfigurations = 5;
                 if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() == 8; })) return false;
-                return displayed->rowCount() == 7 && workspace.resourceCount() == 8 && workspace.table()->rowCount() == 8 && server.requests > requests;
+                return workspace.resourcePage() == 0 && displayed->rowCount() == 8
+                    && workspace.resourceCount() == 8 && server.requests > requests;
             }
-            if (scenario == "limit_radar") {
+            if (scenario == "page_radar") {
                 auto* radar = window->findChild<podlord::RadarIsland*>();
-                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 1301 && server.requests == requests;
-            }
-            if (scenario == "limit_restart") {
-                if (!waitFor([&] { return workspace.requestWindowClose(); })) {
-                    qWarning() << "Limit save did not settle" << workspace.property("viewStateError") << workspace.error(); return false;
-                }
-                podlord::Workspace restored(profile);
-            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
-                || restored.totalResourceCount()!=0 || !restored.activate(session)) {
-                qWarning() << "Field restart restoration failed" << restored.currentSession() << session << restored.totalResourceCount() << restored.resourceFieldFilters() << restored.error(); return false;
-            }
-                const bool loaded = waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 1301; });
-                if (!loaded) qWarning() << "Reopened rows" << restored.busy() << restored.loading() << restored.currentSession()
-                    << restored.resourceCount() << restored.totalResourceCount() << restored.property("resourceLimit") << restored.error();
-                return loaded && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
+                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 1301
+                    && server.requests == requests;
             }
             return false;
         }
@@ -509,7 +479,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 const QVariantMap fields{{"name", "alpha"}, {"namespace", "team-a"}, {"kind", "Pod"}, {"cluster", "local"},
                     {"status", "Running"}, {"createdAt", ">=1m <2m"}, {"node", "node-a"}, {"image", "busybox:1"},
                     {"ready", "1/1"}, {"restarts", "=0"}, {"owner", "owner-a"}};
-                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod" || workspace.resourceLimit() != 7) return false;
+                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod" || workspace.resourcePageCount() != 1) return false;
             }
             const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
             if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
@@ -523,7 +493,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.filterPresetsBusy()
                 && restored.currentSession() == session && restored.resourceCount() == 1; })
                 && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == expectedFields
-                && restored.filterPresets() == expectedPresets && restored.resourceLimit() == 7 && restored.filterError().isEmpty();
+                && restored.filterPresets() == expectedPresets && restored.resourcePageCount() == 1 && restored.filterError().isEmpty();
         }
         if (scenario == "filter_render_frame") {
             window->requestActivate();

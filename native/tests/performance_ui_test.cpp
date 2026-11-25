@@ -299,7 +299,7 @@ bool run(const QString& config, podlord::Workspace& workspace, QQuickWindow* win
     if (!report({{"type", "profile"}, {"sessions", 3}, {"resources", total}, {"pods", 1500},
                  {"configMaps", 2334}, {"secrets", 1166}, {"logLimitMb", workspace.logLimitMb()},
                  {"logRows", workspace.logRows()->rowCount()}, {"qt", qVersion()},
-                 {"displayLimit", workspace.resourceLimit()}, {"displayedTableRows", workspace.displayedResourceCount()},
+                 {"pageSize", podlord::ResourceDisplayModel::PageSize}, {"displayedTableRows", workspace.displayedResourceCount()},
                  {"boundary", "external local HTTP API; real Workspace, caches, QML and render loop"},
                  {"protocol", "5 warmups, 30 retained action-to-frame samples per class; 10 steady batches; RSS tolerance 5 MB; 60 seconds nonsync idle"}})) return false;
     bool accepted = true;

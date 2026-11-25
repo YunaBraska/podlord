@@ -242,7 +242,7 @@ if(BUILD_TESTING)
         add_test(NAME native.ui.${scenario} COMMAND workspace_ui_test ${scenario})
         set_tests_properties(native.ui.${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    foreach(scenario columns values zero sort_cpu sort_memory sort_createdAt sort_ready sort_restarts cluster_filter owner_filter copy hover keyboard_hover identity status_colors refresh overview_metadata overview_copy overview_refresh overview_custom auto_empty auto_zero auto_filter auto_namespace auto_limit auto_refresh auto_pin auto_hidden auto_save auto_last auto_image_literal auto_focus light_contrast)
+    foreach(scenario columns values zero sort_cpu sort_memory sort_createdAt sort_ready sort_restarts cluster_filter owner_filter copy hover keyboard_hover identity status_colors refresh overview_metadata overview_copy overview_refresh overview_custom auto_empty auto_zero auto_filter auto_namespace auto_refresh auto_pin auto_hidden auto_save auto_last auto_image_literal auto_focus light_contrast)
         add_test(NAME native.ui.table_${scenario} COMMAND workspace_ui_test table_${scenario})
         set_tests_properties(native.ui.table_${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
@@ -809,8 +809,7 @@ if(BUILD_TESTING)
         table_keyboard_copy_menu table_keyboard_copy_f10 table_keyboard_inspect_menu table_keyboard_inspect_f10
         table_keyboard_pinned_copy_menu table_keyboard_pinned_copy_f10 table_keyboard_pinned_inspect_menu table_keyboard_pinned_inspect_f10
         table_keyboard_event_copy_menu table_keyboard_event_copy_f10 table_keyboard_event_inspect_menu table_keyboard_event_inspect_f10
-        limit_default limit_ui limit_narrow limit_sort limit_filter limit_picker limit_reset limit_preset limit_session limit_refresh limit_radar limit_restart
-        limit_normalize_empty limit_normalize_zero limit_normalize_negative limit_normalize_invalid limit_normalize_overflow limit_normalize_upper limit_normalize_spaces limit_normalize_one limit_normalize_max
+        page_default page_ui page_narrow page_sort page_filter page_picker page_refresh page_radar
         filter_render_frame mode_problems mode_activity mode_reset mode_field mode_session preset_controls preset_load preset_overwrite preset_delete preset_restart loading_alert loading_parallel name kind namespace status node image cluster owner issue and or exact prefix suffix regex empty missing invalid unclosed invalid_picker clear_expression keyboard copy narrow selection picker custom_picker picker_search reset stable_picker refresh_picker restart session radar global_and)
         foreach(style Basic Fusion)
             add_test(NAME native.field_filter.${scenario}_${style} COMMAND field-filter-ui-test ${scenario})
@@ -2070,7 +2069,7 @@ if(TARGET read-overlap-test)
 endif()
 
 if(TARGET resource_filter_test)
-    foreach(case empty_bounds cluster_refresh incremental_snapshot ordered_snapshot metric_and_age safe_tooltip cached_refresh cached_membership cached_handoff cached_cluster cached_age cached_ordered_repeat presence_retired_rows)
+    foreach(case pages empty_bounds cluster_refresh incremental_snapshot ordered_snapshot metric_and_age safe_tooltip cached_refresh cached_membership cached_handoff cached_cluster cached_age cached_ordered_repeat presence_retired_rows)
         add_test(NAME native.resource_table.${case} COMMAND $<TARGET_FILE:resource_filter_test> table_${case})
     endforeach()
 endif()

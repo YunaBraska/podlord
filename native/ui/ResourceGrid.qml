@@ -12,6 +12,10 @@ ColumnLayout {
     readonly property var colors: workspace.appearanceColors
     readonly property font cellFont: Qt.font({family: workspace.monospaceFamily, pixelSize: workspace.textSizes.cell, weight: Font.Normal})
     required property var tableModel
+    property int pageIndex: 0
+    property int pageCount: 1
+    property int pageSize: 512
+    signal pageRequested(int page)
     required property int sortColumn
     required property string sortDirection
     property string prefix: "resource"
@@ -56,6 +60,11 @@ ColumnLayout {
         if (table) table.clearInput()
         if (pinnedTable) pinnedTable.clearInput()
         if (selection) selection.clear()
+    }
+    onPageIndexChanged: {
+        if (selection) selection.clear()
+        if (table) table.contentY = 0
+        if (pinnedTable) pinnedTable.contentY = 0
     }
     signal actionRequested(string identity, int column, string label)
     signal currentRequested(string identity)
@@ -655,5 +664,33 @@ ColumnLayout {
             }
             SelectableText { id: emptyMessage; objectName: grid.emptyObjectName; Layout.fillWidth: true; text: grid.emptyText; textFormat: Text.PlainText; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter; color: grid.colors.muted }
         }
+    }
+    RowLayout {
+        Layout.fillWidth: true
+        visible: grid.prefix === "resource" && grid.pageCount > 1
+        Item { Layout.fillWidth: true }
+        IconButton {
+            objectName: "resourcePreviousPage"
+            glyph: "Previous"
+            text: workspace.uiText["table.previousPage"]
+            enabled: grid.pageIndex > 0
+            onClicked: grid.pageRequested(grid.pageIndex - 1)
+        }
+        SelectableText {
+            objectName: "resourcePageRange"
+            Layout.preferredWidth: Math.max(150, contentWidth + 8)
+            horizontalAlignment: TextEdit.AlignHCenter
+            wrapMode: TextEdit.NoWrap
+            text: (grid.pageIndex * grid.pageSize + 1) + "-" + (grid.pageIndex * grid.pageSize + workspace.displayedResourceCount) + " / " + workspace.resourceCount
+            Accessible.name: text
+        }
+        IconButton {
+            objectName: "resourceNextPage"
+            glyph: "Next"
+            text: workspace.uiText["table.nextPage"]
+            enabled: grid.pageIndex + 1 < grid.pageCount
+            onClicked: grid.pageRequested(grid.pageIndex + 1)
+        }
+        Item { Layout.fillWidth: true }
     }
 }

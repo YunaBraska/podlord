@@ -199,7 +199,7 @@ Pane {
                     Accessible.name: workspace.uiText["context.rename"] + ": " + text
                     onClicked: renameRequested()
                 }
-                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.currentSession !== "" && (workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0 || workspace.resourceLimit !== workspace.defaultResourceLimit); onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
+                IconButton { objectName: "resetResourceFilters"; glyph: "Reset"; text: "Reset filters"; enabled: workspace.currentSession !== "" && (workspace.workspacePage === "events" ? workspace.eventFilterText !== "" : workspace.problemsOnly || workspace.activityOnly || workspace.filterText !== "" || Object.keys(workspace.resourceFieldFilters).length > 0); onClicked: workspace.workspacePage === "events" ? workspace.filterEvents("") : workspace.resetResourceFilters() }
                 IconButton { objectName: "masterAudioMute"; glyph: workspace.alerts.muted ? "Mute" : "Volume"; text: workspace.uiText[workspace.alerts.muted ? "music.unmuteAlerts" : "music.muteAlerts"]; enabled: !workspace.alerts.busy; onClicked: workspace.alerts.setPreferences(!workspace.alerts.muted, workspace.alerts.reducedMotion) }
             }
             RowLayout {
@@ -211,28 +211,6 @@ Pane {
                 spacing: 4
                 ScopeCheckBox { objectName: "problemsOnly"; text: workspace.uiText["filters.problems"]; Layout.fillWidth: true; checked: workspace.problemsOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "problems" : "") }
                 ScopeCheckBox { objectName: "activityOnly"; text: workspace.uiText["filters.activity"]; Layout.fillWidth: true; checked: workspace.activityOnly; enabled: workspace.currentSession !== ""; onClicked: workspace.setFilterMode(checked ? "activity" : "") }
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                HoverHandler { id: rowLimitHover }
-                SelectableText {
-                    id: rowLimitLabel
-                    objectName: "resourceLimitLabel"
-                    Layout.fillWidth: true
-                    text: workspace.uiText["filters.tableRows"]
-                }
-                SpinBox {
-                    objectName: "resourceLimit"
-                    Layout.minimumWidth: implicitWidth
-                    from: 1; to: 5000; editable: true
-                    value: workspace.resourceLimit
-                    enabled: workspace.currentSession !== "" && !workspace.busy
-                    Accessible.name: rowLimitLabel.text
-                    Accessible.description: workspace.uiText["filters.tableRowsHelp"]
-                    ToolTip.visible: rowLimitHover.hovered || activeFocus
-                    ToolTip.text: Accessible.description
-                    onValueModified: workspace.setResourceLimit(String(value))
-                }
             }
             RowLayout {
                 Layout.fillWidth: true

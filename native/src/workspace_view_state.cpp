@@ -59,7 +59,7 @@ void Workspace::applyContextViews(const QString& context, const TableViewStates&
         const auto resources = views.value("resource"), events = views.value("event");
         nav.filter = resources.filter; nav.fields = resources.fields;
         nav.column = static_cast<int>(schemas.value("resource").indexOf(resources.column));
-        nav.mode = resources.mode; nav.limit = resources.limit;
+        nav.mode = resources.mode;
         nav.order = resources.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         nav.eventFilter = events.filter; nav.eventColumn = static_cast<int>(schemas.value("event").indexOf(events.column));
         nav.eventOrder = events.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
@@ -76,7 +76,7 @@ void Workspace::applyContextViews(const QString& context, const TableViewStates&
     }
     if (!refresh || sessionConfiguration(active_).value("contextId").toString() != context) return;
     const auto& nav = currentNavigation();
-    visibleTable_.setLimit(nav.limit); table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
+    visibleTable_.setPage(0); table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);
     events_.filter(nav.eventFilter); events_.sort(nav.eventColumn, nav.eventOrder);
     ports_.setFilterFixedString(nav.portFilter.trimmed()); ports_.sort(nav.portColumn, nav.portOrder);
     inspectorEventsTable_.sort(nav.inspectorEventColumn, nav.inspectorEventOrder);
@@ -108,7 +108,7 @@ bool Workspace::queueViewSave(const QString& table) {
         : table == "inspectorEvent" ? nav.inspectorEventOrder : table == "inspectorLink" ? nav.inspectorLinkOrder : nav.valueOrder;
     const TableViewState value{table == "resource" ? nav.filter : table == "event" ? nav.eventFilter : table == "port" ? nav.portFilter : QString{},
         column < 0 ? QString{} : model->headerData(column, Qt::Horizontal, Qt::UserRole).toString(), column >= 0 && order == Qt::DescendingOrder,
-        table == "resource" ? nav.fields : QMap<QString, QString>{}, table == "resource" ? nav.mode : QString{}, table == "resource" ? nav.limit : 256,
+        table == "resource" ? nav.fields : QMap<QString, QString>{}, table == "resource" ? nav.mode : QString{}, table == "resource" ? DefaultResourceDisplayLimit : 256,
         table == "resource" ? runtime_->contextViews.value(context).value("resource").namespaces : QStringList{}};
     pendingViews_[context][table] = value;
     auto& views = runtime_->contextViews[context];
