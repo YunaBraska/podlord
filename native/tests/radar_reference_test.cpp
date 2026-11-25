@@ -869,7 +869,7 @@ import QtQuick.Window
 import "qrc:/podlord/"
 Window {
     width: 1208; height: 1240; visible: true; color: "#12212B"
-    ResourceRadar { anchors.fill: parent; compact: true; background: Rectangle { color: "#12212B" } }
+    ResourceRadar { anchors.fill: parent; background: Rectangle { color: "#12212B" } }
 })qml", QUrl("qrc:/podlord/radar-reference.qml"));
     if (engine.rootObjects().size() != 1) return setupFailure("QML window creation");
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());

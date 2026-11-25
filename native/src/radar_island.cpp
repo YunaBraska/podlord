@@ -517,6 +517,10 @@ void RadarIsland::setHeadingPixelSize(qreal size) {
     if (!std::isfinite(size) || size < 1 || headingPixelSize_ == size) return;
     headingPixelSize_ = size; update(); emit textSizesChanged();
 }
+void RadarIsland::setLabelTopInset(qreal inset) {
+    if (!std::isfinite(inset) || inset < 0 || labelTopInset_ == inset) return;
+    labelTopInset_ = inset; update(); emit labelTopInsetChanged();
+}
 bool RadarIsland::pan(double dx,double dy) {
     if (!std::isfinite(dx) || !std::isfinite(dy)) return false;
     setViewPose({{"x",pan_.x()+dx/zoom_},{"y",pan_.y()+dy/zoom_},{"zoom",zoom_}}); return true;
@@ -728,7 +732,8 @@ void RadarIsland::paint(QPainter* painter) {
             label.moveCenter(center);
             label.moveLeft(std::clamp(label.left(),4.,width()-label.width()-4));
             label.moveTop(std::clamp(label.top(),4.,height()-label.height()-4));
-            if (label.adjusted(-4,-4,4,4).intersects(land)
+            if (label.top() < labelTopInset_
+                || label.adjusted(-4,-4,4,4).intersects(land)
                 || std::any_of(labels.cbegin(),labels.cend(),[&](const auto& shown) { return shown.first.adjusted(-4,-2,4,2).intersects(label); })) continue;
             const auto topLeft=(label.topLeft()-QPointF(width()/2,height()/2))/zoom_-pan_;
             const QRectF query(topLeft,label.size()/zoom_);

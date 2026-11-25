@@ -571,7 +571,7 @@ public:
                         || ((scenario == "coalesce" || scenario == "detail_expiry") && path.startsWith("/api/v1/namespaces/default/pods/"))
                         || ((scenario == "hidden_followup" || scenario == "shutdown_pending") && path == "/api") ? 400 : 0;
                     if (scenario=="map_preview_deferred" && path=="/api/v1/pods" && url.query().contains("continue=") && authorization=="Bearer inactive-token") delay=1800;
-                    if (scenario=="initial_load_navigation" && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
+                    if ((scenario=="initial_load_navigation" || scenario=="initial_map_resume") && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
                     QTimer::singleShot(delay, this, [this, live, response, delay] {
                         if (live && live->state() == QAbstractSocket::ConnectedState) {
                             const bool accepted = live->write(response) == response.size();
@@ -1678,6 +1678,20 @@ bool execute(const QString& requestedScenario) {
             && workspace.workspacePage() == "settings" && workspace.totalResourceCount() > 0
             && server.authorizations.contains("Bearer local-test-token"); }, 15000);
     }
+    if (scenario == "initial_map_resume") {
+        const auto session = workspace.currentSession();
+        if (!waitFor([&] { return workspace.loading() && server.requests.contains("/api"); })
+            || !click(window, item(window, "mapOverview")) || !workspace.mapOverview()) return false;
+        if (!waitFor([&] { return server.delayedReadDelivered && !workspace.loading(); }, 5000)
+            || !workspace.activate(session)) return false;
+        reference = reference.addSecs(2);
+        const bool recovered = waitFor([&] { return !workspace.mapOverview() && workspace.totalResourceCount() == 3
+            && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const auto& path) { return path.startsWith("/api/v1/pods?"); })
+            && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const auto& path) { return path.startsWith("/apis/example.test/v1/widgets?"); }); }, 15000);
+        if (!recovered) std::fprintf(stderr, "Map resume: rows=%d loading=%d requests=%s\n", workspace.totalResourceCount(),
+            workspace.loading(), qPrintable(server.requests.join(',')));
+        return recovered;
+    }
     if (scenario == "hidden_followup") {
         if (!waitFor([&] { return server.requests.contains("/api"); })) return false;
         if (!click(window,item(window,"closeCurrentSession"))
@@ -1889,12 +1903,17 @@ bool execute(const QString& requestedScenario) {
                     if (!blocked.open(QIODevice::WriteOnly) || blocked.write("not a directory")<0) return false;
                 }
                 if (!workspace.reload() || !waitFor([&] { return !workspace.busy(); })
-                    || workspace.property("mapCatalogWarning").toString().isEmpty() || !text(window,"mapTitle").contains("older")
+                    || workspace.property("mapCatalogWarning").toString().isEmpty() || text(window,"mapTitle") != "Contexts"
+                    || !item(window,"mapSourceWarning")->isVisible()
+                    || (scenario == "map_catalog_warning" && item(window,"errorMessage")->isVisible())
                     || item(window,"contextMapCards")->property("count").toInt()!=3) return false;
                 const auto rows=window->property("mapContexts").toList();
                 if (rows.size()!=3 || !click(window,item(window,"contextMapCard_"+rows.first().toMap()["id"].toString()))
                     || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })
                     || workspace.property("mapCatalogWarning").toString().isEmpty() || !workspace.showMapOverview()) return false;
+                if (!click(window,item(window,"mapSourceWarning"))
+                    || !waitFor([&] { auto* list=item(window,"settingsSourceList"); return workspace.workspacePage()=="settings" && list && list->isVisible(); })
+                    || !workspace.showMapOverview()) return false;
                 if (scenario=="map_catalog_warning") {
                     if (!owned.open(QIODevice::WriteOnly|QIODevice::Truncate) || owned.write(record)!=record.size()) return false;
                     owned.close();
@@ -4765,19 +4784,19 @@ bool execute(const QString& requestedScenario) {
             const auto viewport = radar->mapRectToScene(radar->boundingRect());
             for (const auto* name : {"radarZoomOut", "radarZoom"}) {
                 auto* control = item(window, name);
-                if (!control || !control->isVisible() || control->mapRectToScene(control->boundingRect()).bottom() > viewport.top())
-                    return failed("navigation must leave the drawing area clear");
+                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
+                    return failed("navigation must overlay the drawing area");
             }
             if (mapRadar) for (const auto* name : {"mapOverview"}) {
                 auto* control = item(window, name);
-                if (!control || !control->isVisible() || control->mapRectToScene(control->boundingRect()).bottom() > viewport.top())
-                    return failed("map navigation must leave the drawing area clear");
+                if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
+                    return failed("map navigation must overlay the drawing area");
             }
             if (mapRadar) {
                 auto* title = item(window, "mapTitle");
                 auto* overview = item(window, "mapOverview");
-                if (!title || !title->isVisible() || !overview || title->mapRectToScene(title->boundingRect()).bottom() > viewport.top())
-                    return failed("map title must leave the drawing area clear");
+                if (!title || !title->isVisible() || !overview || !viewport.contains(title->mapRectToScene(title->boundingRect())))
+                    return failed("map title must overlay the drawing area");
                 const auto context = workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
                 if (!workspace.renameSourceContext(context, QString(160, 'W')) || !waitFor([&] {
                     return !workspace.busy() && title->property("text").toString().contains(QString(16, 'W'));
@@ -5125,9 +5144,9 @@ bool execute(const QString& requestedScenario) {
                 const auto navigationBottom=navigation->mapRectToScene(navigation->boundingRect()).bottom();
                 return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.width()-expected.width())<=1
                     && qAbs(actual.bottom()-expected.bottom())<=1 && actual.top()>=expected.top()
-                    && actual.top()>=navigationBottom && actual.top()-navigationBottom<=8
+                    && actual.top()<navigationBottom && navigationBottom<actual.bottom()
                     && !window->grabWindow().isNull();
-            })) return failed("expanded map fills the space below navigation");
+            })) return failed("expanded map fills the space behind navigation");
             const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
             const auto first=radarPoint(radar,0);
             if (!first) return failed("first resource hover target");
@@ -6592,7 +6611,10 @@ bool execute(const QString& requestedScenario) {
                 if (scenario == "inspector_auto_inactive" && !workspace.setWindowFocused(true)) return false;
             }
             renewalStage = "await renewed detail";
-            if (!waitFor([&] { return server.detailReads == reads + 1; })) return false;
+            if (!waitFor([&] { return server.detailReads == reads + 1; })) {
+                qWarning() << "Inspector renewal did not start" << scenario << server.detailReads << reads << workspace.inspectorStatus();
+                return false;
+            }
             if (scenario == "inspector_auto_late") {
                 if (!workspace.closeInspector() || !waitFor([&] { return !workspace.loading(); })) return false;
                 return workspace.inspectorPath().isEmpty() && server.delayedReadDelivered && !server.prematureDisconnect;
@@ -6603,15 +6625,24 @@ bool execute(const QString& requestedScenario) {
                 return workspace.yamlEditing() && workspace.yamlText() == draft
                     && server.detailReads == reads + 1 && server.delayedReadDelivered && !server.prematureDisconnect;
             }
-            if (!waitFor([&] { return !workspace.loading(); }) || workspace.inspectorPath() != path) return false;
+            if (!waitFor([&] { return !workspace.loading(); }) || workspace.inspectorPath() != path) {
+                qWarning() << "Inspector renewal did not finish" << scenario << workspace.loading() << workspace.inspectorPath();
+                return false;
+            }
             if (scenario == "inspector_auto_auth" || scenario == "inspector_auto_failure") {
-                if (workspace.yamlText() != oldYaml || !workspace.inspectorStatus().contains(scenario.endsWith("auth") ? "Authentication" : "HTTP 500", Qt::CaseInsensitive)) return false;
+                if (workspace.yamlText() != oldYaml || !workspace.inspectorStatus().contains(scenario.endsWith("auth") ? "Authentication" : "HTTP 500", Qt::CaseInsensitive)) {
+                    qWarning() << "Inspector renewal did not retain prior data" << scenario << (workspace.yamlText() == oldYaml) << workspace.inspectorStatus();
+                    return false;
+                }
                 if (scenario.endsWith("auth")) {
                     if (!workspace.authenticationRequired()) return false;
                     reference = reference.addSecs(600);
                 } else {
                     reference = reference.addSecs(31);
-                    if (!workspace.setWindowFocused(true) || !workspace.yamlText().isEmpty()) return false;
+                    if (!workspace.setWindowFocused(true) || !workspace.yamlText().isEmpty()) {
+                        qWarning() << "Inspector failure retry state" << workspace.yamlText().isEmpty() << workspace.inspectorStatus() << server.detailReads;
+                        return false;
+                    }
                 }
             } else if (scenario == "inspector_auto_secret") {
                 if (!accessibleName(window, "alpha, Value, alpha-private-value") || !accessibleName(window, "alpha, Hide")
@@ -6621,7 +6652,8 @@ bool execute(const QString& requestedScenario) {
             } else if (!workspace.yamlText().contains("ordinary-value-v2")) return false;
             for (int repeat = 0; repeat < 3; ++repeat) if (!workspace.setWindowFocused(true)) return false;
             QTest::qWait(100);
-            renewalComplete = server.detailReads == reads + 1;
+            // A failed detail is retried after its backoff. Repeated focus does not start another read.
+            renewalComplete = server.detailReads == reads + (scenario == "inspector_auto_failure" ? 2 : 1);
             return renewalComplete;
         }
         if (scenario.startsWith("inspector_yaml_expiry_")) {

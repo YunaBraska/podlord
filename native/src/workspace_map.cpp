@@ -158,7 +158,7 @@ void WorkspaceRuntime::flushUsageSaves() {
 }
 bool Workspace::mapOverview() const { return active_.isEmpty() || mapOverview_; }
 QString Workspace::mapCatalogWarning() const {
-    return sourceCatalogFailed_ || !sources_.errors.isEmpty() ? QStringLiteral("Source errors: cards may be older.") : QString{};
+    return sourceCatalogFailed_ || !sources_.errors.isEmpty() ? uiText().value("settings.sourceRepair").toString() : QString{};
 }
 QString Workspace::mapContextCaption() const {
     const auto identity = mapContextIdentity();

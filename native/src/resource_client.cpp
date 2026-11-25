@@ -637,6 +637,9 @@ bool ResourceClient::showSession(const QString& id, const QString& view) {
     for (auto it = views_.cbegin(); it != views_.cend(); ++it)
         if (!id.isEmpty() && it.key() != view && it->session == id) return false;
     if (views_.value(view).session != id) {
+        const auto previous = views_.value(view).session;
+        if (auto state = states_.find(previous); state != states_.end() && state->syncPending > 0)
+            state->lastDiscovery = {};
         hideLogs(view);
         if (auto previous = views_.find(view); previous != views_.end()) previous->inspector = {};
     }
@@ -684,6 +687,7 @@ void ResourceClient::scheduleSync() {
     if (delay != std::numeric_limits<qint64>::max()) sync_.start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
 }
 qint64 ResourceClient::syncInterval(const QString& id, const State& state) const {
+    if (!state.lastDiscovery.isValid()) return 1000;
     const bool available = !state.snapshot.isEmpty();
     const auto view = std::find_if(views_.cbegin(), views_.cend(), [&](const View& candidate) { return candidate.session == id; });
     if (view == views_.cend()) return static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
@@ -1084,7 +1088,7 @@ void ResourceClient::dropQueued(const std::function<bool(const Task&)>& obsolete
         auto& state = states_[task->id]; --state.pending;
         if (task->read == Read::Log) --state.logs[task->logKey].pending;
         else --state.resourcePending;
-        if (collectionRead(task->read)) { --state.syncPending; --state.syncTotal; }
+        if (collectionRead(task->read)) { --state.syncPending; --state.syncTotal; state.lastDiscovery = {}; }
         if (task->change) canceled.append(*task);
         if (!task->forwardToken.isEmpty()) canceledForwards.append(*task);
         if (!task->terminalToken.isEmpty()) {

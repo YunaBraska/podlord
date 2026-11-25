@@ -1363,7 +1363,7 @@ bool Workspace::reloadCatalogs(bool reconnect) {
                 if (use->count > cached.count) cached = use.value();
             }
             reconcileMapPreviews();
-            error_ = sources_.errors.isEmpty() ? QString{} : "Some owned source records could not be read; healthy sources remain available.";
+            error_.clear();
         }
         if (const auto* failure = std::get_if<Failure>(&sessions)) error_ = failure->message;
         else {

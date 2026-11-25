@@ -41,12 +41,14 @@ Pane {
         if (grid.selectResource(index)) workspace.inspectPath(path)
     }
     background: Rectangle { color: workspace.appearanceColors.radarGlass; border.color: workspace.appearanceColors.border }
-    contentItem: ColumnLayout {
+    contentItem: Item {
         RowLayout {
             id: radarNavigation
             objectName: "radarNavigation"
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            z: 10
             spacing: 4
             RowLayout {
                 id: navigationSlot
@@ -71,12 +73,12 @@ Pane {
             }
         }
         Item {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            anchors.fill: parent
             RadarIsland {
                 id: grid
                 objectName: "resourceRadar"
                 anchors.fill: parent
+                labelTopInset: radarNavigation.height + 8
                 source: workspace.table
                 alerts: workspace.alerts
                 glyphFill: workspace.appearanceColors.inset

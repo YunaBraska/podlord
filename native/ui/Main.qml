@@ -1061,8 +1061,8 @@ ApplicationWindow {
                             Layout.minimumWidth: 0
                             Layout.minimumHeight: workspace.mapOverview ? implicitHeight : window.touchLayout ? 44 : 24
                             verticalAlignment: Text.AlignVCenter
-                            text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption
-                            color: workspace.mapCatalogWarning ? "#FFE866" : "#DDE7EC"
+                            text: workspace.mapOverview ? "Contexts" : workspace.mapContextCaption
+                            color: "#DDE7EC"
                             leftPadding: 4; rightPadding: 4
                             background: Rectangle {
                                 width: Math.min(mapCaption.width, mapCaption.contentWidth + 8)
@@ -1074,10 +1074,6 @@ ApplicationWindow {
                             elide: Text.ElideRight
                             maximumLineCount: 1
                             wrapMode: Text.NoWrap
-                            Accessible.description: workspace.mapCatalogWarning
-                            ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""
-                            ToolTip.text: workspace.mapCatalogWarning
-                            HoverHandler { id: mapTitleHover }
                             activeFocusOnTab: !workspace.mapOverview
                             Accessible.role: workspace.mapOverview ? Accessible.StaticText : Accessible.Button
                             Accessible.onPressAction: if (!workspace.mapOverview) mapIdentityMenu.popup(mapCaption, 0, mapCaption.height)
@@ -1096,6 +1092,14 @@ ApplicationWindow {
                                 MenuItem { objectName: "copyMapContextName"; text: workspace.uiText["context.copyName"]; onTriggered: workspace.copyMapIdentity("name") }
                                 MenuItem { objectName: "copyMapClusterName"; text: workspace.uiText["context.copyCluster"]; onTriggered: workspace.copyMapIdentity("cluster") }
                             }
+                        }
+                        IconButton {
+                            objectName: "mapSourceWarning"
+                            visible: workspace.mapOverview && workspace.mapCatalogWarning !== ""
+                            glyph: "Info"
+                            glyphColor: workspace.appearanceColors.accent
+                            text: workspace.mapCatalogWarning
+                            onClicked: sourcesCommand.trigger()
                         }
                     }
                     Item {
