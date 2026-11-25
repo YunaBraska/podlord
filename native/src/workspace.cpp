@@ -1319,7 +1319,6 @@ bool Workspace::publish() {
         if (sessionChanged) {
             rows_.publish({}, cluster, true);
             eventRows_.publish({}, cluster, true);
-            healthSummary_ = {{"total", snapshot.size()}};
             publishInspector(false, true);
             emit resourcePresentationChanged(); emit changed();
         }
@@ -1329,19 +1328,12 @@ bool Workspace::publish() {
     const bool ready = matching && rows_.publishPrepared(*prepared, true);
     if (!ready) rows_.publish(snapshot, cluster, sessionChanged);
     QJsonArray eventSnapshot;
-    int healthy=0, warning=0, critical=0;
     if (ready) {
         eventSnapshot = prepared->events;
-        healthSummary_ = prepared->health;
     } else for (const auto& value : snapshot) {
         const auto row=value.toObject();
         if (row["kubernetesEvent"].toBool()) eventSnapshot.append(value);
-        const int severity=row["problemSeverity"].toInt();
-        if (severity==2) ++critical;
-        else if (severity==1) ++warning;
-        else ++healthy;
     }
-    if (!ready) healthSummary_={{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     if (!eventSnapshot.isEmpty() || eventRows_.rowCount() != 0) eventRows_.publish(eventSnapshot, cluster, sessionChanged);
     publishPorts();
     table_.filter(nav.filter, nav.fields, nav.mode); table_.sort(nav.column, nav.order);

@@ -372,6 +372,11 @@ public:
                         document["items"] = values;
                         if (scenario.startsWith("radar_loading_")) document["metadata"] = QJsonObject{};
                     }
+                    if (scenario == "shell_health_tab_switch_large" && path == "/api/v1/pods") {
+                        QJsonArray values;
+                        for (int index = 0; index < 300; ++index) values.append(pod(QString("health-%1").arg(index)));
+                        document = {{"metadata", QJsonObject{}}, {"items", values}};
+                    }
                     if (scenario.startsWith("inspector_related_") || scenario.startsWith("filter_event_")) {
                         if (scenario.startsWith("inspector_related_alias_") && path == "/apis") {
                             auto groups = document["groups"].toArray();
@@ -751,7 +756,7 @@ bool execute(const QString& requestedScenario) {
     bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
-    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "initial_load_navigation" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
+    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "initial_load_navigation" || scenario.startsWith("shell_health_tab_switch") || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     KubernetesBoundary server(scenario == "shell_metric_zero" ? "radar_quick_info" : scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario.startsWith("view_restore_event_") ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
@@ -1694,21 +1699,54 @@ bool execute(const QString& requestedScenario) {
     if (scenario == "shell_health_initial") {
         if (!workspace.setWorkspacePage("resources")) return false;
         auto* health = item(window, "sessionHealthSegments");
-        auto* progress = item(window, "sessionLoadProgress");
-        if (!health || !progress || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1
-            && progress->isVisible() && !health->isVisible() && progress->height() < progress->parentItem()->height(); })) {
+        if (!health || item(window, "sessionLoadProgress") || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1
+            && health->isVisible() && health->height() < health->parentItem()->height(); })) {
             std::fprintf(stderr, "Initial health: strip=%d sync=%d total=%d progress=%f\n", bool(health),
                 workspace.syncLoading(), workspace.totalResourceCount(), workspace.loadingProgress());
             return false;
         }
-        if (qAbs(health->height() - health->parentItem()->height()) >= 1) {
-            std::fprintf(stderr, "Initial health height: %f / %f, progress=%f\n", health->height(),
-                health->parentItem()->height(), workspace.loadingProgress());
+        if (!waitFor([&] { auto* healthy = item(window, "sessionHealth_healthy");
+            return workspace.syncLoading() && workspace.healthSummary().value("total").toInt() > 0
+                && healthy && healthy->height() > 0 && healthy->height() < health->parentItem()->height(); }, 8000)) {
+            qWarning() << "Colored partial health" << workspace.syncLoading() << workspace.healthSummary() << health->height();
             return false;
         }
+        if (!saveShellFrame(window, "health-loading")) return false;
         return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == 3; }, 15000)
             && qAbs(health->height() - health->parentItem()->height()) < 1
-            && health->isVisible() && !progress->isVisible();
+            && health->isVisible() && item(window, "sessionHealth_healthy")
+            && item(window, "sessionHealth_healthy")->height() > 0
+            && item(window, "sessionHealth_healthy")->property("color").value<QColor>() == QColor("#7DFFC3")
+            && saveShellFrame(window, "health-ready");
+    }
+    if (scenario.startsWith("shell_health_tab_switch")) {
+        if (!workspace.setWorkspacePage("resources")) return false;
+        auto* health = item(window, "sessionHealthSegments");
+        const int expected = scenario.endsWith("_large") ? 301 : 3;
+        if (!health || !waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == expected; }, 15000)) {
+            qWarning() << "First health load" << workspace.syncLoading() << workspace.totalResourceCount(); return false;
+        }
+        const auto first = workspace.currentSession();
+        const auto currentContext = workspace.sessionConfiguration(first).value("contextId").toString();
+        const auto contexts = workspace.contexts();
+        const auto other = std::find_if(contexts.cbegin(), contexts.cend(), [&](const auto& value) {
+            return value.toMap().value("id").toString() != currentContext;
+        });
+        if (other == contexts.cend() || !workspace.openContext(other->toMap().value("id").toString())) {
+            qWarning() << "Open second health context" << workspace.error(); return false;
+        }
+        if (!waitFor([&] { return !workspace.busy() && !workspace.syncLoading()
+                && workspace.currentSession() != first && workspace.totalResourceCount() == expected; }, 15000)) {
+            qWarning() << "Second health load" << workspace.busy() << workspace.syncLoading()
+                << workspace.currentSession() << first << workspace.totalResourceCount() << workspace.error(); return false;
+        }
+        if (!workspace.activate(first) || !waitFor([&] { return workspace.currentSession() == first; })) {
+            qWarning() << "Restore first health context" << workspace.busy() << workspace.currentSession() << first;
+            return false;
+        }
+        return workspace.initialSyncComplete() && health->isVisible()
+            && qAbs(health->height() - health->parentItem()->height()) < 1
+            && item(window, "sessionHealth_healthy") && item(window, "sessionHealth_healthy")->height() > 0;
     }
     if (scenario == "initial_load_navigation") {
         const auto first = workspace.currentSession();
@@ -2806,18 +2844,17 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_health_refresh") {
             auto* health = item(window, "sessionHealthSegments");
-            auto* progress = item(window, "sessionLoadProgress");
-            if (!health || !progress || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
+            if (!health || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
             if (!workspace.refresh()) return false;
-            if (!workspace.syncLoading() || workspace.loadingProgress() >= 1 || !progress->isVisible() || health->isVisible()
-                || progress->height() >= progress->parentItem()->height()) return false;
+            if (!workspace.syncLoading() || workspace.loadingProgress() >= 1 || !workspace.initialSyncComplete()
+                || !health->isVisible() || qAbs(health->height() - health->parentItem()->height()) >= 1) return false;
             bool stable = true;
             if (!waitFor([&] {
-                stable = stable && (!workspace.syncLoading() || workspace.loadingProgress() < 1)
+                stable = stable && health->isVisible()
                     && qAbs(health->height() - health->parentItem()->height()) < 1;
                 return !workspace.syncLoading();
             }, 10000)) return false;
-            return stable && workspace.loadingProgress() == 1 && health->isVisible() && !progress->isVisible()
+            return stable && workspace.loadingProgress() == 1 && health->isVisible()
                 && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
         }
         if (scenario == "shell_quick_invalid_existing") {

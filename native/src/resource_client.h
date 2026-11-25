@@ -33,6 +33,7 @@ public:
     bool watchInspector(const QString& id, const QString& path, const QString& view = {});
     bool dismissInspector(const QString& id);
     QJsonArray rows(const QString& id) const;
+    QVariantMap healthSummary(const QString& id) const;
     bool collectionSnapshotAvailable(const QString& id) const;
     /** Bounded in-memory request metadata. Reading this snapshot never schedules transport. */
     QVariantList requestAudit(const QString& id) const;
@@ -178,6 +179,7 @@ private:
         QMap<QString, PodLogHistory> logs;
         QMap<QString, CachedResource> resources;
         QJsonArray snapshot;
+        QVariantMap health;
         QMap<QString, QString> issueByPath;
         QSet<QString> blocked;
         QMap<QString, QDateTime> deniedClusterLists;

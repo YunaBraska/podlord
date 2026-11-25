@@ -12,7 +12,6 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
     PreparedSnapshot result;
     result.source = std::move(source); result.cluster = std::move(cluster);
     result.fields = table.fields_; result.identity = table.identityField_;
-    int healthy = 0, warning = 0, critical = 0;
     for (int row = 0; row < table.rowCount(); ++row) {
         if (promise.isCanceled()) return;
         auto& entry = table.rows_[row];
@@ -27,10 +26,6 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
         entry.populated = table.populatedColumns(row);
         entry.prepared = true;
         if (document["kubernetesEvent"].toBool()) result.events.append(document);
-        const int severity = document["problemSeverity"].toInt();
-        if (severity == 2) ++critical;
-        else if (severity == 1) ++warning;
-        else ++healthy;
     }
     if (promise.isCanceled()) return;
     table.prepareSort(sortColumn);
@@ -39,7 +34,6 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
     if (promise.isCanceled()) return;
     result.rows = std::move(table.rows_); result.sortValues = std::move(table.sortValues_);
     result.sortColumn = table.sortValueColumn_;
-    result.health = {{"total", result.source.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     promise.addResult(std::move(result));
 }
 

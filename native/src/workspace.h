@@ -66,7 +66,6 @@ public:
         QList<QVariant> sortValues;
         std::shared_ptr<const ResourceGraph> graph;
         int sortColumn = -1;
-        QVariantMap health;
     };
     explicit ResourceTable(QObject* parent = nullptr,
                            QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
@@ -169,6 +168,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool loading READ loading NOTIFY changed)
     Q_PROPERTY(bool syncLoading READ syncLoading NOTIFY changed)
     Q_PROPERTY(double loadingProgress READ loadingProgress NOTIFY changed)
+    Q_PROPERTY(bool initialSyncComplete READ initialSyncComplete NOTIFY changed)
     Q_PROPERTY(bool problemsOnly READ problemsOnly NOTIFY fieldFiltersChanged)
     Q_PROPERTY(bool activityOnly READ activityOnly NOTIFY fieldFiltersChanged)
     Q_PROPERTY(QStringList filterPresets READ filterPresets NOTIFY filterPresetsChanged)
@@ -429,6 +429,7 @@ public:
     bool loading() const;
     bool syncLoading() const;
     double loadingProgress() const;
+    bool initialSyncComplete() const { return client_.initialSyncComplete(active_); }
     bool problemsOnly() const { return currentNavigation().mode == "problems"; }
     bool activityOnly() const { return currentNavigation().mode == "activity"; }
     Q_INVOKABLE bool setFilterMode(const QString& mode);
@@ -546,7 +547,7 @@ public:
     QAbstractItemModel* dashboardTable() { return &dashboardRows_; }
     QString dashboardSummary() const { return dashboardSummary_; }
     QVariantList pulseMetrics() const { return pulseMetrics_; }
-    QVariantMap healthSummary() const { return healthSummary_; }
+    QVariantMap healthSummary() const { return client_.healthSummary(active_); }
     QVariantMap radarView() const { return currentNavigation().radarView; }
     bool mapOverview() const;
     QVariantList mapContexts() const { return mapContexts_; }
@@ -984,7 +985,6 @@ private:
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;
     QVariantList pulseMetrics_;
-    QVariantMap healthSummary_;
     QTimer rowUpdateTimer_;
     QStringList pendingRows_;
     bool dashboardDirty_ = true;

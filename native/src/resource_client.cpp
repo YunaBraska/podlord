@@ -742,6 +742,10 @@ QJsonArray ResourceClient::rows(const QString& id) const {
     const auto state = states_.constFind(id);
     return state == states_.cend() ? QJsonArray{} : state->snapshot;
 }
+QVariantMap ResourceClient::healthSummary(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state == states_.cend() ? QVariantMap{} : state->health;
+}
 void ResourceClient::publishRows(const QString& id) {
     auto& state = states_[id];
     const auto revision = state.presentationRevision = ++nextPresentationRevision_;
@@ -755,6 +759,7 @@ void ResourceClient::publishRows(const QString& id) {
     struct Projection final {
         QMap<QString, CachedResource> resources;
         QJsonArray snapshot;
+        QVariantMap health;
         QMap<QString, QString> issues, newProblems;
         QStringList relatedCollections;
         QDateTime expiry;
@@ -781,6 +786,7 @@ void ResourceClient::publishRows(const QString& id) {
         if (!projection.changed) { emit changed(id); return; }
         current.issueByPath = std::move(projection.issues);
         current.snapshot = std::move(projection.snapshot);
+        current.health = std::move(projection.health);
         reconcileLogs(id);
         emit rowsChanged(id);
         emit changed(id);
@@ -850,15 +856,19 @@ void ResourceClient::publishRows(const QString& id) {
     if (metricExpiry.isValid() && (!projection.expiry.isValid() || metricExpiry<projection.expiry)) projection.expiry=metricExpiry;
     projection.changed = snapshot != previousSnapshot;
     if (!projection.changed) return projection;
+    int healthy = 0, warning = 0, critical = 0;
     for (const auto& value : snapshot) {
         const auto row=value.toObject();
         const auto path=row["path"].toString();
         if (row["problemSeverity"].toInt()>0 && previous.value(path)["problemSeverity"].toInt()==0)
             projection.newProblems.insert(path, row["kind"].toString());
+        projection.issues.insert(path, row["issue"].toString());
+        const int severity = row["problemSeverity"].toInt();
+        if (severity == 2) ++critical;
+        else if (severity == 1) ++warning;
+        else ++healthy;
     }
-    for (const auto& value : snapshot) {
-        const auto row=value.toObject(); projection.issues.insert(row["path"].toString(), row["issue"].toString());
-    }
+    projection.health = {{"total", snapshot.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     if (!projection.newProblems.isEmpty()) {
         const ResourceGraph graph(snapshot);
         const bool refreshEvents = std::any_of(projection.newProblems.cbegin(), projection.newProblems.cend(), [](const QString& kind) {
