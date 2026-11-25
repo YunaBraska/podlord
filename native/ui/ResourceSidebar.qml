@@ -85,6 +85,7 @@ Pane {
             Column {
                 objectName: "sessionHealthSegments"
                 anchors.fill: parent
+                visible: !healthStrip.initiallyLoading
                 Repeater {
                     model: [{name: "critical", count: workspace.healthSummary.critical || 0, color: "#FF5C5C"},
                         {count: workspace.healthSummary.warning || 0, color: "#FFE866"},
@@ -92,15 +93,23 @@ Pane {
                     Rectangle { required property var modelData; width: parent.width; height: workspace.healthSummary.total > 0 ? parent.height * modelData.count / workspace.healthSummary.total : 0; color: modelData.color }
                 }
             }
+            Rectangle {
+                objectName: "sessionLoadProgress"
+                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                height: parent.height * Math.max(0, Math.min(0.99, workspace.loadingProgress))
+                color: workspace.appearanceColors.accent
+                visible: healthStrip.initiallyLoading
+            }
             readonly property bool initiallyLoading: workspace.syncLoading && workspace.loadingProgress < 1
             Accessible.role: Accessible.StaticText
-            Accessible.name: (initiallyLoading ? "Loading context. " : "Context health: ") + (workspace.healthSummary.healthy || 0) + " healthy, " + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
+            Accessible.name: initiallyLoading
+                ? workspace.uiText["status.loadingResources"] + " " + Math.round(workspace.loadingProgress * 100) + "%"
+                : "Context health: " + (workspace.healthSummary.healthy || 0) + " healthy, "
+                    + (workspace.healthSummary.warning || 0) + " warnings, " + (workspace.healthSummary.critical || 0) + " errors"
             ToolTip.visible: healthHover.hovered
             ToolTip.text: workspace.authenticationRunning
                 ? "Authentication in progress."
-                : healthStrip.initiallyLoading
-                    ? workspace.uiText["status.loadingResources"]
-                    : Accessible.name
+                : Accessible.name
             HoverHandler { id: healthHover }
         }
         ScrollView {

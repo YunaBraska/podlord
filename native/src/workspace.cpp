@@ -641,6 +641,17 @@ QVariantList Workspace::tabs() const {
 }
 bool Workspace::busy() const { return busy_; }
 bool Workspace::loading() const { return authenticationRunning() || client_.loading(active_); }
+bool Workspace::syncLoading() const {
+    return authenticationRunning() || client_.syncLoading(active_)
+        || (snapshotPreparation_ && snapshotPreparation_->session == active_
+            && !snapshotPreparation_->watcher->isCanceled());
+}
+double Workspace::loadingProgress() const {
+    if (authenticationRunning() && !client_.initialSyncComplete(active_)) return 0;
+    const auto progress = client_.loadingProgress(active_);
+    return snapshotPreparation_ && snapshotPreparation_->session == active_
+        && !snapshotPreparation_->watcher->isCanceled() ? std::min(progress, 0.95) : progress;
+}
 bool Workspace::authenticationRequired() const { return client_.authenticationRequired(active_); }
 bool Workspace::authenticationRunning() const {
     const auto connection = client_.connection(active_);

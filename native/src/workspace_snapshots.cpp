@@ -127,7 +127,9 @@ void Workspace::prepareSnapshot() {
         }
         watcher->deleteLater();
         prepareSnapshot();
+        emit changed();
     });
     watcher->setFuture(QtConcurrent::run(&ResourceTable::prepare, source, cluster, currentNavigation().column));
+    emit changed();
 }
 }

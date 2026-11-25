@@ -427,8 +427,8 @@ public:
     bool workspaceRestoreEnabled() const { return settings_.workspaceRestore; }
     Q_INVOKABLE bool saveWorkspaceRestore(bool enabled);
     bool loading() const;
-    bool syncLoading() const { return authenticationRunning() || client_.syncLoading(active_); }
-    double loadingProgress() const { return authenticationRunning() && !client_.initialSyncComplete(active_) ? 0 : client_.loadingProgress(active_); }
+    bool syncLoading() const;
+    double loadingProgress() const;
     bool problemsOnly() const { return currentNavigation().mode == "problems"; }
     bool activityOnly() const { return currentNavigation().mode == "activity"; }
     Q_INVOKABLE bool setFilterMode(const QString& mode);

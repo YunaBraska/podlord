@@ -1694,7 +1694,9 @@ bool execute(const QString& requestedScenario) {
     if (scenario == "shell_health_initial") {
         if (!workspace.setWorkspacePage("resources")) return false;
         auto* health = item(window, "sessionHealthSegments");
-        if (!health || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1; })) {
+        auto* progress = item(window, "sessionLoadProgress");
+        if (!health || !progress || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1
+            && progress->isVisible() && !health->isVisible() && progress->height() < progress->parentItem()->height(); })) {
             std::fprintf(stderr, "Initial health: strip=%d sync=%d total=%d progress=%f\n", bool(health),
                 workspace.syncLoading(), workspace.totalResourceCount(), workspace.loadingProgress());
             return false;
@@ -1705,7 +1707,8 @@ bool execute(const QString& requestedScenario) {
             return false;
         }
         return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == 3; }, 15000)
-            && qAbs(health->height() - health->parentItem()->height()) < 1;
+            && qAbs(health->height() - health->parentItem()->height()) < 1
+            && health->isVisible() && !progress->isVisible();
     }
     if (scenario == "initial_load_navigation") {
         const auto first = workspace.currentSession();
@@ -2803,16 +2806,19 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_health_refresh") {
             auto* health = item(window, "sessionHealthSegments");
-            if (!health || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
+            auto* progress = item(window, "sessionLoadProgress");
+            if (!health || !progress || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
             if (!workspace.refresh()) return false;
-            if (!workspace.syncLoading() || workspace.loadingProgress() >= 1) return false;
+            if (!workspace.syncLoading() || workspace.loadingProgress() >= 1 || !progress->isVisible() || health->isVisible()
+                || progress->height() >= progress->parentItem()->height()) return false;
             bool stable = true;
             if (!waitFor([&] {
                 stable = stable && (!workspace.syncLoading() || workspace.loadingProgress() < 1)
                     && qAbs(health->height() - health->parentItem()->height()) < 1;
                 return !workspace.syncLoading();
             }, 10000)) return false;
-            return stable && workspace.loadingProgress() == 1 && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
+            return stable && workspace.loadingProgress() == 1 && health->isVisible() && !progress->isVisible()
+                && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
         }
         if (scenario == "shell_quick_invalid_existing") {
             const auto session = workspace.currentSession();
