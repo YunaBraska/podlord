@@ -475,6 +475,45 @@ QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCou
     }
     return lines.join('\n');
 }
+QString automaticEvidenceText(const QJsonArray& evidence) {
+    QSet<QString> observations;
+    for (const auto& value : evidence) {
+        auto fact = value.toObject();
+        if (fact["relation"] == "same namespace problem") continue;
+        const auto status = fact["status"].toString();
+        const bool unhealthy = !fact["issue"].toString().isEmpty() || fact["type"] == "Warning"
+            || QStringList{"NotReady", "Failed", "Lost", "Unavailable", "Error"}.contains(status)
+            || fact["networkHealth"] == "Warning" || fact["networkHealth"] == "Failure"
+            || fact["cpuLimitReached"] == true || fact["memoryLimitReached"] == true
+            || fact["restarts"].toString().toInt() > 0 || !fact["lastTermination"].toString().isEmpty();
+        if (fact["depth"].toInt() != 0 && !unhealthy) continue;
+        fact["id"] = "R";
+        fact["depth"] = 0;
+        fact["relation"] = "observed";
+        fact.remove("linkedTo");
+        fact.remove("chain");
+        observations.insert(incidentEvidenceText(QJsonArray{fact}, false));
+    }
+    auto ordered = observations.values();
+    ordered.sort();
+    return ordered.join('\n');
+}
+QJsonObject citationFacts(const QJsonArray& evidence, const QJsonObject& answer) {
+    static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
+    QSet<QString> cited;
+    for (const auto& field : {"summary", "cause", "action"}) {
+        auto matches = citation.globalMatch(answer[field].toString());
+        while (matches.hasNext()) cited.insert(matches.next().captured(1));
+    }
+    QJsonObject facts;
+    for (const auto& value : evidence) {
+        const auto fact = value.toObject();
+        if (!cited.contains(fact["id"].toString())) continue;
+        facts.insert(fact["id"].toString(), QJsonObject{{"kind", fact["kind"]}, {"namespace", fact["namespace"]},
+            {"name", fact["name"]}, {"selected", fact["depth"].toInt() == 0}});
+    }
+    return facts;
+}
 QString analysisSystemText(bool diagnostic) {
     const QString style = "Write in the requested language for a junior developer with no cluster context. "
         "Use short sentences. Do not use semicolons or long dashes as sentence separators. ";
@@ -1182,6 +1221,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
     QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
     QSet<QString> observedSecrets;
     static const QRegularExpression safeEventReason("^[A-Za-z][A-Za-z0-9]{0,30}$");
+    bool migrated = false;
     for (const auto& value : safeRows) {
         const auto row = value.toObject();
         if (!row["uid"].toString().isEmpty()) byUid.insert(row["uid"].toString(), row);
@@ -1292,11 +1332,26 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             : provider_ == "claude" ? claude_.identity() : provider_ == "openrouter" ? openrouter_.identity() : QString{};
         const auto evidence = incidentEvidence(graphEvidence(graph, problems, row),
             evidenceBudgetBytes(language, row["kind"].toString(), code, related));
-        const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
-            + '\n' + incidentEvidenceText(evidence, false)
+        QStringList automaticRelated;
+        for (const auto& signal : related) if (!signal.startsWith("Same namespace problem:")) automaticRelated.append(signal);
+        const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + automaticRelated.join("\n")
+            + '\n' + automaticEvidenceText(evidence)
             + '\n' + provider_ + '\n' + account
-            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n20";
+            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n21";
         const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
+        if (!records_.contains(key)) {
+            const auto oldIdentity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
+                + '\n' + incidentEvidenceText(evidence, false)
+                + '\n' + provider_ + '\n' + account
+                + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n20";
+            const auto oldKey = QString::fromLatin1(QCryptographicHash::hash(oldIdentity.toUtf8(), QCryptographicHash::Sha256).toHex());
+            if (records_.contains(oldKey)) {
+                auto record = records_.take(oldKey);
+                record.answer["citations"] = citationFacts(evidence, record.answer);
+                records_.insert(key, record);
+                migrated = true;
+            }
+        }
         activeKeys.insert(key);
         const auto kind = row["kind"].toString();
         Incident incident{key, context, code, kind, row["path"].toString(), language,
@@ -1306,6 +1361,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
         queue_.enqueue(incident); queued_.insert(key);
     }
     activeKeys_[context] = activeKeys;
+    if (migrated) save();
     QQueue<Incident> retained;
     while (!queue_.isEmpty()) {
         const auto incident = queue_.dequeue();
@@ -1671,7 +1727,9 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     const bool accepted = error.isEmpty() && !summary.isEmpty() && summary.size() <= 600 && cause.size() <= 600
         && !action.isEmpty() && action.size() <= 600;
     if (accepted) {
-        records_.insert(incident.key, {QJsonObject{{"summary", summary}, {"cause", cause}, {"action", action}}, QDateTime::currentDateTimeUtc()});
+        QJsonObject stored{{"summary", summary}, {"cause", cause}, {"action", action}};
+        stored["citations"] = citationFacts(incident.evidence, stored);
+        records_.insert(incident.key, {stored, QDateTime::currentDateTimeUtc()});
         contextStatus_.remove(incident.context); serviceRetryAfterByProvider_.remove(incident.provider); save();
     } else {
         retryAfter_.insert(incident.key, QDateTime::currentDateTimeUtc().addSecs(900));
@@ -1717,11 +1775,39 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
         }
     }
     for (const auto& name : ambiguousLegacyNames) legacyNames.remove(name);
+    const auto savedFacts = record->answer["citations"].toObject();
+    QMap<QString, QString> currentIds;
+    QString selectedId;
+    for (const auto& value : incident.evidence) {
+        const auto fact = value.toObject();
+        const auto identity = fact["kind"].toString() + '\n' + fact["namespace"].toString() + '\n' + fact["name"].toString();
+        currentIds.insert(identity, fact["id"].toString());
+        if (fact["depth"].toInt() == 0) selectedId = fact["id"].toString();
+    }
     const auto resolvedSource = [&](QString source) {
         for (auto item = legacyNames.cbegin(); item != legacyNames.cend(); ++item)
             source.replace(QRegularExpression("(?<![A-Za-z0-9_-])" + QRegularExpression::escape(item.key())
                 + "(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])"), "[" + item.value() + "]");
-        return source;
+        if (savedFacts.isEmpty()) return source;
+        QString resolved;
+        qsizetype from = 0;
+        auto matches = citation.globalMatch(source);
+        while (matches.hasNext()) {
+            const auto match = matches.next();
+            resolved += source.mid(from, match.capturedStart() - from);
+            const auto saved = savedFacts.value(match.captured(1)).toObject();
+            if (saved.isEmpty()) resolved += match.captured();
+            else {
+                const auto identity = saved["kind"].toString() + '\n' + saved["namespace"].toString() + '\n' + saved["name"].toString();
+                const auto id = saved["selected"].toBool() ? selectedId : currentIds.value(identity);
+                resolved += id.isEmpty() ? saved["kind"].toString() + ' '
+                    + (saved["namespace"].toString().isEmpty() ? saved["name"].toString()
+                        : saved["namespace"].toString() + '/' + saved["name"].toString()) : '[' + id + ']';
+            }
+            from = match.capturedEnd();
+        }
+        resolved += source.mid(from);
+        return resolved;
     };
     QSet<QString> cited;
     for (const auto& field : {"summary", "cause", "action"}) {

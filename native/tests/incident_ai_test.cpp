@@ -125,6 +125,30 @@ void scenario(const QString& name) {
             "A later distinct problem was discarded instead of queued for automatic analysis");
         return;
     }
+    if (name == "auto_context_churn") {
+        server.answer = R"({"summary":"Node worker-a is Ready.","cause":"The image failure is unexplained.","action":"Check the Pod events."})";
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled(true), "Automatic model unavailable");
+        auto snapshot = rows();
+        auto pod = snapshot.at(2).toObject();
+        pod["node"] = "worker-a";
+        snapshot.replace(2, pod);
+        snapshot.append(QJsonObject{{"kind", "Node"}, {"name", "worker-a"}, {"uid", "node-a"},
+            {"path", "/api/v1/nodes/worker-a"}, {"status", "Ready"}});
+        ai.observe("context", snapshot, "en");
+        const auto path = pod["path"].toString();
+        require(QTest::qWaitFor([&] { return server.chats == 1
+            && !ai.result("context", path).value("summary").toString().isEmpty(); }, 2000),
+            "Initial problem was not analyzed");
+        snapshot.append(QJsonObject{{"kind", "Pod"}, {"name", "healthy-neighbor"}, {"uid", "healthy-neighbor"},
+            {"namespace", "team"}, {"path", "/api/v1/namespaces/team/pods/healthy-neighbor"},
+            {"node", "worker-a"}, {"status", "Running"}, {"problemSeverity", 0}});
+        ai.observe("context", snapshot, "en");
+        require(server.chats == 1 && ai.result("context", path).value("summary").toString().contains("worker-a"),
+            "A healthy neighbor invalidated the problem cache");
+        return;
+    }
     if (name == "auto_global") {
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
