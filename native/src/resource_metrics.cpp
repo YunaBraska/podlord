@@ -178,7 +178,7 @@ QVariantList ResourceMetricSummary::presentation() const {
         if (measured && (total.observed < total.eligible || total.incomplete)) display += " [partial]";
         const bool comparable=measured && referenced && total.reference>0
             && total.observed==total.eligible && total.referenced==total.eligible
-            && !total.incomplete && !total.stale;
+            && !total.incomplete;
         const QString label=metric==0 ? "CPU" : metric==1 ? "Memory" : "Storage";
         const auto description = label + ": " + usage + " (" + scope + ")";
         result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",comparable},{"available",measured},

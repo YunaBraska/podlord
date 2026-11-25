@@ -2563,6 +2563,8 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] {
                 auto* cpu = podlord::test::visibleItem(window->contentItem(),"pulse_cpu");
                 auto* memory = podlord::test::visibleItem(window->contentItem(),"pulse_memory");
+                auto* cpuBar = podlord::test::visibleItem(window->contentItem(),"pulse_cpu_bar");
+                auto* memoryBar = podlord::test::visibleItem(window->contentItem(),"pulse_memory_bar");
                 auto* cpuValue = item(window,"pulse_cpu_usage");
                 auto* memoryValue = item(window,"pulse_memory_usage");
                 auto* cpuGlyph = podlord::test::visibleItem(window->contentItem(),"pulse_cpu_glyph");
@@ -2571,9 +2573,10 @@ bool execute(const QString& requestedScenario) {
                     && cpuValue && memoryValue && !cpuValue->property("truncated").toBool() && !memoryValue->property("truncated").toBool()
                     && cpuValue->implicitWidth() <= cpuValue->width()+1 && memoryValue->implicitWidth() <= memoryValue->width()+1
                     && cpuGlyph && memoryGlyph && cpuGlyph->property("kind")=="Cpu" && memoryGlyph->property("kind")=="Memory"
+                    && cpuBar && !memoryBar
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_storage")
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_nodes")
-                    && qAbs(cpu->width()-memory->width())<.5;
+                    && cpu->width() >= memory->width();
             }) && saveShellFrame(window,scenario) && server.requests.size()==calls;
         }
         if (scenario.startsWith("shell_map")) {

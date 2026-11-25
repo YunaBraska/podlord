@@ -130,6 +130,7 @@ bool run(const QString& scenario) {
         if (scenario=="summary_zero") return usage.startsWith("0 mCPU");
         if (scenario=="summary_partial") return usage.contains("incomplete");
         if (scenario=="summary_stale") return !usage.contains("stale")
+            && summary[0].toMap()["bar"].toBool()
             && !summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
         if (scenario=="summary_usage_only") return usage=="25 mCPU"
             && summary[0].toMap()["available"].toBool() && !summary[0].toMap()["bar"].toBool();
