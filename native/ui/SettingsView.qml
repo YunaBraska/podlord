@@ -321,10 +321,10 @@ Pane {
                     Switch {
                         id: aiAutoSwitch
                         objectName: "incidentAiEnable"
-                        visible: workspace.currentSession !== "" && workspace.incidentAiModel !== ""
+                        visible: workspace.incidentAiModel !== ""
                         text: workspace.uiText["ai.auto"]
                         checked: workspace.incidentAiEnabled
-                        Accessible.name: workspace.uiText["ai.enable"]
+                        Accessible.name: workspace.uiText["ai.auto"]
                         Accessible.description: workspace.uiText["ai.autoData"]
                         ToolTip.visible: hovered
                         ToolTip.text: workspace.uiText["ai.autoData"]

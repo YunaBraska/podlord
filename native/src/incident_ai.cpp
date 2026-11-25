@@ -529,8 +529,9 @@ bool IncidentAi::supported() const {
     return true;
 #endif
 }
-IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote, CredentialStore* credentials)
-    : QObject(parent), profile_(std::move(profile)), endpoint_(std::move(endpoint)),
+IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote, CredentialStore* credentials,
+                       int analysisTimeoutMs)
+    : QObject(parent), profile_(std::move(profile)), endpoint_(std::move(endpoint)), analysisTimeoutMs_(analysisTimeoutMs),
       chatgpt_(profile_, std::move(remote.chatgptAuth), std::move(remote.chatgptApi), nullptr, credentials),
       claude_(profile_, ApiAiClient::Provider::Claude, std::move(remote.claude), nullptr, credentials),
       openrouter_(profile_, ApiAiClient::Provider::OpenRouter, std::move(remote.openrouter), nullptr, credentials) {
@@ -555,19 +556,16 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
         const auto document = QJsonDocument::fromJson(savedBytes_, &parseError);
         const auto root = document.object();
         if (parseError.error != QJsonParseError::NoError || !document.isObject()
-            || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4)
-            || (root["version"].toInt() >= 3 ? !root["enabledByProvider"].isObject() : !root["enabledContexts"].isArray())
+            || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3
+                && root["version"] != 4 && root["version"] != 5)
+            || (root["version"] == 5 ? !root["autoEnabled"].isBool()
+                : root["version"].toInt() >= 3 ? !root["enabledByProvider"].isObject() : !root["enabledContexts"].isArray())
             || !root["records"].isArray() || !root["model"].isString()) {
             writable_ = false;
             status_ = "AI settings are invalid. Automatic analysis is off.";
             return;
         }
-        if (root["version"] == 4) {
-            const auto providers = root["enabledByProvider"].toObject();
-            for (const auto& provider : {"ollama", "chatgpt", "claude", "openrouter"})
-                for (const auto& value : providers.value(provider).toArray())
-                    if (value.isString() && !value.toString().isEmpty()) enabledByProvider_[provider].insert(value.toString());
-        }
+        if (root["version"] == 5) autoEnabled_ = root["autoEnabled"].toBool();
         model_ = root["model"].toString();
         if (root["version"].toInt() >= 2) {
             provider_ = root["provider"].toString();
@@ -608,15 +606,15 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
     }
     if (endpoint_.scheme() != "http" || !QStringList{"127.0.0.1", "localhost", "::1"}.contains(endpoint_.host())
         || endpoint_.path() != "" || !endpoint_.userInfo().isEmpty()) {
-        writable_ = false; enabledByProvider_.clear(); status_ = "Ollama endpoint must be local loopback."; return;
+        writable_ = false; autoEnabled_ = false; status_ = "Ollama endpoint must be local loopback."; return;
     }
     if (supported()) {
         if (provider_ != "ollama") { providerChanged(); refreshModels(); }
         else refreshModels();
     }
 }
-bool IncidentAi::enabled(const QString& context) const {
-    return supported() && !context.isEmpty() && enabledByProvider_.value(provider_).contains(context);
+bool IncidentAi::enabled() const {
+    return supported() && autoEnabled_;
 }
 void IncidentAi::providerChanged() {
     if (provider_ == "ollama") { emit changed(); return; }
@@ -792,13 +790,6 @@ bool IncidentAi::save() {
     } else if (!savedBytes_.isEmpty()) {
         status_ = "AI settings were removed in another process. Restart PodLord before editing them."; emit changed(); return false;
     }
-    QJsonObject enabledByProvider;
-    for (const auto& provider : {"ollama", "chatgpt", "claude", "openrouter"}) {
-        QJsonArray enabled;
-        QStringList contexts = enabledByProvider_.value(provider).values(); contexts.sort();
-        for (const auto& context : contexts) enabled.append(context);
-        enabledByProvider.insert(provider, enabled);
-    }
     QJsonArray records;
     QList<QPair<QString, Record>> ordered;
     for (auto entry = records_.cbegin(); entry != records_.cend(); ++entry) ordered.append({entry.key(), entry.value()});
@@ -811,7 +802,7 @@ bool IncidentAi::save() {
         for (const auto& at : item.value()) if (at > cutoff)
             requests.append(QJsonObject{{"account", item.key()}, {"at", at.toUTC().toString(Qt::ISODateWithMs)}});
     QSaveFile file(path); file.setDirectWriteFallback(false);
-    const auto data = QJsonDocument(QJsonObject{{"version", 4}, {"enabledByProvider", enabledByProvider}, {"provider", provider_},
+    const auto data = QJsonDocument(QJsonObject{{"version", 5}, {"autoEnabled", autoEnabled_}, {"provider", provider_},
         {"model", model_}, {"chatgptModel", chatgptModel_}, {"claudeModel", claudeModel_},
         {"openrouterModel", openrouterModel_}, {"reasoning", reasoning_}, {"records", records}, {"requests", requests}}).toJson();
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
@@ -822,15 +813,28 @@ bool IncidentAi::save() {
     while (records_.size() > 500) records_.remove(ordered.takeLast().first);
     return true;
 }
-bool IncidentAi::setEnabled(const QString& context, bool value) {
-    if (!supported() || context.isEmpty() || !writable_) return false;
-    auto& enabled = enabledByProvider_[provider_];
-    const bool previous = enabled.contains(context);
+bool IncidentAi::setEnabled(bool value) {
+    if (!supported() || !writable_) return false;
+    const bool previous = enabled();
     if (previous == value) return true;
-    if (value) enabled.insert(context); else enabled.remove(context);
-    if (!save()) { if (previous) enabled.insert(context); else enabled.remove(context); return false; }
-    if (!value) stopObserving(context);
-    else if (models().isEmpty()) refreshModels();
+    autoEnabled_ = value;
+    if (!save()) { autoEnabled_ = previous; return false; }
+    if (!value) {
+        const auto snapshots = snapshots_;
+        const auto rawSnapshots = rawSnapshots_;
+        const auto pending = pendingObservations_;
+        QStringList contexts = snapshots_.keys();
+        for (const auto& context : pendingObservations_.keys()) if (!contexts.contains(context)) contexts.append(context);
+        for (const auto& context : contexts) stopObserving(context);
+        snapshots_ = snapshots;
+        rawSnapshots_ = rawSnapshots;
+        pendingObservations_ = pending;
+    } else {
+        const auto snapshots = snapshots_;
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item)
+            if (!pendingObservations_.contains(item.key())) observe(item.key(), item.value().first, item.value().second, true);
+        if (models().isEmpty()) refreshModels();
+    }
     emit changed();
     return true;
 }
@@ -1101,7 +1105,7 @@ static QJsonArray screenedRows(const QJsonArray& rows) {
     return safeRows;
 }
 void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force) {
-    if (!enabled(context) && model().isEmpty()) return;
+    if (!enabled() && model().isEmpty()) return;
     const auto now = QDateTime::currentDateTimeUtc();
     bool expired = false;
     for (auto item = records_.begin(); item != records_.end();) {
@@ -1166,7 +1170,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             else { *item = *current; ++item; }
         }
     }
-    if (!enabled(context)) { if (changedSnapshot) emit changed(); return; }
+    if (!enabled()) { if (changedSnapshot) emit changed(); return; }
     if (!modelReady_) return;
     if (!changedEvidence) return;
     const ResourceGraph graph(safeRows);
@@ -1299,7 +1303,6 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             provider_, model(), reasoning(), thinkSignature, related, false, evidence};
         if (!visible_.contains(context + '\n' + incident.path)) visible_.insert(context + '\n' + incident.path, incident);
         if (records_.contains(key) || queued_.contains(key) || inFlight_ == key || retryAfter_.value(key) > QDateTime::currentDateTimeUtc()) continue;
-        if (queue_.size() >= 32) continue;
         queue_.enqueue(incident); queued_.insert(key);
     }
     activeKeys_[context] = activeKeys;
@@ -1444,7 +1447,7 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     }
     const auto found = visible_.constFind(context + '\n' + path);
     const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
-    const auto recognized = !hasDraftError && enabled(context) && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
+    const auto recognized = !hasDraftError && enabled() && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
     const auto fallback = recognized ? std::optional<Incident>{} : manualIncident(context, path);
     if (!recognized && !fallback) return false;
     const auto incident = recognized ? *found : *fallback;
@@ -1539,40 +1542,31 @@ void IncidentAi::dispatch() {
     const bool manual = queue_.head().manual;
     const auto serviceRetryAfter = serviceRetryAfterByProvider_.value(provider_);
     if (!manual && serviceRetryAfter > now) { dispatchTimer_.start(int(now.msecsTo(serviceRetryAfter))); return; }
-    if (!manual && lastRequest_.isValid() && lastRequest_.msecsTo(now) < 30000) {
-        dispatchTimer_.start(int(30000 - lastRequest_.msecsTo(now))); return;
+    if (!manual && lastRequest_.isValid() && lastRequest_.msecsTo(now) < 10000) {
+        dispatchTimer_.start(int(10000 - lastRequest_.msecsTo(now))); return;
     }
     Incident incident;
     bool found = false;
-    QQueue<Incident> deferred;
-    qint64 waitMs = 0;
     while (!queue_.isEmpty()) {
         const auto next = queue_.dequeue(); queued_.remove(next.key);
-        if ((!next.manual && !enabled(next.context)) || records_.contains(next.key)) continue;
+        if ((!next.manual && !enabled()) || records_.contains(next.key)) continue;
         if (next.path == "diagnostic/exec-env") {
             if (!diagnostic_ || diagnostic_->key != next.key) continue;
         } else if (next.manual && !activeKeys_.value(next.context).contains(next.key)) {
             const auto current = manualIncident(next.context, next.path);
             if (!current || current->key != next.key) continue;
         }
-        auto& recent = recent_[next.context];
-        recent.erase(std::remove_if(recent.begin(), recent.end(), [now](const auto& at) { return at.secsTo(now) >= 3600; }), recent.end());
-        if (!next.manual && recent.size() >= 5) {
-            deferred.enqueue(next); queued_.insert(next.key);
-            const auto remaining = 3600000 - recent.first().msecsTo(now);
-            waitMs = waitMs == 0 ? remaining : std::min(waitMs, remaining);
-            continue;
-        }
-        incident = next; recent.append(now); found = true; break;
+        incident = next; found = true; break;
     }
-    while (!deferred.isEmpty()) queue_.enqueue(deferred.dequeue());
-    if (!found) { if (waitMs > 0) dispatchTimer_.start(int(waitMs)); return; }
+    if (!found) return;
     inFlight_ = incident.key; inFlightContext_ = incident.context; lastRequest_ = now;
-    contextStatus_[incident.context] = {incident.path, incident.provider == "chatgpt" ? "Analyzing a cluster problem with ChatGPT…"
-        : incident.provider == "claude" ? "Analyzing a cluster problem with Claude…"
-        : incident.provider == "openrouter" ? "Analyzing a cluster problem with OpenRouter…"
-        : "Analyzing a cluster problem with local Ollama…"};
     emit changed();
+    QTimer::singleShot(analysisTimeoutMs_, this, [this, incident, now] {
+        if (inFlight_ != incident.key || lastRequest_ != now) return;
+        if (activeReply_) activeReply_->abort();
+        chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
+        complete(incident, {}, "Analysis timed out. Retry.");
+    });
     const auto system = analysisSystemText(incident.path == "diagnostic/exec-env");
     const auto input = incident.path == "diagnostic/exec-env"
         ? "Language: " + incident.language + "\nError code: " + incident.code + "\nField: users[].user.exec.env"
@@ -1600,12 +1594,12 @@ void IncidentAi::dispatch() {
     auto* reply = network_.post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     activeReply_ = reply;
     connect(reply, &QNetworkReply::finished, this, [this, reply, incident] {
-        const auto bytes = reply->readAll();
+        const auto bytes = reply->isOpen() ? reply->readAll() : QByteArray{};
         const auto ok = reply->error() == QNetworkReply::NoError && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200
             && bytes.size() <= 65536;
         reply->deleteLater();
         const auto response = QJsonDocument::fromJson(bytes).object();
-        activeReply_ = nullptr;
+        if (activeReply_ == reply) activeReply_ = nullptr;
         complete(incident, response["message"].toObject()["content"].toString(), ok ? QString{} : "Ollama request failed.");
     });
 }
@@ -1616,7 +1610,7 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
         ? QString("default") : thinkValue_.toVariant().toString();
     const auto currentManual = incident.manual ? manualIncident(incident.context, incident.path) : std::optional<Incident>{};
     if ((incident.path == "diagnostic/exec-env" && (!diagnostic_ || diagnostic_->key != incident.key))
-        || (incident.path != "diagnostic/exec-env" && !incident.manual && (!enabled(incident.context) || !activeKeys_.value(incident.context).contains(incident.key)))
+        || (incident.path != "diagnostic/exec-env" && !incident.manual && (!enabled() || !activeKeys_.value(incident.context).contains(incident.key)))
         || (incident.path != "diagnostic/exec-env" && incident.manual && !activeKeys_.value(incident.context).contains(incident.key)
             && (!currentManual || currentManual->key != incident.key))
         || provider_ != incident.provider || model() != incident.model || reasoning() != incident.reasoning
@@ -1681,7 +1675,8 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
         contextStatus_.remove(incident.context); serviceRetryAfterByProvider_.remove(incident.provider); save();
     } else {
         retryAfter_.insert(incident.key, QDateTime::currentDateTimeUtc().addSecs(900));
-        serviceRetryAfterByProvider_.insert(incident.provider, QDateTime::currentDateTimeUtc().addSecs(900));
+        const bool rateLimited = error.contains("HTTP 429") || error.contains("usage limit", Qt::CaseInsensitive);
+        serviceRetryAfterByProvider_.insert(incident.provider, QDateTime::currentDateTimeUtc().addSecs(rateLimited ? 900 : 60));
         contextStatus_[incident.context] = {incident.path, error.isEmpty()
             ? "AI analysis failed: invalid answer. Retry later or choose another model."
             : error};
@@ -1691,7 +1686,7 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     dispatch();
 }
 QVariantMap IncidentAi::result(const QString& context, const QString& path) const {
-    const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
+    const auto found = enabled() ? visible_.constFind(context + '\n' + path) : visible_.cend();
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;
@@ -1770,7 +1765,7 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     return output;
 }
 QString IncidentAi::requestPreview(const QString& context, const QString& path) const {
-    const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
+    const auto found = enabled() ? visible_.constFind(context + '\n' + path) : visible_.cend();
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;

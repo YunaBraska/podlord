@@ -16,7 +16,7 @@ cmake --build ../podlord-native-build
 
 ## Local AI diagnosis
 
-On desktop, choose a model in **Settings → AI**. The choice also selects Ollama, ChatGPT, Claude or OpenRouter. Connect the provider if prompted, then enable automatic analysis for an imported context in a resource's Overview. The [provider setup manual](../doc/manuals/incident-ai-providers.md) covers accounts, billing, data sent, cache, credentials and troubleshooting. [ADR 0053](../doc/adr/0053-local-incident-analysis.md) defines shared analysis behavior; [ADR 0054](../doc/adr/0054-configurable-incident-ai-providers.md) defines provider boundaries.
+On desktop, choose a model in **Settings → AI**. The choice also selects Ollama, ChatGPT, Claude or OpenRouter. Connect the provider if prompted, then enable Auto once in AI settings for every open context. The [provider setup manual](../doc/manuals/incident-ai-providers.md) covers accounts, billing, data sent, cache, credentials and troubleshooting. [ADR 0053](../doc/adr/0053-local-incident-analysis.md) defines shared analysis behavior; [ADR 0054](../doc/adr/0054-configurable-incident-ai-providers.md) defines provider boundaries.
 
 The installer refuses existing destinations. Requires C++20, CMake, Ninja, Python, curl, Git and the Xcode command-line tools. On other desktop systems launch `podlord-native` directly; the macOS installer is not a cross-platform installer. No ambient kubeconfig is imported.
 

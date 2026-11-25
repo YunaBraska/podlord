@@ -159,7 +159,7 @@ bool Workspace::checkYamlDraft() {
             if (!context.isEmpty()) {
                 runtime_->incidentAi.observe(context, client_.rows(session), resolvedUiLanguage(settings_.language));
                 runtime_->incidentAi.setDraftError(context, path, result.valid ? QString{} : result.message.section(". ", 0, 0));
-                if (!result.valid && runtime_->incidentAi.enabled(context)
+                if (!result.valid && runtime_->incidentAi.enabled()
                     && runtime_->incidentAi.result(context, path).isEmpty())
                     runtime_->incidentAi.refresh(context, path);
             }

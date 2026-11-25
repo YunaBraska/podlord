@@ -41,7 +41,7 @@ Wait for current YAML before editing. Applying YAML and deleting resources requi
 
 ## AI analysis
 
-On desktop, choose a model in **Settings → AI**. The list groups models under connected ChatGPT, Claude API and OpenRouter accounts or local Ollama. PodLord never changes your selected model when you connect another provider. Enable **Auto** for a context if you want new problems analyzed automatically. The AI tab appears only when a provider is available.
+On desktop, choose a model in **Settings → AI**. The list groups models under connected ChatGPT, Claude API and OpenRouter accounts or local Ollama. PodLord never changes your selected model when you connect another provider. Enable **Auto** once to analyze new problems in every open context with the selected model. The AI tab appears only when a provider is available.
 
 The report separates **Observation**, **Possible cause** and **Next check**. Known resource names in the answer open those resources in the inspector. **Request** shows the instructions and resource facts that would be sent. The refresh icon asks for a new answer, including when a warning was not analyzed automatically. Otherwise, unchanged problems reuse a cached answer for up to 90 days. The copyable `kubectl` command is a read-only suggestion. PodLord does not run it or require `kubectl` locally.
 

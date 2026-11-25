@@ -28,10 +28,11 @@ public:
     };
     explicit IncidentAi(QString profile, QUrl endpoint = QUrl("http://127.0.0.1:11434"), QObject* parent = nullptr,
         RemoteEndpoints remote = {QUrl("https://auth.openai.com"), QUrl("https://api.openai.com"),
-            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")}, CredentialStore* credentials = nullptr);
+            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")}, CredentialStore* credentials = nullptr,
+        int analysisTimeoutMs = 180000);
     bool supported() const;
-    bool enabled(const QString& context) const;
-    bool setEnabled(const QString& context, bool enabled);
+    bool enabled() const;
+    bool setEnabled(bool enabled);
     QStringList models() const;
     QVariantList modelChoices() const;
     QVariantList allModelChoices() const;
@@ -107,11 +108,12 @@ private:
     std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
+    const int analysisTimeoutMs_;
     ChatGptClient chatgpt_;
     ApiAiClient claude_, openrouter_;
     QNetworkAccessManager network_;
     QTimer dispatchTimer_;
-    QMap<QString, QSet<QString>> enabledByProvider_;
+    bool autoEnabled_ = false;
     QStringList models_;
     qint64 ollamaContextTokens_ = 0;
     QStringList reasoningOptions_{"auto"};
@@ -135,7 +137,6 @@ private:
     QMap<QString, QDateTime> retryAfter_;
     QQueue<Incident> queue_;
     QSet<QString> queued_;
-    QMap<QString, QList<QDateTime>> recent_;
     QString inFlight_;
     QString inFlightContext_;
     QNetworkReply* activeReply_ = nullptr;

@@ -14,7 +14,7 @@ bool Workspace::incidentAiConfigured() const {
         && runtime_->incidentAi.models().contains(model);
 }
 bool Workspace::incidentAiEnabled() const {
-    return runtime_->incidentAi.enabled(sessionConfiguration(active_).value("contextId").toString());
+    return runtime_->incidentAi.enabled();
 }
 QStringList Workspace::incidentAiModels() const { return runtime_->incidentAi.models(); }
 QVariantList Workspace::incidentAiModelChoices() const { return runtime_->incidentAi.allModelChoices(); }
@@ -68,9 +68,9 @@ QString Workspace::incidentAiRequest() const {
 }
 QVariantMap Workspace::incidentAiDiagnostic() const { return runtime_->incidentAi.diagnosticResult(); }
 bool Workspace::setIncidentAiEnabled(bool enabled) {
+    if (!runtime_->incidentAi.setEnabled(enabled)) return false;
     const auto context = sessionConfiguration(active_).value("contextId").toString();
-    if (context.isEmpty() || !runtime_->incidentAi.setEnabled(context, enabled)) return false;
-    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    if (!context.isEmpty()) runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
     emit incidentAiChanged();
     return true;
 }
