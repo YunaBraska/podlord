@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 import Podlord.Graphics 1.0
@@ -24,6 +23,8 @@ Pane {
     LayoutMirroring.childrenInherit: true
     property string expandedField: ""
     property bool presetsExpanded: false
+    property bool namingPreset: false
+    readonly property string selectedSavedPreset: workspace.selectedFilterPreset !== "default" ? workspace.selectedFilterPreset : ""
     readonly property bool ownsInputFocus: activeFocus || renamePreset.visible
     function revealPresetInput() {
         const viewport=sidebarViewport.contentItem
@@ -35,14 +36,15 @@ Pane {
     onHeightChanged: if (presetName.activeFocus) Qt.callLater(revealPresetInput)
     readonly property string contextTab: workspace.currentSession
     onContextTabChanged: {
-        presetName.text = workspace.selectedFilterPreset === "default" ? "" : workspace.selectedFilterPreset
+        presetName.text = ""
         presetsExpanded = false
+        namingPreset = false
         expandedField = ""
         renamePreset.close()
     }
     readonly property string page: workspace.workspacePage
     onPageChanged: expandedField = ""
-    onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false }
+    onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false; namingPreset = false }
     function openField(field) {
         if (!workspace.prepareFilterPicker(field)) return
         filtersExpanded = true
@@ -56,6 +58,13 @@ Pane {
         target: workspace
         function onFilterPickerChanged() {
             if (workspace.filterPickerField !== sidebar.expandedField) sidebar.expandedField = ""
+        }
+        function onFilterPresetsChanged() {
+            if (sidebar.namingPreset && !workspace.filterPresetsBusy && workspace.filterPresetsError === ""
+                && workspace.selectedFilterPreset === presetName.text.trim()) {
+                sidebar.namingPreset = false
+                sidebar.presetsExpanded = false
+            }
         }
     }
     readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"]
@@ -214,11 +223,19 @@ Pane {
             }
             RowLayout {
                 Layout.fillWidth: true
-                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""; onClicked: { if (!sidebar.presetsExpanded || presetName.text.trim() === "") { sidebar.presetsExpanded = true; Qt.callLater(function() { presetName.forceActiveFocus() }) } else workspace.saveFilterPreset(presetName.text) } }
+                IconButton { objectName: "saveFilterPreset"; glyph: "Save"; text: workspace.uiText["action.save"]; enabled: !workspace.filterPresetsBusy && workspace.currentSession !== ""; onClicked: {
+                    sidebar.presetsExpanded = true
+                    if (!sidebar.namingPreset) {
+                        sidebar.namingPreset = true
+                        presetName.text = ""
+                        Qt.callLater(function() { presetName.forceActiveFocus() })
+                    } else if (presetName.text.trim() !== "") workspace.saveFilterPreset(presetName.text)
+                } }
                 IconButton {
                     id: preset; objectName: "filterPreset"
                     Layout.fillWidth: true; showText: true
-                    glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: !workspace.problemsOnly && !workspace.activityOnly && workspace.filterText === "" && Object.keys(workspace.resourceFieldFilters).length === 0 ? workspace.uiText["filters.allResources"] : workspace.selectedFilterPreset || workspace.uiText["filters.savedFilters"]
+                    visible: workspace.filterPresets.length > 1
+                    glyph: sidebar.presetsExpanded ? "Expand" : "Next"; text: sidebar.presetsExpanded ? workspace.uiText["filters.savedFilters"] : sidebar.selectedSavedPreset || workspace.uiText["filters.savedFilters"]
                     checkable: true; checked: sidebar.presetsExpanded
                     background: Rectangle {
                         color: preset.hovered ? workspace.appearanceColors.raised : "transparent"
@@ -239,23 +256,7 @@ Pane {
                 spacing: 4
                 visible: sidebar.presetsExpanded
                 enabled: visible
-                ItemDelegate {
-                    objectName: "allResourceFilters"
-                    Layout.fillWidth: true; implicitHeight: Math.max(44, implicitContentHeight + 12)
-                    text: workspace.uiText["filters.allResources"]
-                    highlighted: !workspace.problemsOnly && !workspace.activityOnly && workspace.filterText === "" && Object.keys(workspace.resourceFieldFilters).length === 0
-                    onClicked: { if (workspace.resetResourceFilters()) { presetName.text = ""; sidebar.presetsExpanded = false } }
-                }
-                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; placeholderText: workspace.uiText["filters.namePlaceholder"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text); onActiveFocusChanged: if (activeFocus) Qt.callLater(sidebar.revealPresetInput) }
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    IconButton { objectName: "reloadFilterPresets"; glyph: "Reset"; text: "Reload saved filters"; enabled: !workspace.filterPresetsBusy; onClicked: workspace.reloadFilterPresets() }
-                    IconButton { objectName: "importFilterPresets"; glyph: "Import"; text: "Import saved filters..."; enabled: !workspace.filterPresetsBusy; onClicked: importPresets.open() }
-                    Item { Layout.fillWidth: true }
-                    IconButton { objectName: "renameFilterPreset"; glyph: "Pencil"; text: "Rename saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: { renamePreset.original = presetName.text; renameText.text = presetName.text; renamePreset.open() } }
-                    IconButton { objectName: "deleteFilterPreset"; glyph: "Trash"; destructive: true; text: "Delete saved filter"; enabled: !workspace.filterPresetsBusy && presetName.text !== "default" && workspace.filterPresets.indexOf(presetName.text) >= 0; onClicked: workspace.deleteFilterPreset(presetName.text) }
-                }
+                TextField { id: presetName; objectName: "filterPresetName"; Layout.fillWidth: true; Layout.minimumWidth: 0; visible: sidebar.namingPreset; placeholderText: workspace.uiText["alert.field.name"]; maximumLength: 128; Accessible.name: "Saved filter name"; onAccepted: workspace.saveFilterPreset(text); onActiveFocusChanged: if (activeFocus) Qt.callLater(sidebar.revealPresetInput) }
             ListView {
                 id: savedFilters
                 objectName: "savedFilterOptions"
@@ -266,14 +267,15 @@ Pane {
                 clip: true
                 interactive: contentHeight > height
                 keyNavigationEnabled: true
-                model: visible ? workspace.filterPresets : []
-                currentIndex: workspace.filterPresets.indexOf(workspace.selectedFilterPreset)
+                model: visible ? workspace.filterPresets.filter(name => name !== "default") : []
+                currentIndex: Math.max(0, model.indexOf(workspace.selectedFilterPreset))
                 ScrollBar.vertical: ScrollBar {}
                 function activate(index) {
                     if (index < 0 || index >= count) return
-                    const name = workspace.filterPresets[index]
+                    const name = savedFilters.model[index]
                     if (workspace.loadFilterPreset(name)) {
-                        presetName.text = name === "default" ? "" : name
+                        presetName.text = ""
+                        sidebar.namingPreset = false
                         sidebar.presetsExpanded = false
                         preset.forceActiveFocus()
                     }
@@ -287,24 +289,23 @@ Pane {
                     objectName: "filterPresetOption_" + index
                     width: savedFilters.width
                     height: savedFilters.rowHeight
+                    topPadding: 0; bottomPadding: 0; leftPadding: 6; rightPadding: 6
                     focusPolicy: Qt.StrongFocus
                     text: modelData
                     highlighted: modelData === workspace.selectedFilterPreset
                     Accessible.role: Accessible.Button
                     Accessible.name: text
+                    contentItem: RowLayout {
+                        spacing: 4
+                        Label { text: modelData; Layout.fillWidth: true; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
+                        IconButton { objectName: "renameFilterPreset"; glyph: "Pencil"; text: "Rename saved filter"; visible: modelData === sidebar.selectedSavedPreset; enabled: !workspace.filterPresetsBusy; onClicked: { renamePreset.original = modelData; renameText.text = modelData; renamePreset.open() } }
+                        IconButton { objectName: "deleteFilterPreset"; glyph: "Trash"; destructive: true; text: "Delete saved filter"; visible: modelData === sidebar.selectedSavedPreset; enabled: !workspace.filterPresetsBusy; onClicked: workspace.deleteFilterPreset(modelData) }
+                    }
                     onClicked: savedFilters.activate(index)
                 }
             }
             }
             SelectableText { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
-            FileDialog {
-                id: importPresets
-                objectName: "importFilterPresetsDialog"
-                title: "Import saved filters"
-                nameFilters: ["Saved filters (*.json)"]
-                fileMode: FileDialog.OpenFile
-                onAccepted: workspace.importFilterPresets(selectedFile)
-            }
             ColumnLayout {
                 id: filters
                 objectName: "sidebarFilters"
@@ -381,6 +382,6 @@ Pane {
             ((sidebar.Window.window ? sidebar.Window.window.keyboardTop : parent.height)-height)/2)
         standardButtons: keyboardEditing ? Dialog.NoButton : Dialog.Ok | Dialog.Cancel
         TextField { id: renameText; objectName: "renameFilterPresetName"; width: parent.width; maximumLength: 128; Accessible.name: "New saved filter name"; onAccepted: renamePreset.accept() }
-        onAccepted: { if (workspace.renameFilterPreset(original, renameText.text)) presetName.text = renameText.text.trim() }
+        onAccepted: workspace.renameFilterPreset(original, renameText.text)
     }
 }

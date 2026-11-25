@@ -88,13 +88,13 @@ authenticates merely to construct this local catalog.
 ## Compatibility and verification
 
 Current context records describe all six actual table schemas.
-Resource display limits cap only the sorted table projection. Radar, counts,
+The resource table pages the sorted matches at 512 rows. Radar, counts,
 pickers and alarms keep their complete authoritative sets.
 
-Explicit named-filter import still accepts the bounded reference array or native
-preset record, preserves source bytes and protects the empty default. Import
-rejects conflicting names rather than replacing existing filters. Selecting a
-preset cannot change namespace request scope, fetch resources or restore streams.
+Named filters load automatically from the private profile. Older supported
+records are validated when read. The default cannot be edited or deleted.
+Selecting a preset cannot change namespace request scope, fetch resources or
+restore streams. The sidebar no longer imports or exports preset files.
 
 Public migration tests exercise winner selection, backup contents, repeat use,
 namespace scope, locks, malformed input, close/reopen and optimistic conflicts.

@@ -443,7 +443,6 @@ public:
     bool filterPresetsBusy() const { return presetsBusy_; }
     QString filterPresetsError() const { return presetsError_; }
     Q_INVOKABLE bool reloadFilterPresets();
-    Q_INVOKABLE bool importFilterPresets(const QUrl& source);
     Q_INVOKABLE bool loadFilterPreset(const QString& name);
     Q_INVOKABLE bool saveFilterPreset(const QString& name);
     Q_INVOKABLE bool renameFilterPreset(const QString& name, const QString& replacement);

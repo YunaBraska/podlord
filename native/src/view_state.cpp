@@ -229,21 +229,6 @@ Result<TableViewStates> ViewStateStore::loadPresets() const {
         return TableViewStates{{"default", TableViewState{.limit = DefaultResourceDisplayLimit}}};
     return readPresets(path, schemas_.value("resource"));
 }
-Result<TableViewStates> ViewStateStore::importPresets(const QString& path, const TableViewStates& expected) const {
-    if (!QDir::isAbsolutePath(path)) return Failure{StoreError::InvalidInput, "Choose an absolute saved-filter file."};
-    const auto imported = readPresets(path, schemas_.value("resource"));
-    if (const auto* failure = std::get_if<Failure>(&imported)) return *failure;
-    auto desired = expected;
-    const auto& presets = std::get<TableViewStates>(imported);
-    for (auto entry = presets.cbegin(); entry != presets.cend(); ++entry) {
-        if (entry.key() == "default") continue;
-        for (auto saved = expected.cbegin(); saved != expected.cend(); ++saved)
-            if (saved.key().compare(entry.key(), Qt::CaseInsensitive) == 0 && (saved.key() != entry.key() || saved.value() != entry.value()))
-                return Failure{StoreError::Conflict, "An imported filter name is already in use. Rename it before importing; no filters were changed."};
-        desired[entry.key()] = entry.value();
-    }
-    return savePresets(desired, expected);
-}
 Result<TableViewStates> ViewStateStore::savePresets(const TableViewStates& desired, const TableViewStates& expected) const {
     const auto root = encodePresets(desired); const auto validated = decodePresets(root, schemas_.value("resource"));
     if (const auto* failure = std::get_if<Failure>(&validated)) return *failure;

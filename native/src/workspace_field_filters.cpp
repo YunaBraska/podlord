@@ -160,15 +160,6 @@ bool Workspace::reloadFilterPresets() {
 bool Workspace::persistFilterPresets(const TableViewStates& desired) {
     return updateFilterPresets([desired, expected = presets_](const ViewStateStore& store) { return store.savePresets(desired, expected); });
 }
-bool Workspace::importFilterPresets(const QUrl& source) {
-    if (!source.isValid() || !source.isLocalFile() || source.hasQuery() || source.hasFragment()) {
-        presetsError_ = "Choose a local saved-filter JSON file. No filters were changed.";
-        emit filterPresetsChanged(); return false;
-    }
-    return updateFilterPresets([path = source.toLocalFile(), expected = presets_](const ViewStateStore& store) {
-        return store.importPresets(path, expected);
-    });
-}
 bool Workspace::loadFilterPreset(const QString& name) {
     if (active_.isEmpty() || !presetsReady_ || !presets_.contains(name)) return false;
     const auto value = presets_.value(name); auto& nav = navigation_[active_];

@@ -1913,13 +1913,12 @@ bool execute(const QString& requestedScenario) {
                 return value == "Bearer replacement-token";
             });
     }
-    if (scenario == "filters_all_resources") {
+    if (scenario == "filters_reset") {
         if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
         const auto calls = server.requests.size();
-        if (!click(window, item(window, "filterPreset")) || !item(window, "allResourceFilters")->property("highlighted").toBool()) return false;
+        if (item(window, "allResourceFilters") || item(window, "filterPreset")->isVisible()) return false;
         if (!workspace.filter("alpha") || !waitFor([&] { return workspace.table()->rowCount() == 1; })
-            || item(window, "allResourceFilters")->property("highlighted").toBool()
-            || !click(window, item(window, "allResourceFilters"))) return false;
+            || !click(window, item(window, "resetResourceFilters"))) return false;
         return waitFor([&] { return workspace.table()->rowCount() == 3 && workspace.filterText().isEmpty(); })
             && server.requests.size() == calls && workspace.resourceFieldFilters().isEmpty();
     }
@@ -3543,7 +3542,7 @@ bool execute(const QString& requestedScenario) {
                     int checked = 0;
                     for (const auto* name : {"workspaceSearchButton","quickOpenDropdown","workspaceActionsButton","toggleSidebar",
                         "renameCurrentSession","masterAudioMute","resetResourceFilters","filterPreset","saveFilterPreset",
-                        "reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset",
+                        "renameFilterPreset","deleteFilterPreset",
                         "radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
                         auto* control = item(window,name);
                         if (!control || !control->isVisible() || !control->property("glyph").isValid()
@@ -7380,22 +7379,6 @@ bool execute(const QString& requestedScenario) {
                 if (!workspace.saveFilterPreset("Native copy") || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
                 return workspace.filterPresets().contains("Secrets") && workspace.filterPresets().contains("Native copy")
                     && workspace.filterPresetsError().isEmpty() && server.requests.size() == before;
-            }
-            if (action == "import" || action == "import_conflict" || action == "import_url") {
-                if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-                if (action == "import_url") return !workspace.importFilterPresets(QUrl("https://example.test/filter-presets.json"))
-                    && workspace.filterPresetsError().contains("local") && server.requests.size() == before;
-                const auto source = temporary.filePath("saved filters %.json");
-                QFile presets(source);
-                const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "Secrets"}, {"search", "Secret"}, {"namespace", "default"}}}).toJson();
-                if (!presets.open(QIODevice::WriteOnly) || presets.write(bytes) != bytes.size()) return false;
-                presets.close();
-                if (action == "import_conflict" && (!workspace.saveFilterPreset("Secrets") || !waitFor([&] { return !workspace.filterPresetsBusy(); }))) return false;
-                if (!workspace.importFilterPresets(QUrl::fromLocalFile(source)) || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-                if (!presets.open(QIODevice::ReadOnly) || presets.readAll() != bytes) return false;
-                if (action == "import_conflict") return workspace.filterPresetsError().contains("already in use") && server.requests.size() == before;
-                return workspace.filterPresetsError().isEmpty() && workspace.loadFilterPreset("Secrets") && workspace.table()->rowCount() == 1
-                    && workspace.resourceFieldFilters().value("namespace").toString() == "default" && server.requests.size() == before;
             }
             if (action == "columns" || action == "restart") {
                 if (!click(window, item(window, "valueColumnsButton"))

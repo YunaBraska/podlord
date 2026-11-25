@@ -520,8 +520,9 @@ Presentation refinement, confirmed on 2026-11-06:
   accessibility, copying and session isolation remain supported.
 - As confirmed on 2026-11-07, Settings uses a gear and filter disclosure a funnel.
   Saved filters have one inline disclosure, not a separate actions popup.
-  Name entry and Save remain directly reachable. The expanded area retains
-  preset selection, reload, local-file import, rename and delete. Collapsing it
+  Save remains directly reachable and reveals Name only when used. The expanded
+  area lists named presets with rename and delete on the selected row. It has no
+  routine reload or file import/export actions. Collapsing it
   reserves no action/list space and releases hidden keyboard focus. Escape
   returns focus to disclosure. The protected default, validation, existing
   persistence and active-session-only application rules remain unchanged.
@@ -574,8 +575,8 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | FLT-012 | A field value picker MUST read the complete current session cache. Its open option snapshot MUST stay stable until an explicit reload, preserve selected values absent from a refreshed cache, and close on a session change. |
 | FLT-013 | CPU, memory and storage quantity filters MUST compare actual cached measurements only. Missing measurements MUST NOT match a numeric comparison or be substituted with zero, requests, limits or capacity. References remain separate from measured usage. |
 | FLT-014 | Wide-window sidebar fields MUST open a nonmodal, viewport-bounded flyout at the selected field, leaving workspace navigation operable. Escape, outside presses, session changes and an anchor leaving or being reused in the list MUST close it. The complete field picker and narrow-window selection MUST remain centered and operable. Checkbox state, borders and keyboard focus MUST remain visible in the selected theme. |
-| FLT-015 | The reference row Limit MUST remain available, default to 1,024 and accept 1 through 5,000 rows. It MUST cap table presentation after filtering and sorting, not discovery, synchronization, the complete filtered match count, Radar, field-picker values or alarm evaluation. Invalid/nonpositive textual input uses the reference default; positive values above the maximum clamp to 5,000. Changing the Limit MUST NOT initiate a Kubernetes request or replay alerts. |
-| FLT-016 | The row Limit MUST follow its session across tab/window changes and restart, be retained by saved presets and legacy preset import, and return to 1,024 when resource filters are reset or the protected default preset is loaded. Earlier native records without a stored Limit MUST retain 256 without an implicit write. Explicit saved resource and preset limits MUST remain unchanged. The protected default preset MUST use 1,024 when read, including older default records, without an implicit write. Invalid current records MUST be retained and rejected explicitly. |
+| FLT-015 | The resource table MUST present matching rows in pages of 512 after filtering and sorting. Paging MUST NOT limit discovery, synchronization, match counts, Radar, field-picker values or alarms. Changing pages MUST NOT initiate a Kubernetes request or replay alerts. There is no user row-limit control. |
+| FLT-016 | Paging MUST follow the current filtered and sorted set. If that set shrinks, the selected page MUST move to the last available page. The current preset format retains its validated legacy limit field for compatibility, but that field MUST NOT control page size. |
 
 Filter and sort retention across app restarts is governed by STR-003 and STR-004,
 with the native storage boundary recorded in [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).
@@ -615,9 +616,9 @@ not an inferred change to other counters. These quantities use actual measuremen
 under FLT-013; quantity ranges use AND and exact numeric alternatives use OR.
 Display-text filters can explicitly match unavailable and incomplete labels
 without inventing a measurement. Problems/Activity and native saved presets now
-have the scoped contracts below. Age, UID and explicit legacy preset import have
-public-boundary coverage. The row Limit now retains reference display semantics
-under FLT-015/016; installed-process migration and complete paired presentation
+have the scoped contracts below. Age and UID have
+public-boundary coverage. The resource table uses paging under FLT-015/016;
+installed-process migration and complete paired presentation
 remain separate gates. Implementation and public-boundary evidence
 are tracked independently in the [test map](k3d-test-map.md).
 
@@ -1384,7 +1385,7 @@ records presentation ownership and non-duplicated cache summary semantics.
 | SHL-011 | The tab strip exposes a quick file-open action and an anchored dropdown for usage-ranked saved sessions and imported contexts. File acceptance depends on kubeconfig content, not a suffix. Invalid, missing and unreadable files do not import or change the selected session, cache, filters or notices. Valid import never implicitly activates a context, executes a credential command or opens authentication. Profile/write failures remain visible. Session/context selection retains the existing draft-discard and authentication safeguards. |
 | SHL-012 | Compact landscape windows (at least 600 logical pixels wide and less than 600 high) retain the shared single-line icon navigation, with 44-pixel targets. The former separate left-hand navigation rail is superseded by the confirmed automatic workspace-menu overflow. The small Radar is automatically hidden and closed filters occupy only the narrow filter icon rail. Filters can be expanded without clearing active filters; the full Map remains available. Returning to a larger layout restores the same Radar and its camera without extra synchronization or a new renderer. Rotation and disclosure preserve session, query, cache and Radar pose without issuing requests. Portrait retains the drawer; no orientation lock or second UI is introduced. Header metrics follow SHL-003. With search and a validation error visible, at least one complete resource row remains operable above the horizontal scrollbar. Android input keeps the app visible instead of replacing it with a fullscreen keyboard editor. The normal system keyboard remains available. Automatic small-Radar hiding and the collapsed filter rail remain unchanged. |
 | SHL-014 | Primary shell navigation MUST remain one row at every supported size. Icon actions which no longer fit MUST move into the existing hamburger menu, using the same actions, enabled state and selected indication. Activating the already selected workspace MUST NOT clear its selected indication, either in the toolbar or overflow menu. Resizing MUST restore fitting icons automatically, without resetting the session, filters, camera or draft or issuing requests. Tooltip and accessibility labels MUST retain the full action names. Navigation and metric overflow MUST NOT create a second row or duplicate action behavior. Confirmed on 2026-11-08. |
-| SHL-013 | The single-line footer shows visible/cached resource counts and admitted API requests in the preceding minute for the selected session. It does not show a "Synced" age. The session Map labels and counts all filter matches against the cache total, independently of the table's row limit. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
+| SHL-013 | The single-line footer shows visible/cached resource counts and admitted API requests in the preceding minute for the selected session. It does not show a "Synced" age. The session Map labels and counts all filter matches against the cache total, independently of table pagination. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
 
 Normal empty, loading and connection feedback uses user-facing resource/context terms rather than cache, snapshot or queue implementation details. Routine successful imports produce no log-style notice. An import with failed inputs retains a concise warning and reachable failure details. An unavailable metric remains omitted in the compact summary.
 
@@ -1420,23 +1421,22 @@ rules. Partial cached resources remain usable while collections arrive.
 | LOAD-004 | Independent reads MAY overlap within four active slots. Admission MUST retain the global minimum start spacing, configured hard limit and Retry-After. Writes and port-forward handshakes remain exclusive; dispatched work is never interrupted to prioritize another request. |
 | FLT-014 | Problems and Activity MUST be mutually exclusive and combine with search and field expressions. Switching modes and resetting MUST operate entirely on the session cache and update table, radar and counts together. |
 | FLT-015 | Activity MUST follow the reference statuses and recent change/creation semantics (15 minutes). Events use five minutes for normal/success activity and thirty minutes for warnings; future, Observed and Historical events are not activity. |
-| FLT-016 | Named resource filter presets MUST be shared within the profile, while applying a preset affects only the active session. Save/overwrite, load, rename, delete and reload MUST be reachable controls. The empty default cannot be changed, renamed or deleted. |
+| FLT-016 | Named resource filter presets MUST be shared within the profile, while applying a preset affects only the active session. Save/overwrite, load, rename and delete MUST be reachable controls. The protected default is accessed through reset and cannot be changed, renamed or deleted. Presets load automatically from the profile. |
 | FLT-017 | Presets and per-session mode state MUST survive restart. Atomic private persistence MUST detect conflicting writers and retain malformed/newer documents instead of replacing them with defaults. |
 
 Native presets capture search, implemented field expressions and Problems/Activity,
 not table sort or radar camera. Session views version 5 preserve older supported
-documents on read and upgrade only when a view actually changes. Saved-filter
-import does not import a complete application profile.
+documents on read and upgrade only when a view actually changes. The sidebar
+does not import or export saved-filter files.
 
-### How Must Saved-Filter Migration Behave?
+### How Must Saved-Filter Compatibility Behave?
 
-- FLT-018: Import MUST be explicit and accept a regular local JSON file in a supported saved-filter format, within the existing 64 KiB bound. It MUST NOT access an ambient reference profile or modify the selected source.
-- FLT-019: Import MUST preserve search, Problems/Activity and supported field expressions. Mutually conflicting modes, malformed fields, unsupported fields and case-insensitive name collisions MUST fail without partial replacement. Repeating the same named state MUST be idempotent; differing state MUST NOT silently overwrite an existing name.
-- FLT-020: Import MUST use the existing asynchronous preset owner and private atomic persistence. Failure MUST preserve existing presets and report an error without exposing document contents. Import and applying the resulting filter MUST NOT initiate Kubernetes requests.
+- FLT-018: The private profile is the only preset source. Supported older records MUST be read automatically without rewriting their bytes.
+- FLT-019: Malformed fields, conflicting modes, unsupported fields and case-insensitive name collisions MUST fail without partial replacement.
+- FLT-020: Loading and saving MUST use the existing asynchronous preset owner. Failure MUST preserve existing presets and report an error without exposing document contents. Applying a preset MUST NOT initiate Kubernetes requests.
 
-Import clears an obsolete Id field rather than inventing a UID predicate. Its row-limit is a display cap, not a filter; the native virtualized
-view retains all matching cached resources. This bounded compatibility behavior
-and rollback are owned by ADR 0031.
+The sidebar has no saved-filter file import or export. Compatibility and rollback
+are owned by ADR 0031.
 
 ### How Must The Values Inspector Apply The Shared Table Contract?
 
@@ -1883,7 +1883,7 @@ Confirmed on 2026-11-09:
 - The delivered app must use its embedded OpenSSL runtime for supported client-certificate connections. A missing TLS runtime fails explicitly before creating a workspace, rather than silently selecting a backend that cannot use the configured key. Transport failure details reach the bounded request audit without authorization values, URL credentials, query strings or fragments. The compact error identifies the affected context and a concise cause. Auth failures still require the existing explicit recovery.
 - Drag-and-drop, positional files and OS document-open events use the existing content-based asynchronous importer. Multiple documents are deduplicated and imports wait while that importer is busy. Invalid input is quiet in quick-open paths. Profile, lock and write failures remain actionable. Import never opens a context, runs an exec plugin or authenticates. OAuth callback URLs retain their separate owner.
 - Context cards retain their existing click-to-open loader and expose adjacent tab/window choices. The duplicate inline source-management form is removed. File/paste and credential-management capabilities remain in quick-open and Sources settings. Saved views preserve independent session configuration and names.
-- An explicit All resources filter is always selectable and visibly selected when no resource filter is active. It uses the existing reset owner. Existing saved presets, including older named defaults, are not silently overwritten.
+- The existing reset action clears resource filters. The protected default is not duplicated in the named-filter list. Existing saved presets are not silently overwritten.
 - Modal tasks visibly dim blocked content and provide one consistent top-right close action, respecting busy and dirty-state safeguards. Save actions use the existing vector glyph. Single-tab strips remain hidden under the existing layout rule.
 - Diagnostics refreshes on entry and at a five-second cadence only while its section and window are visible. It stops when hidden. Its timer belongs to the Settings surface and adds no Kubernetes requests. Dates are stored unchanged as UTC and displayed using the system locale and local time with a short date/time format. No timezone or Snapshot prefix is required in ordinary chrome.
 

@@ -111,34 +111,15 @@ no second filter model, timer or persistence. Checkbox borders and keyboard focu
 remain visible in the HUD palette. Public UI cases cover placement, keyboard
 selection, cache-only editing, navigation, viewport edges and session isolation.
 
-## How Are Older Saved Filters Imported Without A Second Owner?
+## How Are Older Saved Filters Read?
 
-The sidebar's saved-filter actions expose an explicit local JSON import using
-Qt's file dialog. Import and reload share the existing asynchronous preset owner;
-no timer, ambient profile access, authentication action or Kubernetes request
-is introduced. The public store accepts both the native document and the actual
-older camel-case array, converts once at the boundary and uses the native canonical
-validator and conflict-checked atomic save.
+The private profile is the only saved-filter source. On startup, the existing
+asynchronous preset owner reads supported older records without rewriting them.
+Only a successful edit writes the native format. Invalid, locked or conflicting
+records keep their original bytes and show an error. There is no sidebar import,
+export or routine reload action.
 
-Search, Problems/Activity and supported field expressions are preserved. The older
-`nameFilter` maps to Name and `age` to the native age field. The older preset format clears
-Id, so importing its stored Id does not introduce an otherwise absent predicate.
-The row-limit is a display cap, not a resource predicate. The 2026-10-09 reference
-parity correction replaces the earlier unlimited table projection with the
-reference default of 256 rows and a user-adjustable maximum of 5,000, applied
-after filtering and sorting. The complete filtered proxy remains authoritative
-for Radar and match counts; alarm evaluation and pickers keep the full session
-cache. No additional request or persistent owner is introduced. Limit follows
-the existing session view and preset records under ADR 0027.
-Invalid types, conflicting modes, duplicate
-names, case collisions and unsupported fields fail explicitly. A matching name
-with identical state is an idempotent repeat; differing state never silently
-overwrites an existing preset.
-
-Selected files must be regular local JSON files within the existing 64 KiB preset
-limit. Import never modifies its source. Invalid, locked or conflicting imports
-retain existing presets and expose a content-free error. An existing private
-legacy array can also be read without rewriting; only an explicit successful edit
-writes the native format. This is saved-filter migration, not complete profile
-or session migration. Native file-dialog interaction and the full paired filter
-visual matrix still need separate evidence.
+The sidebar lists only named filters. Its existing reset action clears the active
+resource filters. Saving reveals a name field when needed. The complete filtered
+cache remains authoritative for Radar, counts, alarms and field pickers. The
+resource table presents matching rows in pages of 512 without a user row limit.
