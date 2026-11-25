@@ -765,7 +765,7 @@ bool execute(const QString& requestedScenario) {
     QFile file(source);
     if (!file.open(QIODevice::WriteOnly)) return false;
     QByteArray credentials = "token: local-test-token";
-    if (scenario == "relative_token") {
+    if (scenario == "relative_token" || scenario == "map_export_relative") {
         QFile token(temporary.filePath("token"));
         if (!token.open(QIODevice::WriteOnly) || token.write("local-test-token\n") < 0) return false;
         credentials = "tokenFile: token";
@@ -861,7 +861,20 @@ bool execute(const QString& requestedScenario) {
                 && workloadCard->mapToScene({0, 0}).x() > managerCard->mapToScene({0, 0}).x()
                 && displayedWithin(window->contentItem(), managerCard);
         };
-        return waitFor(grouped) && saveShellFrame(window, scenario, item(window, "contextMapCards"));
+        if (!waitFor(grouped) || !saveShellFrame(window, scenario, item(window, "contextMapCards"))) return false;
+        const auto rows = workspace.mapContexts();
+        const auto workload = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "workload";
+        });
+        if (workload == rows.cend()) return false;
+        const auto destination = temporary.filePath("managed.kubeconfig");
+        if (!workspace.exportKubeconfig(workload->toMap().value("id").toString(), QUrl::fromLocalFile(destination))
+            || !waitFor([&] { return QFileInfo::exists(destination) || !workspace.sourceImportError().isEmpty(); })) return false;
+        QFile exported(destination);
+        if (!workspace.sourceImportError().isEmpty() || !exported.open(QIODevice::ReadOnly)) return false;
+        const auto content = exported.readAll();
+        return content.contains("current-context: workload") && content.contains("managed-test-token")
+            && !content.contains("local-test-token") && !content.contains("inactive-token");
     }
     if (scenario == "map_group_scroll_desktop") {
         QString groupId;
@@ -1674,6 +1687,68 @@ bool execute(const QString& requestedScenario) {
         return click(window, item(window, "cancelSourceAlias"))
             && waitFor([&] { return !item(window, "sourceAliasName")->isVisible(); })
             && workspace.currentSession().isEmpty() && server.requests.isEmpty();
+    }
+    if (scenario == "map_export" || scenario == "map_export_relative") {
+        const auto choices = workspace.contexts();
+        const auto selected = std::find_if(choices.cbegin(), choices.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "local";
+        });
+        if (selected == choices.cend()) return false;
+        const auto context = selected->toMap().value("id").toString();
+        if (!workspace.renameSourceContext(context, "My workload")
+            || !waitFor([&] { const auto rows = workspace.contexts(); return !workspace.busy() && std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("name") == "My workload";
+            }); })
+            || !workspace.showMapOverview()
+            || !waitFor([&] { return item(window, "openMapContextOptions_" + context) != nullptr; })
+            || !click(window, item(window, "openMapContextOptions_" + context))
+            || !click(window, item(window, "exportMapContext_" + context))) {
+            std::fprintf(stderr,"Export setup: name=%s busy=%d overview=%d options=%p export=%p error=%s\n",
+                qPrintable(workspace.contexts().first().toMap().value("name").toString()), workspace.busy(), workspace.mapOverview(),
+                static_cast<void*>(item(window, "openMapContextOptions_" + context)),
+                static_cast<void*>(item(window, "exportMapContext_" + context)), qPrintable(workspace.error()));
+            return false;
+        }
+        auto* dialog = window->findChild<QObject*>("exportKubeconfigDialog");
+        if (!dialog || !waitFor([&] { return dialog->property("visible").toBool(); })
+            || !dialog->property("selectedFile").toUrl().toLocalFile().endsWith("/My workload.kubeconfig")) {
+            std::fprintf(stderr,"Export dialog: dialog=%p visible=%d selected=%s\n", static_cast<void*>(dialog),
+                dialog && dialog->property("visible").toBool(), qPrintable(dialog ? dialog->property("selectedFile").toUrl().toString() : QString{}));
+            return false;
+        }
+        const auto destination = QUrl::fromLocalFile(temporary.filePath("exported.kubeconfig"));
+        if (!dialog->setProperty("selectedFile", destination)
+            || !QMetaObject::invokeMethod(dialog, "accepted", Qt::DirectConnection)
+            || !waitFor([&] { return QFileInfo::exists(destination.toLocalFile()) || !workspace.sourceImportError().isEmpty(); })) {
+            std::fprintf(stderr,"Export save: dialog=%p file=%d error=%s\n", static_cast<void*>(dialog),
+                QFileInfo::exists(destination.toLocalFile()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        QFile exported(destination.toLocalFile()), original(source);
+        if (!workspace.sourceImportError().isEmpty() || !exported.open(QIODevice::ReadOnly)
+            || !original.open(QIODevice::ReadOnly)) {
+            std::fprintf(stderr,"Export read: error=%s exported=%s original=%s\n",qPrintable(workspace.sourceImportError()),
+                qPrintable(exported.errorString()),qPrintable(original.errorString())); return false;
+        }
+        const auto content = exported.readAll();
+        const bool valid = content.contains("current-context: local") && content.contains("local-test-token")
+            && !content.contains("inactive-token") && !content.contains("staging:")
+            && !content.contains("tokenFile:")
+            && (QFileInfo(destination.toLocalFile()).permissions()
+                & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther | QFileDevice::WriteOther)) == 0
+            && original.readAll() == yaml && server.requests.isEmpty();
+        if (!valid) std::fprintf(stderr,"Export validation: selected=%d token=%d extra=%d tokenFile=%d permission=%d\n",
+            content.contains("current-context: local"), content.contains("local-test-token"), content.contains("inactive-token"),
+            content.contains("tokenFile:"), QFileInfo(destination.toLocalFile()).permissions().toInt());
+        if (!valid) return false;
+        if (!workspace.exportKubeconfig(context, QUrl::fromLocalFile(source))
+            || !waitFor([&] { return !workspace.sourceImportError().isEmpty(); })) return false;
+        QFile unchanged(source);
+        if (!unchanged.open(QIODevice::ReadOnly) || unchanged.readAll() != yaml) return false;
+        const auto unavailable = QUrl::fromLocalFile(temporary.filePath("missing/export.kubeconfig"));
+        return workspace.exportKubeconfig(context, unavailable)
+            && waitFor([&] { return !workspace.sourceImportError().isEmpty(); })
+            && !QFileInfo::exists(unavailable.toLocalFile());
     }
     if (scenario == "settings_invalid") return waitFor([&] { return !workspace.error().isEmpty() && !workspace.busy(); })
         && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty();

@@ -2151,7 +2151,7 @@ if(TARGET workspace_ui_test)
 endif()
 
 if(BUILD_TESTING)
-    foreach(scenario map_open_options map_alias_modal drop_config_valid drop_config_invalid drop_config_missing drop_config_folder drop_config_locked_valid_first drop_config_locked_invalid_first drop_config_multiple drop_config_repeat filters_all_resources)
+    foreach(scenario map_open_options map_alias_modal map_export map_export_relative drop_config_valid drop_config_invalid drop_config_missing drop_config_folder drop_config_locked_valid_first drop_config_locked_invalid_first drop_config_multiple drop_config_repeat filters_all_resources)
         foreach(style Basic Fusion)
             add_test(NAME native.ui.${scenario}_${style} COMMAND workspace_ui_test ${scenario})
             set_tests_properties(native.ui.${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style};PODLORD_DISABLE_AUDIO=1")

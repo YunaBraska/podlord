@@ -5,8 +5,42 @@
 #include <QGuiApplication>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QDir>
+#include <QStandardPaths>
 
 namespace podlord {
+QUrl Workspace::suggestedKubeconfigExportUrl(const QString& contextId) const {
+    QString name;
+    for (const auto& entry : contexts()) if (entry.toMap().value("id").toString() == contextId) {
+        name = entry.toMap().value("name").toString(); break;
+    }
+    name = name.left(128).trimmed();
+    for (auto& character : name) if (!character.isPrint() || QStringLiteral("/\\:*?\"<>|").contains(character)) character = '-';
+    while (name.startsWith('.') || name.endsWith('.') || name.endsWith(' ')) {
+        if (name.startsWith('.')) name.remove(0, 1);
+        else name.chop(1);
+    }
+    if (name.isEmpty()) name = "kubeconfig";
+    auto folder = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (folder.isEmpty()) folder = QDir::homePath();
+    return QUrl::fromLocalFile(QDir(folder).filePath(name + ".kubeconfig"));
+}
+bool Workspace::exportKubeconfig(const QString& contextId, const QUrl& destination) {
+    if (std::none_of(sources_.sources.cbegin(), sources_.sources.cend(), [&](const auto& source) {
+        return std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; });
+    })) { sourceImportError_ = "Selected kubeconfig context is unavailable."; emit changed(); return false; }
+    sourceImportError_.clear(); emit changed();
+    auto* watcher = new QFutureWatcher<Result<bool>>(this);
+    connect(watcher, &QFutureWatcher<Result<bool>>::finished, this, [this, watcher] {
+        const auto result = watcher->result(); watcher->deleteLater();
+        if (const auto* failure = std::get_if<Failure>(&result)) { sourceImportError_ = failure->message; emit changed(); }
+    });
+    const auto profile = profile_;
+    watcher->setFuture(QtConcurrent::run([profile, contextId, destination] {
+        return KubeconfigStore(profile).exportContext(contextId, destination);
+    }));
+    return true;
+}
 namespace {
 QVariantMap sourceInspectionMetadata(const SourceSnapshot& source, const SourceContext& context) {
     QVariantList fields;

@@ -19,6 +19,11 @@
 #include <QSslSocket>
 #include <QUrl>
 #include <yaml-cpp/yaml.h>
+#ifdef Q_OS_ANDROID
+#include <QJniEnvironment>
+#include <QJniObject>
+#include <QGuiApplication>
+#endif
 #include <algorithm>
 
 namespace podlord {
@@ -1162,6 +1167,112 @@ Result<QString> KubeconfigStore::ownedYaml(const QString& snapshot, const QStrin
     const auto loaded=readOwnedContext(profile_,snapshot,contextId,&original);
     if (const auto* failure=std::get_if<Failure>(&loaded)) return *failure;
     return QString::fromUtf8(original);
+}
+Result<bool> KubeconfigStore::exportContext(const QString& contextId, const QUrl& destination) const {
+    if (contextId.isEmpty() || (!destination.isLocalFile() && destination.scheme() != "content"))
+        return Failure{StoreError::InvalidInput, "Choose a context and a destination file."};
+    const auto catalog = list();
+    if (const auto* failure = std::get_if<Failure>(&catalog)) return *failure;
+    if (destination.isLocalFile()) {
+        const QFileInfo target(destination.toLocalFile());
+        const auto parent = QDir(target.absolutePath()).canonicalPath();
+        const auto targetPath = target.canonicalFilePath().isEmpty()
+            ? QDir::cleanPath(parent + '/' + target.fileName()) : target.canonicalFilePath();
+        const auto profilePath = QDir(profile_).canonicalPath();
+        if (!profilePath.isEmpty() && (targetPath == profilePath || targetPath.startsWith(profilePath + '/')))
+            return Failure{StoreError::InvalidInput, "Choose a destination outside PodLord's private data."};
+        for (const auto& source : std::get<SourceCatalog>(catalog).sources)
+            if (!source.sourcePath.isEmpty() && QFileInfo(source.sourcePath).canonicalFilePath() == targetPath)
+                return Failure{StoreError::InvalidInput, "Choose a destination other than an imported kubeconfig."};
+    }
+    for (const auto& source : std::get<SourceCatalog>(catalog).sources) for (const auto& context : source.contexts) {
+        if (context.id != contextId) continue;
+        if (!context.brokenReferences.isEmpty())
+            return Failure{StoreError::InvalidData, "This kubeconfig has missing or ambiguous references."};
+        QByteArray original;
+        const auto owned = readOwnedContext(profile_, source.id, contextId, &original);
+        if (const auto* failure = std::get_if<Failure>(&owned)) return *failure;
+        try {
+            const auto root = YAML::Load(original.toStdString());
+            QStringList warnings;
+            const auto contexts = entries(root, "contexts", "context", warnings);
+            const auto clusters = entries(root, "clusters", "cluster", warnings);
+            const auto users = entries(root, "users", "user", warnings);
+            if (!contexts.values.contains(context.name) || !clusters.values.contains(context.cluster)
+                || (!context.user.isEmpty() && !users.values.contains(context.user)))
+                return Failure{StoreError::InvalidData, "Selected kubeconfig references are unavailable."};
+            auto cluster = YAML::Clone(clusters.values.value(context.cluster));
+            auto user = context.user.isEmpty() ? YAML::Node(YAML::NodeType::Map) : YAML::Clone(users.values.value(context.user));
+            const auto embed = [&](YAML::Node node, const char* pathKey, const char* dataKey, bool token) -> Result<bool> {
+                const auto path = text(node, pathKey);
+                if (path.isEmpty()) return true;
+                if (!token && !text(node, dataKey).isEmpty()) { node.remove(pathKey); return true; }
+                if (contentSource(source.sourcePath) && QDir::isRelativePath(path))
+                    return Failure{StoreError::InvalidInput, "Relative credential files cannot be exported from a document kubeconfig."};
+                QFile file(QDir(QFileInfo(source.sourcePath).absolutePath()).absoluteFilePath(path));
+                const QFileInfo info(file);
+                if (!info.isFile() || info.size() > maximumKubeconfigBytes || !file.open(QIODevice::ReadOnly))
+                    return Failure{StoreError::ReadFailed, "Cannot read a referenced credential file for export."};
+                const auto bytes = file.read(maximumKubeconfigBytes + 1);
+                if (bytes.isEmpty() || bytes.size() > maximumKubeconfigBytes || file.error() != QFileDevice::NoError)
+                    return Failure{StoreError::ReadFailed, "Cannot read a referenced credential file for export."};
+                if (token) {
+                    if (QString::fromUtf8(bytes).toUtf8() != bytes)
+                        return Failure{StoreError::InvalidData, "Referenced token is not UTF-8."};
+                    node[dataKey] = QString::fromUtf8(bytes).trimmed().toStdString();
+                } else node[dataKey] = bytes.toBase64().toStdString();
+                node.remove(pathKey);
+                return true;
+            };
+            for (const auto& result : {embed(cluster, "certificate-authority", "certificate-authority-data", false),
+                                       embed(user, "client-certificate", "client-certificate-data", false),
+                                       embed(user, "client-key", "client-key-data", false),
+                                       embed(user, "tokenFile", "token", true)})
+                if (const auto* failure = std::get_if<Failure>(&result)) return *failure;
+            YAML::Node output(YAML::NodeType::Map);
+            output["apiVersion"] = "v1";
+            output["kind"] = "Config";
+            output["current-context"] = context.name.toStdString();
+            YAML::Node clusterEntry(YAML::NodeType::Map);
+            clusterEntry["name"] = context.cluster.toStdString(); clusterEntry["cluster"] = cluster;
+            output["clusters"].push_back(clusterEntry);
+            if (!context.user.isEmpty()) {
+                YAML::Node userEntry(YAML::NodeType::Map);
+                userEntry["name"] = context.user.toStdString(); userEntry["user"] = user;
+                output["users"].push_back(userEntry);
+            }
+            YAML::Node contextEntry(YAML::NodeType::Map);
+            contextEntry["name"] = context.name.toStdString();
+            contextEntry["context"] = YAML::Clone(contexts.values.value(context.name));
+            output["contexts"].push_back(contextEntry);
+            const auto bytes = QByteArray::fromStdString(YAML::Dump(output)) + '\n';
+#ifdef Q_OS_ANDROID
+            if (destination.scheme() == "content") {
+                QJniEnvironment environment;
+                const auto app = QNativeInterface::QAndroidApplication::context();
+                const auto url = QJniObject::fromString(destination.toString(QUrl::FullyEncoded));
+                auto* data = environment->NewByteArray(static_cast<jsize>(bytes.size()));
+                if (!data) return Failure{StoreError::WriteFailed, "Cannot save kubeconfig."};
+                environment->SetByteArrayRegion(data, 0, static_cast<jsize>(bytes.size()), reinterpret_cast<const jbyte*>(bytes.constData()));
+                const auto saved = QJniObject::callStaticMethod<jboolean>("berlin/yuna/podlord/DocumentAccess", "write",
+                    "(Landroid/content/Context;Ljava/lang/String;[B)Z", app.object<jobject>(), url.object<jstring>(), data);
+                environment->DeleteLocalRef(data);
+                if (!saved) return Failure{StoreError::WriteFailed, "Cannot save kubeconfig."};
+                return true;
+            }
+#endif
+            if (!destination.isLocalFile()) return Failure{StoreError::InvalidInput, "Choose a local destination file."};
+            QSaveFile file(destination.toLocalFile()); file.setDirectWriteFallback(false);
+            if (!file.open(QIODevice::WriteOnly)
+                || !file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner)
+                || file.write(bytes) != bytes.size() || !file.commit())
+                return Failure{StoreError::WriteFailed, "Cannot save kubeconfig at the chosen location."};
+            return true;
+        } catch (const YAML::Exception&) {
+            return Failure{StoreError::InvalidData, "Cannot export invalid kubeconfig YAML."};
+        }
+    }
+    return Failure{StoreError::NotFound, "Selected kubeconfig context is unavailable."};
 }
 Result<SourceSnapshot> KubeconfigStore::editOwnedYaml(const QString& snapshot, const QString& contextId, const QString& yaml) const {
     const auto loaded=readOwnedContext(profile_,snapshot,contextId);

@@ -500,6 +500,8 @@ public:
     Q_INVOKABLE bool importHome();
     Q_INVOKABLE bool refreshSources();
     Q_INVOKABLE bool renameSourceContext(const QString& contextId, const QString& displayName);
+    Q_INVOKABLE QUrl suggestedKubeconfigExportUrl(const QString& contextId) const;
+    Q_INVOKABLE bool exportKubeconfig(const QString& contextId, const QUrl& destination);
     QVariantMap sourceRemoval() const { return sourceRemoval_; }
     Q_INVOKABLE bool requestSourceRemoval(const QString& contextId);
     Q_INVOKABLE bool confirmSourceRemoval();

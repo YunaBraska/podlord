@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Pane {
     id: overview
@@ -40,6 +41,14 @@ Pane {
     padding: 4
     background: Rectangle { color: workspace.appearanceColors.inset }
     SourceAliasDialog { id: aliases }
+    FileDialog {
+        id: kubeconfigExportDialog
+        objectName: "exportKubeconfigDialog"
+        property string contextId: ""
+        fileMode: FileDialog.SaveFile
+        title: "Kubeconfig"
+        onAccepted: workspace.exportKubeconfig(contextId, selectedFile)
+    }
     Menu {
         id: contextOpenMenu
         objectName: "contextOpenMenu"
@@ -47,6 +56,15 @@ Pane {
         MenuItem { objectName: "openMapContextInTab"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInTab"]; onTriggered: workspace.openContext(contextOpenMenu.contextId, false, true) }
         MenuItem { objectName: "openMapContextInWindow"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInWindow"]; visible: workspace.windowActionsAvailable; height: visible ? implicitHeight : 0; onTriggered: workspace.openContext(contextOpenMenu.contextId, true) }
         MenuItem { objectName: "renameMapContext_" + contextOpenMenu.contextId; text: workspace.uiText["context.rename"]; onTriggered: { const context = overview.contexts.find(entry => entry.id === contextOpenMenu.contextId); if (context) aliases.edit(context) } }
+        MenuItem {
+            objectName: "exportMapContext_" + contextOpenMenu.contextId
+            text: "Kubeconfig ↓"
+            onTriggered: {
+                kubeconfigExportDialog.contextId = contextOpenMenu.contextId
+                kubeconfigExportDialog.selectedFile = workspace.suggestedKubeconfigExportUrl(contextOpenMenu.contextId)
+                kubeconfigExportDialog.open()
+            }
+        }
         MenuItem {
             objectName: "removeMapContext_" + contextOpenMenu.contextId
             text: workspace.uiText["settings.remove"]

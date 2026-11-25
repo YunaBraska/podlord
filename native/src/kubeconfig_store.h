@@ -178,6 +178,8 @@ public:
      * Never falls back to the original file or executes credential providers.
      */
     Result<QString> ownedYaml(const QString& snapshotId, const QString& contextId) const;
+    /** Saves only the selected owned context and its cluster/user entries to a private file. */
+    Result<bool> exportContext(const QString& contextId, const QUrl& destination) const;
     /** Imports an edited owned snapshot under its validated original origin, including document URIs.
      * Requires an existing, intact snapshot and a non-removed context belonging to it.
      * Retains prior YAML and sessions, using the ordinary 16 MiB UTF-8 import and recency policy.
