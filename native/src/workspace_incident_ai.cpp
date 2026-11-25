@@ -66,11 +66,20 @@ QString Workspace::incidentAiRequest() const {
     const auto context = sessionConfiguration(active_).value("contextId").toString();
     return runtime_->incidentAi.requestPreview(context, inspectorPath());
 }
+void Workspace::observeIncidentAi(const QString& session, const QJsonArray& rows, bool force) {
+    const auto configuration = sessionConfiguration(session);
+    const auto context = configuration.value("contextId").toString();
+    if (context.isEmpty()) return;
+    QString server;
+    const auto current = sources_.replacements.value(context, context);
+    for (const auto& source : sources_.sources) for (const auto& item : source.contexts)
+        if (item.id == current) server = item.server;
+    runtime_->incidentAi.observe(context, rows, resolvedUiLanguage(settings_.language), force, server);
+}
 QVariantMap Workspace::incidentAiDiagnostic() const { return runtime_->incidentAi.diagnosticResult(); }
 bool Workspace::setIncidentAiEnabled(bool enabled) {
     if (!runtime_->incidentAi.setEnabled(enabled)) return false;
-    const auto context = sessionConfiguration(active_).value("contextId").toString();
-    if (!context.isEmpty()) runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    observeIncidentAi(active_, client_.rows(active_));
     emit incidentAiChanged();
     return true;
 }
@@ -89,7 +98,7 @@ void Workspace::ensureIncidentAiModels() { runtime_->incidentAi.ensureModelsFres
 bool Workspace::refreshIncidentAiAnalysis() {
     const auto context = sessionConfiguration(active_).value("contextId").toString();
     if (context.isEmpty() || inspectorPath().isEmpty()) return false;
-    runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language), true);
+    observeIncidentAi(active_, client_.rows(active_), true);
     return runtime_->incidentAi.refresh(context, inspectorPath());
 }
 } // namespace podlord

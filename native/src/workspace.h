@@ -1004,6 +1004,7 @@ private:
     QString activeCluster(const QString& session = {}) const;
     bool publishLogs();
     bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);
+    void observeIncidentAi(const QString& session, const QJsonArray& rows, bool force = false);
     bool publishRelated();
     bool inspectResource(const QString& path);
     bool openInspector(const QString& path, int historyIndex = -1);

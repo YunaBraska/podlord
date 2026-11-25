@@ -391,9 +391,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(this, &Workspace::catalogsChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::languageChanged, this, &Workspace::incidentAiChanged);
     connect(this, &Workspace::languageChanged, this, [this] {
-        const auto context = sessionConfiguration(active_).value("contextId").toString();
-        if (!context.isEmpty() && runtime_->owners.value(active_) == this)
-            runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+        if (runtime_->owners.value(active_) == this) observeIncidentAi(active_, client_.rows(active_));
     });
     connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
@@ -489,8 +487,7 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
         if (workspacePage() == "map" && mapOverview()) refreshMapContexts(false);
         if (runtime_->owners.value(id) == this) {
-            const auto context = sessionConfiguration(id).value("contextId").toString();
-            runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
+            observeIncidentAi(id, client_.rows(id));
             for (const auto& value : client_.rows(id)) client_.requestManagedKubeconfig(id, value.toObject());
         }
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
@@ -1283,8 +1280,7 @@ bool Workspace::publish() {
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
     if (sessionChanged && runtime_->owners.value(active_) == this) {
-        const auto context = sessionConfiguration(active_).value("contextId").toString();
-        runtime_->incidentAi.observe(context, snapshot, resolvedUiLanguage(settings_.language));
+        observeIncidentAi(active_, snapshot);
     }
     const auto nav = currentNavigation();
     visibleTable_.setLimit(nav.limit);

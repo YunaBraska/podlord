@@ -73,7 +73,8 @@ public:
     void refreshUsage() { emit changed(); }
     void refreshModels();
     void ensureModelsFresh();
-    void observe(const QString& context, const QJsonArray& rows, const QString& language, bool force = false);
+    void observe(const QString& context, const QJsonArray& rows, const QString& language, bool force = false,
+                 const QString& cluster = {});
     bool preparing(const QString& context) const { return pendingObservations_.contains(context); }
     void prepareManual(const QString& context, const QString& path);
     void observeDiagnostic(const QString& error, const QString& language);
@@ -104,7 +105,7 @@ private:
     void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
     void observePrepared(const QString& context, const QString& language, bool force,
-                         bool expired, bool retryElapsed, QJsonArray safeRows);
+                         bool changedCluster, bool expired, bool retryElapsed, QJsonArray safeRows);
     std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
@@ -127,6 +128,7 @@ private:
     QMap<QString, Incident> manualVisible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
+    QMap<QString, QString> clusters_;
     QMap<QString, QJsonArray> rawSnapshots_;
     struct PendingObservation final { QString language, refreshPath; quint64 revision = 0; };
     QMap<QString, PendingObservation> pendingObservations_;

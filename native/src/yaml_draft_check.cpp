@@ -157,7 +157,7 @@ bool Workspace::checkYamlDraft() {
             yamlCheckStatus_ = result.message;
             const auto context = sessionConfiguration(session).value("contextId").toString();
             if (!context.isEmpty()) {
-                runtime_->incidentAi.observe(context, client_.rows(session), resolvedUiLanguage(settings_.language));
+                observeIncidentAi(session, client_.rows(session));
                 runtime_->incidentAi.setDraftError(context, path, result.valid ? QString{} : result.message.section(". ", 0, 0));
                 if (!result.valid && runtime_->incidentAi.enabled()
                     && runtime_->incidentAi.result(context, path).isEmpty())
