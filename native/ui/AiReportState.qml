@@ -1,7 +1,7 @@
 import QtQml
 
 QtObject {
-    // The result and its resource identity are sampled together when the workspace changes.
+    // The result and its resource identity are sampled together when either changes.
     property var update: ({ scope: "", result: ({}) })
     property var lastAnswer: ({})
     property string lastScope: ""

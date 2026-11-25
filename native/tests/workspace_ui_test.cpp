@@ -573,6 +573,7 @@ public:
                         || ((scenario == "coalesce" || scenario == "detail_expiry") && path.startsWith("/api/v1/namespaces/default/pods/"))
                         || ((scenario == "hidden_followup" || scenario == "shutdown_pending") && path == "/api") ? 400 : 0;
                     if (scenario=="map_preview_deferred" && path=="/api/v1/pods" && url.query().contains("continue=") && authorization=="Bearer inactive-token") delay=1800;
+                    if (scenario=="shell_health_initial" && path=="/api/v1/pods") delay=1800;
                     if ((scenario=="initial_load_navigation" || scenario=="initial_map_resume") && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
                     QTimer::singleShot(delay, this, [this, live, response, delay] {
                         if (live && live->state() == QAbstractSocket::ConnectedState) {
@@ -1680,6 +1681,22 @@ bool execute(const QString& requestedScenario) {
     }
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
+    if (scenario == "shell_health_initial") {
+        if (!workspace.setWorkspacePage("resources")) return false;
+        auto* health = item(window, "sessionHealthSegments");
+        if (!health || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1; })) {
+            std::fprintf(stderr, "Initial health: strip=%d sync=%d total=%d progress=%f\n", bool(health),
+                workspace.syncLoading(), workspace.totalResourceCount(), workspace.loadingProgress());
+            return false;
+        }
+        if (qAbs(health->height() - health->parentItem()->height()) >= 1) {
+            std::fprintf(stderr, "Initial health height: %f / %f, progress=%f\n", health->height(),
+                health->parentItem()->height(), workspace.loadingProgress());
+            return false;
+        }
+        return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == 3; }, 15000)
+            && qAbs(health->height() - health->parentItem()->height()) < 1;
+    }
     if (scenario == "initial_load_navigation") {
         const auto first = workspace.currentSession();
         if (!waitFor([&] { return workspace.loading() && server.requests.contains("/api"); })

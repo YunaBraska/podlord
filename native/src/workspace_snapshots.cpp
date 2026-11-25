@@ -104,16 +104,18 @@ void Workspace::prepareSnapshot() {
     const auto prepared = preparedSnapshots_.constFind(active_);
     const bool ready = prepared != preparedSnapshots_.cend() && prepared->source == source && prepared->cluster == cluster;
     if (snapshotPreparation_) {
-        if (snapshotPreparation_->session == active_ && (snapshotPreparation_->source != source || snapshotPreparation_->cluster != cluster))
-            snapshotPreparation_->watcher->cancel();
-        return;
+        if (!snapshotPreparation_->watcher->isCanceled() && snapshotPreparation_->session == active_
+            && snapshotPreparation_->source == source
+            && snapshotPreparation_->cluster == cluster) return;
+        snapshotPreparation_->watcher->cancel();
+        snapshotPreparation_.reset();
     }
     if (ready || source.isEmpty()) return;
     const auto session = active_;
     auto* watcher = new QFutureWatcher<ResourceTable::PreparedSnapshot>(this);
     snapshotPreparation_ = SnapshotPreparation{session, cluster, source, watcher};
     connect(watcher, &QFutureWatcher<ResourceTable::PreparedSnapshot>::finished, this, [this, watcher, session] {
-        snapshotPreparation_.reset();
+        if (snapshotPreparation_ && snapshotPreparation_->watcher == watcher) snapshotPreparation_.reset();
         if (!watcher->isCanceled() && watcher->future().resultCount() == 1 && !windowClosed_ && windowVisible_
             && runtime_->owners.value(session) == this) {
             auto result = watcher->result();

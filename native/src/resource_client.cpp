@@ -1503,7 +1503,8 @@ void ResourceClient::dispatch() {
             dispatch(); scheduleSync(); scheduleLogs();
             return;
         }
-        if (task.read == Read::List && http == 200 && !transportError) {
+        const bool preparingList = task.read == Read::List && http == 200 && !transportError;
+        if (preparingList) {
             auto* watcher = new QFutureWatcher<PreparedList>(this);
             preparing_.insert(watcher, completion);
             connect(watcher, &QFutureWatcher<PreparedList>::finished, this,
@@ -1526,7 +1527,7 @@ void ResourceClient::dispatch() {
             finish(completion, http, task.read == Read::Log || task.read == Read::ManagedKubeconfig ? payload->bytes : remaining,
                 transportError, retryAfter, transportDetail);
         }
-        emit changed(task.id);
+        if (!preparingList) emit changed(task.id);
         dispatch(); scheduleSync(); scheduleLogs();
     });
     recordRequestStarted(task);

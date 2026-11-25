@@ -82,12 +82,9 @@ Pane {
             objectName: "sessionHealthStrip"
             Layout.preferredWidth: 6; Layout.fillHeight: true
             color: workspace.appearanceColors.inset
-            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; height: parent.height * workspace.loadingProgress; color: sidebar.palette.text; opacity: 0.15 }
             Column {
                 objectName: "sessionHealthSegments"
-                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-                height: parent.height * workspace.loadingProgress
-                Behavior on height { enabled: !workspace.alerts.reducedMotion; NumberAnimation { duration: 180 } }
+                anchors.fill: parent
                 Repeater {
                     model: [{name: "critical", count: workspace.healthSummary.critical || 0, color: "#FF5C5C"},
                         {count: workspace.healthSummary.warning || 0, color: "#FFE866"},
