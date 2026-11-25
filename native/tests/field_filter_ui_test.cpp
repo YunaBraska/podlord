@@ -840,6 +840,19 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 if (!water || !workspace.radarWaterEnabled() || workspace.radarWaterSpeedPercent() <= 0
                     || water->property("speedPercent").toInt() != 0 || !radar || path.isEmpty()
                     || !waitFor([&] { return !radar->resourceInfo(path, false).isEmpty(); })) return false;
+                const bool contextVisible = waitFor([&] {
+                    const auto frame = window->grabWindow();
+                    if (frame.isNull()) return false;
+                    const double scale = double(frame.width()) / window->width();
+                    const auto area = QRectF(radar->mapToScene(QPointF{}) * scale, radar->size() * scale)
+                        .toAlignedRect().intersected(frame.rect());
+                    const auto dimmed = QColor("#50575B").rgba();
+                    for (int y = area.top(); y <= area.bottom(); ++y)
+                        for (int x = area.left(); x <= area.right(); ++x)
+                            if (frame.pixel(x, y) == dimmed) return true;
+                    return false;
+                });
+                if (!contextVisible) return false;
                 if (!click(window, "problemsOnly") || workspace.problemsOnly()) return false;
                 return waitFor([&] { return water->property("speedPercent").toInt() == workspace.radarWaterSpeedPercent(); })
                     && server.requests == requests;

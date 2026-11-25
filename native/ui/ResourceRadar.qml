@@ -89,9 +89,9 @@ Pane {
                     const item = Window.window ? Window.window.activeFocusItem : null
                     return item && item.parent === grid && item.resourcePath !== undefined ? item.resourcePath : ""
                 }
-                showFilteredContext: !workspace.problemsOnly
-                onShowFilteredContextChanged: if (!showFilteredContext) Qt.callLater(function() {
-                    if (grid.visible && !grid.showFilteredContext) grid.fitView()
+                readonly property bool problemsMode: workspace.problemsOnly
+                onProblemsModeChanged: if (problemsMode) Qt.callLater(function() {
+                    if (grid.visible && grid.problemsMode) grid.fitView()
                 })
                 identityScope: workspace.sessionConfiguration(workspace.currentSession).contextId || ""
                 textColor: "#DDE7EC"
@@ -406,7 +406,7 @@ Pane {
                         if (next && next.wantsInfo) target = next
                     }
                     function syncTarget() {
-                        if (target && (!target.visible || !target.inViewport || (!target.wantsInfo && !radarHover.hovered && !infoPopup.activeFocus))) target = null
+                        if (target && (!target.visible || !target.inViewport || (!target.wantsInfo && !infoPopup.activeFocus))) target = null
                     }
                     function clearClosedTarget() {
                         if (infoPopup && !infoPopup.visible) showInfo(null)

@@ -248,10 +248,6 @@ void RadarIsland::setFocusedPath(const QString& path) {
     if (focusedPath_==path) return;
     focusedPath_=path; update(); emit focusedPathChanged();
 }
-void RadarIsland::setShowFilteredContext(bool show) {
-    if (showFilteredContext_==show) return;
-    showFilteredContext_=show; update(); emit showFilteredContextChanged();
-}
 void RadarIsland::setSource(QAbstractItemModel* source) {
     if (source_==source) return;
     source_=source;
@@ -597,20 +593,10 @@ bool RadarIsland::traverseVisible(int direction) {
 bool RadarIsland::fitView() {
     if (!isVisible() || !source_ || width()<=16 || height()<=32) return false;
     if (dirty_) synchronize();
-    QRectF bounds=terrainBounds_;
-    if (!showFilteredContext_) {
-        bounds={};
-        for (auto path=filtered_.cbegin();path!=filtered_.cend();++path) {
-            const auto point=positions_.constFind(path.key());
-            if (point==positions_.cend()) continue;
-            const QRectF cell(*point-QPointF(8,8),QSizeF(16,16));
-            bounds=bounds.isEmpty() ? cell : bounds.united(cell);
-        }
-    }
+    const QRectF bounds=terrainBounds_;
     if (bounds.isEmpty()) return false;
     const auto center=bounds.center();
-    const double maximum=showFilteredContext_ ? maximumZoom : std::min(maximumZoom,zoom_);
-    const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-32)/bounds.height()),minimumZoom,maximum);
+    const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-32)/bounds.height()),minimumZoom,maximumZoom);
     setViewPose({{"x",-center.x()},{"y",-center.y()+8/zoom},{"zoom",zoom}});
     return true;
 }
@@ -701,7 +687,7 @@ void RadarIsland::paint(QPainter* painter) {
     inBuckets(viewport.adjusted(-labelMargin,-labelMargin,labelMargin,labelMargin).intersected(terrainBounds_),[&](const QPoint& area) { visibleMarkers.append(markerBuckets_.value(area)); });
     std::sort(visibleMarkers.begin(),visibleMarkers.end());
     visibleMarkers.erase(std::unique(visibleMarkers.begin(),visibleMarkers.end()),visibleMarkers.end());
-    if (showFilteredContext_) inBuckets(viewport.adjusted(-step,-step,step,step).intersected(terrainBounds_),[&](const QPoint& area) {
+    inBuckets(viewport.adjusted(-step,-step,step,step).intersected(terrainBounds_),[&](const QPoint& area) {
         const auto found=resourceBuckets_.constFind(area); if (found==resourceBuckets_.cend()) return;
         for (const auto& path:*found) {
             if (filtered_.contains(path)) continue;
@@ -714,7 +700,6 @@ void RadarIsland::paint(QPainter* painter) {
         const auto& marker=markers_[index];
         if (!viewport.intersects(marker.area)) continue;
         const bool active=groups_.contains(marker.group);
-        if (!showFilteredContext_ && !active) continue;
         if (viewport.contains(marker.world)) tile(marker.world,active ? terrainColor(marker.kind) : dimmed);
         const bool clusterLabel=marker.overview;
         if ((clusterLabel && zoom_>=1.35) || (!clusterLabel && zoom_<.85)) continue;

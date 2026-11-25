@@ -165,9 +165,8 @@ bool filteredContextVisibility() {
     };
     const auto point = (QPointF(400, 400) + positions.value(second)).toPoint();
     if (paint().pixelColor(point).alpha() == 0) return setupFailure("normal filter lost background context");
-    radar.setShowFilteredContext(false);
-    return paint().pixelColor(point).alpha() == 0
-        || setupFailure("Problems filter still painted an unrelated resource");
+    return paint().pixelColor(point) == QColor("#50575B")
+        || setupFailure("filtered context was not dimmed");
 }
 bool highlightFill() {
     QJsonArray rows;

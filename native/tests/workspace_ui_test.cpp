@@ -5168,7 +5168,8 @@ bool execute(const QString& requestedScenario) {
                 if (!saveShellFrame(window,requestedScenario+"-pointer")) return false;
             }
             QTest::mouseMove(window,radar->mapToScene(QPointF(8,8)).toPoint());
-            QTest::qWait(60);
+            if (!waitFor([&] { const auto* details=item(window,"radarInfoPanel"); return !details || !details->isVisible(); }))
+                return failed("hover details close over empty map");
             auto* reader=item(window,"radarInfoScroll");
             if (!reader) return failed("external info reader");
             QTest::mouseMove(window,QPoint(1,1),0);
