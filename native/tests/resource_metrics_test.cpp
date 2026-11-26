@@ -148,7 +148,9 @@ bool run(const QString& scenario) {
     if (scenario=="attach_stale") return result["metricStale"].toBool() && !cpu["usage"].toString().contains("stale") && cpu["timestamp"].toString()==measured.toString(Qt::ISODateWithMs);
     if (scenario=="attach_repeat") return result==podlord::withResourceMetrics(result,normalized,measured);
     if (scenario=="attach_storage") return views.last().toMap()["usage"]=="Unavailable";
-    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("request: 10 mCPU") && !cpu["references"].toString().contains("%") && cpu["markers"].toList().size()==2 && views[1].toMap()["usage"]=="32 MiB";
+    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("request: 10 mCPU") && !cpu["references"].toString().contains("%")
+        && cpu["markers"].toList().size()==2 && cpu["markerLabels"]=="request 10 mCPU · limit 100 mCPU"
+        && views[1].toMap()["usage"]=="32 MiB" && views[1].toMap()["markerLabels"]=="request 16 MiB · limit 64 MiB";
 }
 }
 int main(int argc,char** argv) {

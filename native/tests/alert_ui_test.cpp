@@ -61,11 +61,9 @@ bool revealCpuMetric(QQuickWindow* window, int& navigationKeys) {
     auto* overview=item(window,"overviewScroll");
     if (!overview || !overview->isVisible()) return false;
     bool visible=true;
-    for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
-        auto* field=item(window,name);
-        if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
-            || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) visible=false;
-    }
+    auto* field=item(window,"overview_metric_cpu");
+    if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
+        || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) visible=false;
     if (visible) return !overview->property("moving").toBool();
     auto* model=overview->property("model").value<QAbstractItemModel*>();
     if (!model) return false;
@@ -74,7 +72,12 @@ bool revealCpuMetric(QQuickWindow* window, int& navigationKeys) {
     for (int row=0; row<model->rowCount(); ++row)
         if (model->data(model->index(row,0),Qt::UserRole).toMap()["id"]=="metric_cpu") { cpuRow=row; break; }
     const auto current=overview->property("currentIndex").toInt();
-    if (cpuRow<0 || current==cpuRow) return false;
+    if (cpuRow<0) return false;
+    if (current==cpuRow) {
+        QQmlExpression reveal(qmlContext(overview),overview,QString("positionViewAtIndex(%1, ListView.Center)").arg(cpuRow));
+        reveal.evaluate();
+        return false;
+    }
     overview->forceActiveFocus(Qt::TabFocusReason);
     QTest::keyClick(window,current<cpuRow ? Qt::Key_Down : Qt::Key_Up);
     ++navigationKeys;
@@ -1241,7 +1244,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         int navigationKeys=0;
         const bool inspected = waitFor([&] {
             if (!workspace.canEditYaml() || !revealCpuMetric(window,navigationKeys)) return false;
-            const auto* usage=item(window,"metric_cpu_usage");
+            const auto* usage=item(window,"overview_metric_cpu");
             return usage && usage->property("text").toString().contains("mCPU") && !usage->property("text").toString().contains("incomplete");
         },60000);
         if (!inspected) return failure("fresh Inspector and visible CPU gauge");
@@ -1468,8 +1471,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         int navigationKeys=0;
         const auto failure=[&](const char* stage) {
             auto* overview=item(window,"overviewScroll");
-            const auto* usage=item(window,"metric_cpu_usage");
-            const auto* reference=item(window,"metric_cpu_references");
+            const auto* usage=item(window,"overview_metric_cpu");
+            const auto* reference=item(window,"metric_cpu_marker_values");
             std::fprintf(stderr,"Metric Inspector failed at %s: path=%s page=%s fresh=%d error=%s status=%s requests=%d overviewY=%g originY=%g height=%g contentHeight=%g usage=%s references=%s\n",
                 stage,qPrintable(workspace.inspectorPath()),qPrintable(workspace.inspectorPage()),workspace.canEditYaml(),
                 qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus()),server.requests,
@@ -1503,12 +1506,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         auto* overview=item(window,"overviewScroll");
         if (!overview || !overview->isVisible()) return failure("Overview available");
         const auto visibleMetric=[&] {
-            for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
-                auto* field=item(window,name);
-                if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
-                    || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) return false;
-            }
-            return true;
+            auto* field=item(window,"overview_metric_cpu");
+            return field && field->isVisible() && field->width()>0 && field->height()>0
+                && podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())));
         };
         if (!waitFor([&] {
             if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha") return false;
@@ -1516,18 +1516,18 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         })) return failure("fresh detail and visible CPU gauge");
         const bool measured=waitFor([&] {
             if (!visibleMetric()) return false;
-            const auto* measured=item(window, "metric_cpu_usage");
+            const auto* measured=item(window, "overview_metric_cpu");
             if (!measured) return false;
             const auto usage=measured->property("text").toString();
-            if (scenario=="metric_empty") return usage.contains("Unavailable");
-            if (scenario=="metric_invalid") return usage.contains("Unavailable") && workspace.status().contains("Invalid Metrics API quantity");
+            if (scenario=="metric_empty") { const auto* bar=item(window,"metric_cpu_bar"); return usage.contains("request: 10 mCPU") && (!bar || !bar->isVisible()); }
+            if (scenario=="metric_invalid") return usage.contains("request: 10 mCPU") && workspace.status().contains("Invalid Metrics API quantity");
             if (scenario=="metric_zero") return usage.contains("0 mCPU") && !usage.contains("Unavailable");
             if (scenario=="metric_partial") return usage.contains("25 mCPU") && usage.contains("incomplete");
             if (scenario=="metric_stale") return usage.contains("25 mCPU") && !usage.contains("stale");
-            const auto* reference=item(window, "metric_cpu_references");
+            const auto* reference=item(window, "metric_cpu_marker_values");
             return usage.contains("25 mCPU") && reference
-                && reference->property("text").toString().contains("request: 10 mCPU")
-                && reference->property("text").toString().contains("limit: 100 mCPU");
+                && reference->property("text").toString().contains("request 10 mCPU")
+                && reference->property("text").toString().contains("limit 100 mCPU");
         });
         if (!measured) return failure("metric semantics");
         return measured;

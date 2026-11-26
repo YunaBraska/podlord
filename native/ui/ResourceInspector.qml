@@ -378,9 +378,9 @@ Pane {
                     objectName: "overview_" + modelData.id
                     Layout.fillWidth: true
                     Layout.minimumWidth: 0
-                    text: modelData.value
+                    text: modelData.metric?.barAvailable && inspector.width >= 600 ? modelData.metric.usage : modelData.value
                     color: workspace.inspectorFieldColor(modelData.id)
-                    Accessible.name: modelData.label + ": " + modelData.value
+                    Accessible.name: modelData.label + ": " + text
                 }
                 RowLayout {
                     Layout.preferredWidth: inspector.overviewMetricWidth
@@ -394,7 +394,7 @@ Pane {
                     }
                     Component {
                         id: metricComponent
-                        MetricBar { metric: overviewRow.field.metric }
+                        MetricBar { metric: overviewRow.field.metric; showValues: inspector.width >= 600 }
                     }
                     Component {
                         id: readinessComponent

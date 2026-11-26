@@ -492,9 +492,12 @@ public:
                                     const auto containerName = "worker" + QString::number(container);
                                     if (metrics) containers.append(QJsonObject{{"name", containerName}, {"usage", QJsonObject{
                                         {"cpu", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2" : "500m"},
-                                        {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2Gi" : "1024Mi"}}}});
-                                    else containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : scenario == "table_overview_metric_rows" ? "registry.example/worker:v1" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
-                                        {"resources", QJsonObject{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", "16Mi"}, {"ephemeral-storage", "1Gi"}}}}}});
+                                        {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : scenario == "table_overview_metric_rows" && index == 0 ? "91Mi" : index == 0 ? "2Gi" : "1024Mi"}}}});
+                                    else {
+                                        QJsonObject resources{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", scenario == "table_overview_metric_rows" ? "7Mi" : "16Mi"}, {"ephemeral-storage", "1Gi"}}}};
+                                        if (scenario == "table_overview_metric_rows") resources["limits"] = QJsonObject{{"memory", "17Mi"}};
+                                        containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : scenario == "table_overview_metric_rows" ? "registry.example/worker:v1" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)}, {"resources", resources}});
+                                    }
                                     states.append(QJsonObject{{"name", containerName}, {"ready", container < ready},
                                         {"restartCount", scenario == "table_auto_zero" ? 0 : container == 0 ? index == 0 ? 10 : 2 : 0}});
                                 }
@@ -4595,13 +4598,31 @@ bool execute(const QString& requestedScenario) {
                 if (showCpu.hasError() || !waitFor([&] {
                     const auto* bar=item(window,"metric_cpu_bar");
                     const auto* marker=item(window,"metric_cpu_marker_request");
+                    const auto* labels=item(window,"metric_cpu_marker_values");
                     const auto* value=item(window,"overview_metric_cpu");
-                    return bar && bar->isVisible() && marker && marker->isVisible() && value
-                        && value->property("text").toString().contains("request:")
+                    return bar && bar->isVisible() && marker && marker->isVisible() && labels && labels->isVisible() && value
+                        && value->property("text").toString()=="2000 mCPU"
+                        && labels->property("text").toString().contains("request 100 mCPU")
+                        && marker->height()<=8
                         && marker->mapToItem(bar,QPointF{}).x() >= -1
                         && marker->mapToItem(bar,QPointF{}).x() < bar->width();
                 })) return false;
                 if (!saveShellFrame(window,scenario+"-cpu",item(window,"workspaceInspector"))) return false;
+                int memoryRow=-1;
+                for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")=="metric_memory") { memoryRow=index; break; }
+                if (memoryRow<0) return false;
+                QQmlExpression showMemory(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(memoryRow));
+                showMemory.evaluate();
+                if (showMemory.hasError() || !waitFor([&] {
+                    const auto* bar=item(window,"metric_memory_bar");
+                    const auto* marker=item(window,"metric_memory_marker_limit");
+                    const auto* labels=item(window,"metric_memory_marker_values");
+                    const auto* value=item(window,"overview_metric_memory");
+                    return bar && bar->isVisible() && marker && marker->isVisible() && labels && labels->isVisible() && value
+                        && value->property("text").toString()=="91 MiB"
+                        && labels->property("text").toString().contains("request 70 MiB · limit 170 MiB")
+                        && marker->height()<=8 && marker->mapToItem(bar,QPointF{}).x()+marker->width()<=bar->width();
+                }) || !saveShellFrame(window,scenario+"-memory",item(window,"workspaceInspector"))) return false;
                 QQmlExpression reveal(qmlContext(scroll),scroll,"positionViewAtIndex(count - 1, ListView.Center)");
                 reveal.evaluate();
                 if (reveal.hasError()) return false;
