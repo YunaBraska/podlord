@@ -47,7 +47,7 @@ private:
     QPointer<QNetworkReply> modelsReply_, analysisReply_, loginReply_;
     QByteArray savedBytes_;
     bool writable_ = true;
-    SystemCredentialStore systemCredentials_;
+    ProfileCredentialStore systemCredentials_;
     CredentialStore* credentials_;
 };
 } // namespace podlord

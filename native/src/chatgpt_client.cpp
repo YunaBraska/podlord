@@ -98,7 +98,7 @@ ChatGptClient::ChatGptClient(QString profile, QUrl authBase, QUrl apiBase, QObje
             if (connected()) refreshModels();
         });
         watcher->setFuture(QtConcurrent::run([profile = profile_] {
-            SystemCredentialStore store;
+            ProfileCredentialStore store;
             return loadChatGpt(store, profile);
         }));
         return;

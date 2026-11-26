@@ -59,7 +59,7 @@ ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject*
             if (configured()) refreshModels();
         });
         watcher->setFuture(QtConcurrent::run([profile = profile_, provider = provider_] {
-            SystemCredentialStore store;
+            ProfileCredentialStore store;
             return loadProvider(store, profile, provider);
         }));
         return;

@@ -18,8 +18,26 @@ public:
 
 class SystemCredentialStore final : public CredentialStore {
 public:
+    enum class Service { LegacyAi, Profile };
+    explicit SystemCredentialStore(Service service = Service::LegacyAi);
     ReadResult read(const QString& profile, const QString& name) override;
     bool write(const QString& profile, const QString& name, const QByteArray& data, QString& error) override;
     bool remove(const QString& profile, const QString& name, QString& error) override;
+private:
+    const Service service_;
+};
+
+/** Keeps named secrets in one OS-protected profile entry where the platform permits it. */
+class ProfileCredentialStore final : public CredentialStore {
+public:
+    explicit ProfileCredentialStore(CredentialStore* vaultBackend = nullptr, CredentialStore* legacyBackend = nullptr);
+    ReadResult read(const QString& profile, const QString& name) override;
+    bool write(const QString& profile, const QString& name, const QByteArray& data, QString& error) override;
+    bool remove(const QString& profile, const QString& name, QString& error) override;
+private:
+    SystemCredentialStore system_{SystemCredentialStore::Service::Profile};
+    SystemCredentialStore legacy_;
+    CredentialStore* vaultBackend_;
+    CredentialStore* legacyBackend_;
 };
 } // namespace podlord

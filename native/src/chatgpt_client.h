@@ -62,7 +62,7 @@ private:
     quint64 analysisGeneration_ = 0;
     QByteArray savedBytes_;
     bool writable_ = true;
-    SystemCredentialStore systemCredentials_;
+    ProfileCredentialStore systemCredentials_;
     CredentialStore* credentials_;
 };
 } // namespace podlord

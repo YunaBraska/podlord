@@ -385,7 +385,7 @@ void scenario(const QString& name) {
         require(ai.setProvider("chatgpt"), "Cannot choose ChatGPT provider");
         require(QTest::qWaitFor([&] { return ai.models().contains("gpt-test"); }, 2000), "Incident model catalog unavailable");
         require(ai.model().isEmpty() && ai.setModel("gpt-test"), "Incident model was automatic or not selectable");
-        require(ai.setEnabled("cluster-one", true), "Cannot enable incident analysis");
+        require(ai.setEnabled(true), "Cannot enable incident analysis");
         const auto path = QStringLiteral("/api/v1/namespaces/team/pods/broken");
         ai.observe("cluster-one", QJsonArray{QJsonObject{{"uid", "pod-1"}, {"kind", "Pod"}, {"name", "broken"},
             {"namespace", "team"}, {"path", path}, {"issue", "OOMKilled"}, {"status", "OOMKilled"},
