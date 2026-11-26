@@ -57,6 +57,7 @@ bool run(const QString& scenario) {
     if (scenario == "sources" || scenario == "ui") {
         podlord::Workspace workspace(profile.path());
         REQUIRE(workspace.appStore());
+        REQUIRE(workspace.donationLinks().isEmpty());
         REQUIRE(!workspace.importHome() && !workspace.refreshSources());
         REQUIRE(workspace.defaultSourceOrigin().startsWith(profile.path() + '/'));
         if (scenario == "sources") return true;
@@ -79,6 +80,15 @@ bool run(const QString& scenario) {
         REQUIRE(!podlord::test::visibleItem(window->contentItem(), "browseSourceFile"));
         REQUIRE(podlord::test::visibleItem(window->contentItem(), "pasteSourceButton"));
         REQUIRE(podlord::test::visibleItem(window->contentItem(), "importGkeKeyFromSettings"));
+        REQUIRE(podlord::test::clickVisible(window, "settingsAboutSection"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "aboutSponsors"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "aboutCoffee"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "aboutKofi"));
+        REQUIRE(!podlord::test::visibleItem(window->contentItem(), "aboutLiberapay"));
+        const auto* quote = podlord::test::visibleItem(window->contentItem(), "aboutQuote");
+        REQUIRE(quote);
+        const auto quoteText = quote->property("text").toString().toLower();
+        REQUIRE(!quoteText.contains("donat") && !quoteText.contains("coffee") && !quoteText.contains("star"));
         window->close();
         return true;
     }

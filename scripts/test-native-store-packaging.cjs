@@ -594,6 +594,8 @@ test('iOS Store package signs and validates final embedded frameworks', async ()
     assert.match(workflow, /TeamIdentifier=\$SIGNING_TEAM/);
     assert.match(workflow, /--preserve-metadata=identifier,entitlements,flags,runtime/);
     assert.match(workflow, /codesign --verify --deep --strict "\$app"/);
+    assert.match(workflow, /for forbidden_domain in github\.com\/sponsors buymeacoffee\.com ko-fi\.com liberapay\.com; do/);
+    assert.match(workflow, /Store app must not contain %s/);
     assert.match(privacyInstaller, /Run before\n# embedding frameworks so their final contents can be signed without mutation/);
 });
 
@@ -606,6 +608,11 @@ test('Store entitlement grants only client networking and selected-file access',
     ]) assert.match(entitlements, new RegExp(`<key>${key}</key>\\s*<true/>`));
     assert.doesNotMatch(entitlements, /com\.apple\.security\.network\.server/);
     assert.doesNotMatch(entitlements, /com\.apple\.security\.files\.user-selected\.read-write/);
+});
+
+test('Apple Store channels compile donation links out of the application', async () => {
+    const workspace = await fs.readFile(path.join(root, 'native/src/workspace.h'), 'utf8');
+    assert.match(workspace, /#if defined\(PODLORD_MAC_APP_STORE\) \|\| defined\(Q_OS_IOS\)\s+return \{\};/);
 });
 
 test('Android release packaging derives one valid code from the shared release version', async () => {

@@ -136,6 +136,7 @@ private:
 class Workspace final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool appStore READ appStore CONSTANT)
+    Q_PROPERTY(QVariantList donationLinks READ donationLinks CONSTANT)
     Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
     Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
     Q_PROPERTY(podlord::Music* music READ music CONSTANT)
@@ -523,6 +524,18 @@ public:
         return true;
 #else
         return false;
+#endif
+    }
+    QVariantList donationLinks() const {
+#if defined(PODLORD_MAC_APP_STORE) || defined(Q_OS_IOS)
+        return {};
+#else
+        return {
+            QVariantMap{{"id", "Sponsors"}, {"text", "GitHub Sponsors"}, {"url", "https://github.com/sponsors/YunaBraska"}},
+            QVariantMap{{"id", "Coffee"}, {"text", "Buy Me a Coffee"}, {"url", "https://buymeacoffee.com/YunaBraska"}},
+            QVariantMap{{"id", "Kofi"}, {"text", "Ko-fi"}, {"url", "https://ko-fi.com/YunaBraska"}},
+            QVariantMap{{"id", "Liberapay"}, {"text", "Liberapay"}, {"url", "https://liberapay.com/YunaBraska"}}
+        };
 #endif
     }
     int totalResourceCount() const { return rows_.rowCount(); }

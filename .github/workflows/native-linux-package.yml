@@ -30,7 +30,8 @@ jobs:
   distribution:
     name: Linux ${{ matrix.arch }} standalone trial
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # A cold SDK build and the full behavior and package checks can exceed 90 minutes.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
