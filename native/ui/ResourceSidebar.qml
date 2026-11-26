@@ -341,12 +341,15 @@ Pane {
                             kind: ({cluster: "Cluster", namespace: "Namespace", kind: "CustomResourceDefinition", name: "Pod", status: "Event", issue: "Event", createdAt: "CronJob", ready: "Service", restarts: "Event", cpu: "Node", memory: "ConfigMap", storage: "PersistentVolume", node: "Node", image: "ConfigMap", owner: "Deployment", uid: "Secret"})[fieldButton.modelData.id]
                             fill: workspace.appearanceColors.accent
                         }
-                        Label { Layout.fillWidth: true; text: fieldButton.text; textFormat: Text.PlainText; font: fieldButton.font; elide: Text.ElideRight }
+                        Label { id: fieldLabel; Layout.fillWidth: true; text: fieldButton.text; textFormat: Text.PlainText; font: fieldButton.font; elide: Text.ElideRight }
                         Label { text: fieldButton.checked ? "▾" : "▸"; color: workspace.appearanceColors.accent }
                     }
                     enabled: workspace.currentSession !== "" && !workspace.busy
                     Accessible.name: "Filter " + modelData.name
-                    ToolTip.visible: hovered; ToolTip.text: text
+                    HoverHandler { id: fieldHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+                    ToolTip.visible: (fieldHover.hovered || activeFocus) && fieldLabel.implicitWidth > fieldLabel.width
+                    ToolTip.delay: activeFocus ? 0 : 700
+                    ToolTip.text: text
                     onClicked: sidebar.toggleField(modelData.id)
                     }
                     Loader {

@@ -2833,6 +2833,8 @@ bool execute(const QString& requestedScenario) {
             const int tooltipDelay = delay.evaluate().toInt();
             if (delay.hasError()) return failed("tooltip delay unavailable");
             QTest::qWait(qMax(0, tooltipDelay) + 1);
+            if (tooltipVisible(resources->property("text").toString()))
+                return failed("touch exposed an icon hover tooltip");
             QSignalSpy frame(window, &QQuickWindow::frameSwapped);
             window->update();
             if (!frame.wait(1000)) return failed("Resources touch frame unavailable");
@@ -3755,6 +3757,15 @@ bool execute(const QString& requestedScenario) {
             return header && strip && strip->isVisible()
                 && header->mapRectToScene(header->boundingRect()).contains(strip->mapRectToScene(strip->boundingRect()));
         })) { std::fputs("Two session tabs did not use free toolbar space.\n", stderr); return false; }
+        const auto redundantTooltip = [&](QQuickItem* control) {
+            control->forceActiveFocus(Qt::TabFocusReason);
+            QTest::qWait(800);
+            QQmlExpression visible(qmlContext(control), control, QStringLiteral("ToolTip.visible"));
+            const auto value = visible.evaluate();
+            return visible.hasError() || value.toBool();
+        };
+        if (redundantTooltip(firstTab)) return false;
+        if (auto* filter = item(window, "sidebarField_cluster"); filter && filter->isVisible() && redundantTooltip(filter)) return false;
         if (!saveShellFrame(window,scenario+"-header")) return false;
         for (auto* tab : {firstTab, secondTab}) {
             const auto* name = item(window, "closeSession_" + (tab == firstTab ? first : second));
@@ -4661,8 +4672,8 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "table_hover") QTest::mouseMove(window, cell->mapToScene({cell->width()/2, cell->height()/2}).toPoint()); else cell->forceActiveFocus();
             const bool shown = waitFor([&] {
                 for (auto* surface : QGuiApplication::allWindows()) if (auto* quick = qobject_cast<QQuickWindow*>(surface)) {
-                    const auto* tip = item(quick,"plainTipText");
-                    if (quick->isVisible() && tip && tip->isVisible() && tip->property("text").toString() == value(0,"image")) return true;
+                    const auto* tip = quick->findChild<QObject*>("resourceValueTooltip");
+                    if (quick->isVisible() && tip && tip->property("visible").toBool() && tip->property("text").toString() == value(0,"image")) return true;
                 }
                 return false;
             });

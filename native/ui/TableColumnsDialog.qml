@@ -87,8 +87,6 @@ ModalDialog {
                             validator: IntValidator { bottom: 1; top: 2147483647 }
                             inputMethodHints: Qt.ImhDigitsOnly
                             Accessible.name: columnTitle + " width in pixels"
-                            ToolTip.text: Accessible.name
-                            ToolTip.visible: hovered || activeFocus
                             onTextEdited: surfaceDialog.change(index, "widthText", text)
                         }
                             IconButton { objectName: surfaceDialog.tableType + "ColumnEarlier_" + modelData.id; glyph: ""; contentItem: Label { text: "\u2191"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter } text: "Move up"; enabled: index > 0; Accessible.name: "Move " + modelData.title + " earlier"; onClicked: draft.move(index, index - 1, 1) }

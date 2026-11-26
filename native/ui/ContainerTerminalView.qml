@@ -32,9 +32,10 @@ ColumnLayout {
             elide: Text.ElideMiddle
             textFormat: Text.PlainText
             Accessible.name: root.terminal ? root.terminal.target : text
-            ToolTip.visible: targetHover.hovered
+            ToolTip.visible: targetHover.hovered && contentWidth > width
+            ToolTip.delay: 700
             ToolTip.text: Accessible.name
-            HoverHandler { id: targetHover }
+            HoverHandler { id: targetHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
         }
         ComboBox {
             id: container

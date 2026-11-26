@@ -210,6 +210,7 @@ Pane {
                 }
                 HoverHandler {
                     id: radarHover
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     onPointChanged: grid.updateHover()
                     onHoveredChanged: {
                         grid.updateHover()

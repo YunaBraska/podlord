@@ -18,8 +18,9 @@ ToolButton {
     padding: 6
     Accessible.name: text
     property string tipText: text
-    property bool wantsTip: !showText && (hovered || visualFocus)
-    PlainToolTip { target: control }
+    property bool wantsTip: !showText && (iconHover.hovered || visualFocus)
+    HoverHandler { id: iconHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+    PlainToolTip { target: control; delay: control.visualFocus ? 0 : 700 }
     background: Rectangle {
         color: control.down || control.checked ? workspace.appearanceColors.selection
             : control.hovered ? workspace.appearanceColors.raised : control.quiet ? "transparent" : workspace.appearanceColors.inset

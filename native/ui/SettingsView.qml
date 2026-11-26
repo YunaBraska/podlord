@@ -222,6 +222,7 @@ Pane {
                 glyphColor: workspace.appearanceColors.muted
                 text: settingRow.help
                 Accessible.name: settingRow.label + ": " + settingRow.help
+                wantsTip: false
                 onClicked: ToolTip.show(settingRow.help, 8000)
             }
         }
@@ -326,8 +327,6 @@ Pane {
                         checked: workspace.incidentAiEnabled
                         Accessible.name: workspace.uiText["ai.auto"]
                         Accessible.description: workspace.uiText["ai.autoData"]
-                        ToolTip.visible: hovered
-                        ToolTip.text: workspace.uiText["ai.autoData"]
                         implicitHeight: settings.Window.window && (settings.Window.window.width < 900
                             || settings.Window.window.compactLandscape === true) ? 44 : 32
                         indicator: Rectangle {

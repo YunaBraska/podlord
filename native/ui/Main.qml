@@ -874,6 +874,7 @@ ApplicationWindow {
                             }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup(sessionTab, 0, sessionTab.height) }
                             TapHandler { acceptedDevices: PointerDevice.TouchScreen; onLongPressed: tabMenu.popup(sessionTab, 0, sessionTab.height) }
+                            HoverHandler { id: tabHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
                             Keys.priority: Keys.BeforeItem
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
@@ -890,8 +891,9 @@ ApplicationWindow {
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: workspace.uiText["context.rename"] + "..."; enabled: !workspace.busy; onTriggered: window.editTabContextAlias(modelData.id) }
                                 MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
-                            ToolTip.visible: hovered || activeFocus
-                            ToolTip.text: modelData.name + (modelData.connectionCount > 0 ? " / " + modelData.connectionCount + " open connections" : "")
+                            ToolTip.visible: (tabHover.hovered || activeFocus) && sessionName.implicitWidth > sessionName.width
+                            ToolTip.delay: activeFocus ? 0 : 700
+                            ToolTip.text: modelData.name
                         }
                     }
             }
@@ -916,7 +918,6 @@ ApplicationWindow {
                 placeholderText: "Search resources"
                 Accessible.name: "Filter resources"
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
-                ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && (["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
                 onTextEdited: if (workspace.filter(text) && workspace.workspacePage !== "map") Qt.callLater(resourceGrid.navigateRows, 0)
                 Keys.onPressed: event => {
@@ -1024,8 +1025,10 @@ ApplicationWindow {
             text: workspace.syncProblem; textFormat: Text.PlainText
             visible: text !== ""; wrapMode: TextEdit.NoWrap; clip: true
             color: workspace.appearanceColors.danger; Accessible.name: text
-            ToolTip.visible: problemHover.hovered; ToolTip.text: text
-            HoverHandler { id: problemHover }
+            ToolTip.visible: problemHover.hovered && contentWidth > width
+            ToolTip.delay: 700
+            ToolTip.text: text
+            HoverHandler { id: problemHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
         }
         FlatButton { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
         SplitView {
@@ -1235,7 +1238,7 @@ ApplicationWindow {
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; Accessible.name: text; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
         }
     }
     ResourceSidebar {
