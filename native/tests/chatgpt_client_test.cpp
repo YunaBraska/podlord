@@ -12,6 +12,7 @@
 #include <QTcpSocket>
 #include <QTest>
 #include <QUrlQuery>
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <openssl/bn.h>
@@ -84,7 +85,15 @@ public:
                                 : "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"},
                             {"token_type", "Bearer"}, {"expires_in", shortLived ? 60 : 3600}}).toJson(QJsonDocument::Compact);
                     } else if (line.startsWith("GET /v1/models ")) {
-                        if (!header.contains("Authorization: Bearer private-access")) { code = 401; payload = "{}"; }
+                        const auto fields = header.split('\n');
+                        const bool authorized = std::ranges::any_of(fields, [](const QByteArray& field) {
+                            const auto separator = field.indexOf(':');
+                            if (separator < 0 || field.first(separator).compare("Authorization", Qt::CaseInsensitive) != 0)
+                                return false;
+                            const auto value = field.sliced(separator + 1).trimmed();
+                            return value == "Bearer private-access" || value == "Bearer private-access-2";
+                        });
+                        if (!authorized) { code = 401; payload = "{}"; }
                         else payload = QJsonDocument(QJsonObject{{"models", QJsonArray{
                             QJsonObject{{"slug", "gpt-test"}, {"display_name", "Test model"}, {"visibility", "list"}, {"max_input_tokens", 9000}},
                             QJsonObject{{"slug", "hidden"}, {"display_name", "Hidden"}, {"visibility", "hidden"}}}}}).toJson(QJsonDocument::Compact);
@@ -164,7 +173,8 @@ QByteArray callback(const QUrl& authorization, ChatGptBoundary& boundary, bool w
     require(socket.waitForConnected(1000), "Cannot contact OAuth callback");
     socket.write("GET " + url.toEncoded(QUrl::RemoveScheme | QUrl::RemoveAuthority) + " HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
     socket.flush();
-    QTest::qWait(50);
+    require(QTest::qWaitFor([&] { return socket.state() == QAbstractSocket::UnconnectedState; }, 2000),
+        "OAuth callback did not close after responding");
     return socket.readAll();
 }
 void scenario(const QString& name) {
