@@ -1130,7 +1130,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return server.requests==requests;
     }
     if (!click(window, "alertsWorkspaceButton")) return false;
-    const auto alphaMatch=[&] { for (int i=0; i<4; ++i) if (auto* match=item(window, "alertMatch_"+QString::number(i)); match && match->property("text").toString()=="Alpha rule: 1") return true; return false; };
+    const auto activeCount=[&](const QString& rule) {
+        const auto* model=workspace.alerts()->tableModel();
+        for (int row=0; row<model->rowCount(); ++row)
+            if (model->index(row, 2).data().toString()==rule) return model->index(row, 1).data().toString();
+        return QString{};
+    };
+    const auto alphaMatch=[&] { return activeCount("Alpha rule") == "1"; };
     if (scenario=="and" || scenario=="missing_metric") return !alphaMatch();
     if (scenario=="regex_limit") return waitFor([&] { return item(window, "alertEvaluationError")->property("text").toString().contains("exceeded"); }) && !alphaMatch();
     if (!waitFor(alphaMatch, realConfig.isEmpty() ? 9000 : 60000)) {
@@ -1139,9 +1145,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     }
     if (scenario.startsWith("health_")) {
         const int expected=scenario=="health_restart_outlier" ? 2 : scenario=="health_event_warning" || scenario=="health_event_missing_time" || scenario=="health_event_invalid_time" || scenario=="health_event_expiry" || scenario=="health_pvc_pending" || scenario=="health_pod_not_ready" || scenario=="health_restart_population" ? 1 : 0;
-        const auto* match=item(window,"alertMatch_0");
-        const bool correct=expected>0 ? match && match->property("text").toString()==QString("Problem color: %1").arg(expected) : !match || !match->property("text").toString().startsWith("Problem color:");
-        if (!correct) std::fprintf(stderr,"Expected problems=%d; visible problem summary=%s\n",expected,qPrintable(match ? match->property("text").toString() : "none"));
+        const bool correct=activeCount("Problem color") == QString::number(expected);
+        if (!correct) std::fprintf(stderr,"Expected problems=%d; table count=%s\n",expected,qPrintable(activeCount("Problem color")));
         if (scenario=="health_event_warning" || scenario=="health_pvc_pending" || scenario=="health_pod_not_ready") {
             const auto collection=scenario=="health_event_warning" ? "events" : scenario=="health_pvc_pending" ? "persistentvolumeclaims" : "pods";
             if (!workspace.setWorkspacePage("resources") || !workspace.inspectPath(QString("/api/v1/namespaces/default/%1/alpha").arg(collection))) return false;
@@ -1152,8 +1157,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             const auto requests=server.requests; const int after=scenario=="health_event_expiry" ? 0 : 1;
             if (!waitFor([&] { return workspace.dashboardSummary().contains(QString("%1 with problems.").arg(after)); }) || !workspace.setWorkspacePage("alerts")) return false;
             return waitFor([&] {
-                const auto* updated=item(window,"alertMatch_0");
-                return after>0 ? updated && updated->property("text").toString()=="Problem color: 1" : !updated || !updated->property("text").toString().startsWith("Problem color:");
+                return activeCount("Problem color") == QString::number(after);
             }) && server.requests==requests;
         }
         return true;
@@ -1179,8 +1183,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             window->requestActivate();
             if (!waitFor([&] { return window->isExposed() && window->isActive(); },5000)) return failure("foreground desktop availability");
         }
-        const auto* problems=item(window,"alertMatch_0");
-        if (!problems || !problems->property("text").toString().startsWith("Problem color:") || problems->property("text").toString().section(':',1).trimmed().toInt()<34) return failure("default problem alarm");
+        if (activeCount("Problem color").toInt()<34 || item(window, "alertMatch_0")) return failure("default problem alarm");
         if (!workspace.filter("no-resource-matches-this") || workspace.resourceCount()!=0 || !alphaMatch()) return failure("session-wide alarm despite empty filter");
         QSignalSpy inspectorFrames(window,&QQuickWindow::frameSwapped);
         if (!workspace.filter("visual-pending-storage-1") || !workspace.setWorkspacePage("resources") || !workspace.inspectPath("/api/v1/namespaces/visual-a/persistentvolumeclaims/visual-pending-storage-1")) return failure("open pending PVC inspector");

@@ -61,13 +61,13 @@ void Workspace::applyContextViews(const QString& context, const TableViewStates&
         nav.column = static_cast<int>(schemas.value("resource").indexOf(resources.column));
         nav.mode = resources.mode;
         nav.order = resources.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
-        nav.eventFilter = events.filter; nav.eventColumn = static_cast<int>(schemas.value("event").indexOf(events.column));
-        nav.eventOrder = events.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
+        nav.eventFilter = events.filter; nav.eventColumn = events.column.isEmpty() ? 0 : static_cast<int>(schemas.value("event").indexOf(events.column));
+        nav.eventOrder = events.column.isEmpty() || events.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         const auto ports = views.value("port"), detailEvents = views.value("inspectorEvent"), links = views.value("inspectorLink");
         nav.portFilter = ports.filter; nav.portColumn = static_cast<int>(schemas.value("port").indexOf(ports.column));
         nav.portOrder = ports.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
-        nav.inspectorEventColumn = static_cast<int>(schemas.value("inspectorEvent").indexOf(detailEvents.column));
-        nav.inspectorEventOrder = detailEvents.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
+        nav.inspectorEventColumn = detailEvents.column.isEmpty() ? 0 : static_cast<int>(schemas.value("inspectorEvent").indexOf(detailEvents.column));
+        nav.inspectorEventOrder = detailEvents.column.isEmpty() || detailEvents.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         nav.inspectorLinkColumn = static_cast<int>(schemas.value("inspectorLink").indexOf(links.column));
         nav.inspectorLinkOrder = links.descending ? Qt::DescendingOrder : Qt::AscendingOrder;
         const auto values = views.value("value");

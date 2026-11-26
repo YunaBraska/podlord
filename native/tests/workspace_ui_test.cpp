@@ -414,6 +414,7 @@ public:
                             }
                             if (scenario.contains("_color_")) event["type"] = scenario.endsWith("normal") ? "Normal" : scenario.endsWith("warning") ? "Warning" : scenario.endsWith("empty") ? "" : "Unrecognized";
                             event["lastTimestamp"] = "2026-10-03T10:00:00Z";
+                            if (scenario == "inspector_related_table_events_sort") event["lastTimestamp"] = "2026-10-03T10:15:00Z";
                             document["items"] = QJsonArray{event};
                             if (scenario == "inspector_related_table_links_messages") {
                                 auto ownerEvent = event;
@@ -2930,6 +2931,15 @@ bool execute(const QString& requestedScenario) {
                 && workspace.resourceCount() == 3 && server.requests.size() == calls;
         }
         if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
+            if (scenario == "shell_search_events") {
+                const auto columns = workspace.eventColumns();
+                const auto time = std::find_if(columns.cbegin(), columns.cend(), [](const auto& value) {
+                    return value.toMap().value("id") == "eventTime";
+                });
+                if (time == columns.cend() || !time->toMap().value("visible").toBool()
+                    || workspace.eventSortColumnIndex() != 0 || workspace.eventSortDirection() != "DESC") return false;
+            }
+            const int unfilteredCount = scenario == "shell_search_events" ? 5 : 3;
             auto* input = item(window, "resourceFilter");
             if (input->isVisible() || !click(window, item(window, "workspaceSearchButton"))
                 || !waitFor([&] { return input->isVisible() && input->hasActiveFocus(); })
@@ -2939,14 +2949,14 @@ bool execute(const QString& requestedScenario) {
                     || !waitFor([&] { return item(window, "eventFilter")->isVisible() && workspace.totalEventCount() == 2; })
                     || !type(window, item(window, "eventFilter"), "Started") || workspace.eventCount() != 1
                     || !click(window, item(window, "workspaceSearchButton"))
-                    || item(window, "eventFilter")->isVisible() || item(window, "eventFilter")->hasActiveFocus() || workspace.eventFilterText() != "Started"
+                    || item(window, "eventFilter")->isVisible() || item(window, "eventFilter")->hasActiveFocus() || !workspace.eventFilterText().isEmpty()
                     || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
             } else if (!click(window, item(window, "workspaceSearchButton"))) return false;
-            if (input->isVisible() || input->hasActiveFocus() || workspace.resourceCount() != 1 || !click(window, item(window, "workspaceSearchButton"))
-                || !waitFor([&] { return input->hasActiveFocus(); }) || text(window, "resourceFilter") != "\"alpha\"") return false;
+            if (input->isVisible() || input->hasActiveFocus() || workspace.resourceCount() != unfilteredCount || !click(window, item(window, "workspaceSearchButton"))
+                || !waitFor([&] { return input->hasActiveFocus(); }) || !workspace.filterText().isEmpty()) return false;
             QTest::keyClick(window, Qt::Key_Escape);
             auto* toggle = item(window, "workspaceSearchButton");
-            if (input->isVisible() || workspace.resourceCount() != 1 || !toggle->hasActiveFocus()) return false;
+            if (input->isVisible() || workspace.resourceCount() != unfilteredCount || !toggle->hasActiveFocus()) return false;
             const auto point = podlord::test::visibleBounds(window, toggle).center();
             const QPointF global = window->mapToGlobal(point.toPoint());
             for (int repeat = 0; repeat < 2; ++repeat) {
@@ -2958,7 +2968,7 @@ bool execute(const QString& requestedScenario) {
             QCoreApplication::sendPostedEvents(window);
             QCoreApplication::sendPostedEvents();
             return waitFor([&] { return !input->isVisible() && !input->hasActiveFocus() && !toggle->property("checked").toBool(); })
-                && workspace.resourceCount() == 1 && server.requests.size() == calls;
+                && workspace.resourceCount() == unfilteredCount && server.requests.size() == calls;
         }
         if (scenario == "shell_health_refresh") {
             auto* health = item(window, "sessionHealthSegments");
@@ -3668,7 +3678,7 @@ bool execute(const QString& requestedScenario) {
             window->resize(1440,920);
             return waitFor([&] { return radar->isVisible() && item(window,"resourceRadar")==radar
                 && radar->property("viewPose").toMap()==pose && workspace.currentSession()==session
-                && workspace.totalResourceCount()==total && workspace.filterText()=="alpha"; })
+                && workspace.totalResourceCount()==total && workspace.filterText().isEmpty(); })
                 && server.requests.size()==calls && saveShellFrame(window,scenario+"-restored");
         }
         if (scenario == "ui_density_single_tab") {
@@ -6293,7 +6303,7 @@ bool execute(const QString& requestedScenario) {
                     || !waitFor([&] { return item(window, "eventHeader_5") && item(window, "eventHeader_5")->width() > 0; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "3"; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "12"; })) return false;
-                return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == -1; }) && server.requests.size() == calls;
+                return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == 0 && workspace.eventSortDirection() == "DESC"; }) && server.requests.size() == calls;
             }
             if (!type(window, item(window, "eventFilter"), "Scheduled") || !waitFor([&] { return workspace.eventTable()->rowCount() == 1 && text(window, "eventCell_0_2") == "Scheduled"; })) return false;
             if (server.requests.size() != calls) return false;
@@ -6354,6 +6364,8 @@ bool execute(const QString& requestedScenario) {
             if (!click(window, item(window, event ? "inspectorEventsButton" : "inspectorLinksButton"))) return false;
             auto* model = workspace.property(event ? "inspectorEventTable" : "inspectorLinkTable").value<QAbstractItemModel*>();
             if (!model || model->rowCount() != (event ? 2 : 3) || model->columnCount() != (event ? 5 : 7)) return false;
+            if (event && (workspace.inspectorEventSortColumn() != 0 || workspace.inspectorEventSortDirection() != "DESC"
+                || model->index(0, 2).data().toString() != "Scheduled")) return false;
             if (scenario.contains("_color_")) return eventColor("inspectorEventCell_0_1") && server.requests.size() == calls;
             const auto operation = scenario.section('_', -1);
             if (operation == "messages") {
@@ -6434,13 +6446,15 @@ bool execute(const QString& requestedScenario) {
             const int column = event ? 3 : 5;
             const auto header = name("Header_" + QString::number(column));
             const auto cell = name("Cell_0_" + QString::number(column));
+            if (event && !revealTableCell(window, "inspectorEventTable", 0, column)) return false;
             if (!waitFor([&] { return item(window, cell.constData()); })) return false;
             if (operation == "sort") {
                 if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "3" : "Pod/bravo")) return false;
                 if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "12" : "Widget/custom-widget")) return false;
                 if (!event && model->data(model->index(0, 1)).toString() != QStringLiteral("●")) return false;
                 return click(window, item(window, header.constData()))
-                    && workspace.property(event ? "inspectorEventSortColumn" : "inspectorLinkSortColumn").toInt() == -1 && server.requests.size() == calls;
+                    && workspace.property(event ? "inspectorEventSortColumn" : "inspectorLinkSortColumn").toInt() == (event ? 0 : -1)
+                    && server.requests.size() == calls;
             }
             if (operation == "sortrestore") {
                 bool reloaded = false;

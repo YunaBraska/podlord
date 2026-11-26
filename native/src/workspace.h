@@ -863,9 +863,9 @@ private:
         QString inspected, terminalError, page = "overview", workspace = "map";
         QVariantMap radarView;
         QString eventFilter, portFilter;
-        int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
-        Qt::SortOrder eventOrder = Qt::AscendingOrder, portOrder = Qt::AscendingOrder,
-            inspectorEventOrder = Qt::AscendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
+        int eventColumn = 0, portColumn = -1, inspectorEventColumn = 0, inspectorLinkColumn = -1, valueColumn = -1;
+        Qt::SortOrder eventOrder = Qt::DescendingOrder, portOrder = Qt::AscendingOrder,
+            inspectorEventOrder = Qt::DescendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
         QStringList history;
         int historyIndex = -1;
     };

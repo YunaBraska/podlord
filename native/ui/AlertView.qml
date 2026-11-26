@@ -390,10 +390,6 @@ Pane {
         }
         Item { Layout.fillHeight: true; visible: !editor.visible }
         SelectableText { objectName: "alertEmptyState"; text: workspace.uiText[workspace.currentSession === "" ? "alert.emptyContext" : "alert.emptyMatches"]; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
-        Flow {
-            Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
-            Repeater { model: workspace.alerts.matches; FlatButton { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }
-        }
         }
     }
 }

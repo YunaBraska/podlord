@@ -52,6 +52,12 @@ void cycleSort(int requested, int& column, Qt::SortOrder& order) {
     else if (order == Qt::AscendingOrder) order = Qt::DescendingOrder;
     else { column = -1; order = Qt::AscendingOrder; }
 }
+void cycleEventSort(int requested, int& column, Qt::SortOrder& order) {
+    if (column != requested) { column = requested; order = Qt::AscendingOrder; }
+    else if (order == Qt::AscendingOrder) order = Qt::DescendingOrder;
+    else if (requested == 0) order = Qt::AscendingOrder;
+    else { column = 0; order = Qt::DescendingOrder; }
+}
 QString sessionId(const QUuid& id) { return id.toString(QUuid::WithoutBraces); }
 QVariantList sessionRows(const SessionCatalog& catalog, bool onlyOpen) {
     QVariantList result;
@@ -157,7 +163,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
         const auto sortValue = row["sortValues"_L1].toObject().value(field);
         if (!sortValue.isUndefined()) return sortValue.toVariant();
         if (field == "preview") return row["value"_L1].toString();
-        if (field == "eventTime") return QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
+        if (field == "eventTime" || field == "time") return QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
         if (field == "createdAt") {
             const auto created = QDateTime::fromString(row[field].toString(), Qt::ISODateWithMs);
             return created.isValid() && created <= QDateTime::currentDateTimeUtc() ? QVariant(-created.toMSecsSinceEpoch()) : QVariant{};
@@ -2213,7 +2219,8 @@ bool Workspace::sortInspectorColumn(const QString& table, int column) {
     auto& nav = navigation_[active_];
     auto& previous = table == "inspectorEvent" ? nav.inspectorEventColumn : table == "inspectorLink" ? nav.inspectorLinkColumn : nav.valueColumn;
     auto& order = table == "inspectorEvent" ? nav.inspectorEventOrder : table == "inspectorLink" ? nav.inspectorLinkOrder : nav.valueOrder;
-    cycleSort(column, previous, order);
+    if (table == "inspectorEvent") cycleEventSort(column, previous, order);
+    else cycleSort(column, previous, order);
     model->sort(previous, order); queueViewSave(table); emit changed(); return true;
 }
 bool Workspace::filterEvents(const QString& text) {
@@ -2222,7 +2229,8 @@ bool Workspace::filterEvents(const QString& text) {
 }
 bool Workspace::sortEventColumn(int column) {
     if (column < 0 || column >= eventRows_.columnCount()) return false;
-    auto& nav = navigation_[active_]; cycleSort(column, nav.eventColumn, nav.eventOrder);
+    auto& nav = navigation_[active_];
+    cycleEventSort(column, nav.eventColumn, nav.eventOrder);
     events_.sort(nav.eventColumn, nav.eventOrder); queueViewSave("event"); emit changed(); return true;
 }
 bool Workspace::inspectEventPath(const QString& path) {

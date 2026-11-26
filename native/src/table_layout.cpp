@@ -62,7 +62,7 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
             });
             for (auto& column : layout) {
                 column.width = widths.value(column.id, 170);
-                column.visible = column.id != "eventTime" && column.id != "eventCount" && column.id != "eventTargetName" && column.id != "namespace";
+                column.visible = column.id != "eventCount" && column.id != "eventTargetName" && column.id != "namespace";
             }
         }
         if (table.key() == "port") {
@@ -135,6 +135,12 @@ Result<TableLayouts> TableLayoutStore::load() const {
             if (layout) { layout->prepend({"message", true, false, 480}); layout->prepend({"resource", true, false, 240}); }
         }
         if (!layout) return Failure{StoreError::InvalidData, "Invalid table columns. The file was left unchanged."};
+        if (table.key() == "event" && table.value().contains("eventTime")) {
+            const auto updatedDefault = defaultTableLayouts(schemas_).value("event");
+            auto oldDefault = updatedDefault;
+            for (auto& column : oldDefault) if (column.id == "eventTime") column.visible = false;
+            if (*layout == oldDefault) *layout = updatedDefault;
+        }
         result.insert(table.key(), *layout);
     }
     return result;

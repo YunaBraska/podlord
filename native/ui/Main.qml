@@ -17,6 +17,11 @@ ApplicationWindow {
     readonly property real controlHeight: Math.max(touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
     property bool sidebarOpen: true
     property bool searchOpen: false
+    onSearchOpenChanged: if (!searchOpen && workspace.currentSession !== "") {
+        workspace.filter("")
+        workspace.filterEvents("")
+        workspace.filterPorts("")
+    }
     readonly property bool terminalExpanded: terminalDialog.visible
     function openContainerTerminal(followsInspector) {
         terminalDialog.ownerSession = workspace.currentSession

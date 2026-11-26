@@ -51,6 +51,18 @@ bool scenario(const QString& name) {
         return std::holds_alternative<TableLayouts>(saved)
             && std::get<TableLayouts>(upgraded.load()).value("inspectorLink") == expected;
     }
+    if (name == "event_time_upgrade") {
+        const TableSchemas expanded{{"event", {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"}}};
+        const TableLayoutStore upgraded(profile, expanded);
+        auto old = defaultTableLayouts(expanded).value("event");
+        for (auto& column : old) if (column.id == "eventTime") column.visible = false;
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"event", input(old)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = upgraded.load();
+        return std::holds_alternative<TableLayouts>(loaded)
+            && std::get<TableLayouts>(loaded).value("event") == defaultTableLayouts(expanded).value("event")
+            && read(path) == bytes;
+    }
     if (name == "reject_obsolete_format") {
         const QJsonObject layouts{{"resource", input(layout)}, {"event", input(defaults.value("event"))}};
         for (int version = 1; version < 10; ++version) {
@@ -73,7 +85,7 @@ bool scenario(const QString& name) {
         QStringList eventIds; for (const auto& column:events) eventIds.append(column.id);
         if (eventIds!=QStringList{"eventType","name","eventReason","owner","namespace","eventMessage","eventTime","eventCount","eventTargetName"}
             || events[0].width!=120 || events[3].width!=165 || events[5].width!=420
-            || events[4].visible || events[6].visible || events[7].visible || events[8].visible) return false;
+            || events[4].visible || !events[6].visible || events[7].visible || events[8].visible) return false;
         if (name=="reference_defaults") return true;
         auto saved=actual; saved.swapItemsAt(0,2); saved[0].pinned=true; saved[1].width=345;
         if (!std::holds_alternative<TableLayouts>(reference.save("resource",input(saved),actual))) return false;

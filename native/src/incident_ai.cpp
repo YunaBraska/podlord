@@ -1888,8 +1888,10 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
             {"path", fact["path"].toString()}});
     }
     QVariantMap output;
+    static const QRegularExpression sentenceBreak(R"(([.!?。！？])[\t ]+(?=[\p{L}\p{N}]))");
     for (const auto& field : {"summary", "cause", "action"}) {
-        const auto source = resolvedSource(record->answer[field].toString());
+        auto source = resolvedSource(record->answer[field].toString());
+        source.replace(sentenceBreak, QStringLiteral("\\1\n\n"));
         QString rendered, html;
         qsizetype from = 0;
         auto matches = citation.globalMatch(source);

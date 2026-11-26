@@ -1227,6 +1227,7 @@ void scenario(const QString& name) {
         return;
     }
     if (name == "persist") server.answer = R"({"summary":"Pod team/pod-one hat ein Problem.","cause":"Ursache unbekannt.","action":"Prüfe Pod team/pod-one."})";
+    if (name == "format_sentences") server.answer = R"({"summary":"Pod team/pod-one is unhealthy. Node worker-a is ready.","cause":"Cause is unknown.","action":"Check events."})";
     {
         podlord::IncidentAi ai(profile, endpoint);
         QSignalSpy completed(&ai, &podlord::IncidentAi::analysisCompleted);
@@ -1257,6 +1258,12 @@ void scenario(const QString& name) {
             require(completed.size() == 1 && completed.first().at(0).toString() == "context"
                 && completed.first().at(1).toString() == rows().at(2).toObject()["path"].toString(),
                 "Completed analysis did not announce its visible resource once");
+        if (name == "format_sentences") {
+            const auto path = rows().at(2).toObject()["path"].toString();
+            require(QTest::qWaitFor([&] { return ai.result("context", path).value("summaryHtml").toString().contains("<br><br>"); }, 2000),
+                "Adjacent AI sentences need visible paragraph breaks");
+            require(server.chats == 1, "Formatting the AI report sent another request");
+        }
         if (name == "cancel") {
             require(ai.setEnabled(false) && ai.result("context", rows().at(2).toObject()["path"].toString()).isEmpty(), "Opt-out left analysis visible");
             QTest::qWait(50);
