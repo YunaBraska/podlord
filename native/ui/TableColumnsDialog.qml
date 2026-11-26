@@ -76,8 +76,8 @@ ModalDialog {
                         rowSpacing: 4
                         enabled: !workspace.tableLayoutSaving
                         Label { Layout.fillWidth: true; text: columnTitle; textFormat: Text.PlainText; elide: Text.ElideRight }
-                        IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + columnTitle; Accessible.name: text; onClicked: surfaceDialog.change(index, "visible", checked) }
-                        IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + columnTitle; Accessible.name: text; onClicked: surfaceDialog.change(index, "pinned", checked) }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnVisible_" + modelData.id; glyph: modelData.visible ? "Visible" : "Hidden"; checkable: true; checked: modelData.visible; text: "Show " + columnTitle; onClicked: surfaceDialog.change(index, "visible", checked) }
+                        IconButton { objectName: surfaceDialog.tableType + "ColumnPinned_" + modelData.id; glyph: "Pin"; checkable: true; checked: modelData.pinned; text: "Pin " + columnTitle; onClicked: surfaceDialog.change(index, "pinned", checked) }
                         TextField {
                             objectName: surfaceDialog.tableType + "ColumnWidth_" + modelData.id
                             Layout.preferredWidth: 92
@@ -96,7 +96,7 @@ ModalDialog {
                 }
             }
         }
-        SelectableText { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { Layout.fillWidth: true; visible: workspace.tableLayoutSaving || workspace.tableLayoutError !== ""; text: workspace.tableLayoutSaving ? "Saving column layout..." : workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     }
     footer: DialogButtonBox {
         implicitHeight: Math.max(defaultsButton.implicitHeight, saveButton.implicitHeight) + topPadding + bottomPadding

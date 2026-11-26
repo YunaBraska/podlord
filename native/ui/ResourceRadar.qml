@@ -441,7 +441,6 @@ Pane {
                                 wrapMode: Text.Wrap
                                 clip: true
                                 color: workspace.appearanceColors.text
-                                Accessible.name: text
                             }
                             IconButton {
                                 objectName: "closeRadarInfo"

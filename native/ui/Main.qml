@@ -189,7 +189,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         modal: true
         closePolicy: Popup.CloseOnEscape
-        contentItem: SelectableText { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        contentItem: SelectableText { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         footer: DialogButtonBox {
             FlatButton {
                 id: discardStayButton
@@ -242,7 +242,7 @@ ApplicationWindow {
             }
             SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
             FlatButton { id: forwardCancel; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
@@ -326,7 +326,7 @@ ApplicationWindow {
             SelectableText { Layout.fillWidth: true; text: "Choose a GKE context and a Google service-account JSON key. A validated copy is kept in private app storage; the original file remains where you selected it."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ComboBox { id: gkeImportContext; objectName: "gkeImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "GKE context for service-account key" }
             FlatButton { objectName: "chooseGkeKey"; text: workspace.busy ? "Importing..." : "Choose service-account JSON key"; enabled: gkeImportContext.currentIndex >= 0 && !workspace.busy; onClicked: gkeKeyChooser.open() }
-            SelectableText { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            SelectableText { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         }
         onClosed: importing = false
         Connections { target: workspace; function onSourceImportFinished(success) { if (gkeImportDialog.importing) { gkeImportDialog.importing = false; if (success) gkeImportDialog.close() } } }
@@ -370,7 +370,7 @@ ApplicationWindow {
                 required property var modelData
                 width: ListView.view.width
                 text: modelData.sourcePath + "\n" + modelData.message
-                contentItem: SelectableText { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+                contentItem: SelectableText { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             }
         }
     }
@@ -483,7 +483,7 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            SelectableText { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             SelectableText { Layout.fillWidth: true; text: "Only this UID will be authorized. Kubernetes grace periods and finalizers remain in effect. This cannot be undone."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
@@ -505,7 +505,7 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ScrollView {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 TextArea { objectName: "yamlApplyDiff"; readOnly: true; selectByMouse: true; text: workspace.yamlApplyDiff; textFormat: TextEdit.PlainText; font.family: workspace.monospaceFamily; Accessible.name: "Field changes, Secret values hidden" }
@@ -950,7 +950,7 @@ ApplicationWindow {
         RowLayout {
             Layout.fillWidth: true
             visible: workspace.authenticationInstruction !== "" && !workspace.authenticationChallenge.id
-            SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             IconButton { objectName: "openAuthenticationBrowser"; glyph: "External"; text: "Open sign-in page"; visible: workspace.authenticationBrowserAvailable; onClicked: workspace.openAuthenticationBrowser() }
         }
         Loader {
@@ -968,7 +968,6 @@ ApplicationWindow {
                     textFormat: Text.PlainText
                     wrapMode: TextEdit.NoWrap
                     clip: true
-                    Accessible.name: text
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -998,10 +997,10 @@ ApplicationWindow {
                     FlatButton { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
                     FlatButton { objectName: "cancelAuthenticationMfa"; text: workspace.uiText["action.cancel"]; onClicked: workspace.cancelAuthentication() }
                 }
-                SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
             }
         }
-        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap }
         RowLayout {
             Layout.fillWidth: true; Layout.rightMargin: window.contentRightMargin
             visible: workspace.error !== "" || !!workspace.uiText[workspace.music.error]
@@ -1010,7 +1009,7 @@ ApplicationWindow {
                 text: workspace.error && workspace.error === workspace.incidentAiDiagnostic.original
                     ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
                     : (workspace.error || workspace.uiText[workspace.music.error] || "")
-                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text
+                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap
             }
             IconButton {
                 objectName: "errorAiInfo"; glyph: "Info"
@@ -1024,7 +1023,7 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.minimumWidth: 0
             text: workspace.syncProblem; textFormat: Text.PlainText
             visible: text !== ""; wrapMode: TextEdit.NoWrap; clip: true
-            color: workspace.appearanceColors.danger; Accessible.name: text
+            color: workspace.appearanceColors.danger
             ToolTip.visible: problemHover.hovered && contentWidth > width
             ToolTip.delay: 700
             ToolTip.text: text
@@ -1238,7 +1237,7 @@ ApplicationWindow {
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; Accessible.name: text; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
+            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
         }
     }
     ResourceSidebar {

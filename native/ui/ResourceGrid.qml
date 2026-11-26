@@ -275,7 +275,7 @@ ColumnLayout {
         IconButton { objectName: grid.prefix + "FindNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; enabled: grid.findCount > 0; onClicked: grid.selectFindMatch(1) }
         IconButton { objectName: grid.prefix + "FindClose"; glyph: "Close"; text: workspace.uiText["tooltip.closeSearch"]; onClicked: { grid.findOpen = false; table.forceActiveFocus() } }
     }
-    SelectableText { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger; Accessible.name: text }
+    SelectableText { objectName: grid.prefix + "FindError"; Layout.fillWidth: true; visible: grid.findOpen && !grid.findValid; text: findMatches.error; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: grid.colors.danger }
     SelectableText { Layout.fillWidth: true; visible: workspace.tableLayoutError !== "" && !columnsDialog.visible; text: workspace.tableLayoutError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
     Menu {
         id: cellMenu
@@ -682,7 +682,6 @@ ColumnLayout {
             horizontalAlignment: TextEdit.AlignHCenter
             wrapMode: TextEdit.NoWrap
             text: (grid.pageIndex * grid.pageSize + 1) + "-" + (grid.pageIndex * grid.pageSize + workspace.displayedResourceCount) + " / " + workspace.resourceCount
-            Accessible.name: text
         }
         IconButton {
             objectName: "resourceNextPage"

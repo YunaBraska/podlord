@@ -67,7 +67,6 @@ Pane {
             }
         }
     }
-    readonly property var filterOrder: ["cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"]
     component ScopeCheckBox: CheckBox {
         id: scopeControl
         indicator: Rectangle {
@@ -305,14 +304,14 @@ Pane {
                 }
             }
             }
-            SelectableText { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText; Accessible.name: text }
+            SelectableText { objectName: "filterPresetsError"; Layout.fillWidth: true; text: workspace.filterPresetsError; visible: text.length > 0; wrapMode: Text.Wrap; textFormat: Text.PlainText }
             ColumnLayout {
                 id: filters
                 objectName: "sidebarFilters"
                 Layout.fillWidth: true
                 spacing: 0
                 Repeater {
-                model: { const fields = workspace.filterFields; return sidebar.filterOrder.map(function(id) { return fields.find(function(field) { return field.id === id }) }).filter(function(field) { return field !== undefined }) }
+                model: workspace.filterFields
                 delegate: ColumnLayout {
                     id: fieldGroup
                     required property var modelData

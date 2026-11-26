@@ -37,7 +37,6 @@ Pane {
             wrapMode: Text.Wrap
             color: editor.controller.appearanceColors.danger
             visible: text !== ""
-            Accessible.name: text
         }
         TextField {
             id: optionSearch

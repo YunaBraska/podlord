@@ -18,7 +18,7 @@ ModalDialog {
     contentItem: ColumnLayout {
         SelectableText { Layout.fillWidth: true; text: workspace.sourceRemoval.name || ""; textFormat: Text.PlainText; font.bold: true; wrapMode: Text.Wrap }
         SelectableText { Layout.fillWidth: true; text: workspace.uiText["settings.removeContextHelp"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-        SelectableText { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "sourceRemovalError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.sourceImportError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap }
     }
     footer: DialogButtonBox {
         IconButton { glyph: "Trash"; destructive: true; objectName: "confirmSourceRemoval"; text: workspace.busy ? workspace.uiText["settings.removing"] : workspace.uiText["settings.remove"]; enabled: !workspace.busy; Accessible.name: removal.title; onClicked: workspace.confirmSourceRemoval() }

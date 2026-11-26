@@ -7,7 +7,7 @@
 namespace podlord {
 QVariantList Workspace::filterFields() const {
     QVariantList result;
-    static const QStringList supported{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
+    static const QStringList supported{"cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"};
     for (const auto& field : supported)
         for (int column = 0; column < rows_.columnCount(); ++column)
             if (rows_.headerData(column, Qt::Horizontal, Qt::UserRole).toString() == field)

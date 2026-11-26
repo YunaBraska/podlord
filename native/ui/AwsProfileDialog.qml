@@ -66,7 +66,7 @@ ModalDialog {
                 TextField { id: credentials; objectName: "awsProfileCredentials"; Layout.fillWidth: true; placeholderText: "AWS credentials (optional)"; readOnly: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !surfaceDialog.awaitingImport; Accessible.name: "Selected AWS credentials file" }
                 IconButton { objectName: "browseAwsCredentials"; glyph: ""; showText: true; text: "Browse"; Accessible.name: "Select AWS credentials"; enabled: !surfaceDialog.awaitingImport; onClicked: { surfaceDialog.choosingCredentials = true; filePicker.open() } }
             }
-            SelectableText { Layout.fillWidth: true; visible: surfaceDialog.errorText !== ""; text: surfaceDialog.errorText; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; visible: surfaceDialog.errorText !== ""; text: surfaceDialog.errorText; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         }
     }
     footer: DialogButtonBox {

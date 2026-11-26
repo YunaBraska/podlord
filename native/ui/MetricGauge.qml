@@ -18,7 +18,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 8
     }
-    SelectableText { objectName: "metric_" + gauge.metric.id + "_references"; Layout.fillWidth: true; visible: text !== ""; text: gauge.omitMissing ? gauge.metric.presentReferences : gauge.metric.references; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted; Accessible.name: text }
+    SelectableText { objectName: "metric_" + gauge.metric.id + "_references"; Layout.fillWidth: true; visible: text !== ""; text: gauge.omitMissing ? gauge.metric.presentReferences : gauge.metric.references; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
     SelectableText {
         objectName: "metric_" + gauge.metric.id + "_measurement"
         Layout.fillWidth: true
@@ -27,6 +27,5 @@ ColumnLayout {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         color: workspace.appearanceColors.muted
-        Accessible.name: text
     }
 }

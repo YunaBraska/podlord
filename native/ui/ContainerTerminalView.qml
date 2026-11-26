@@ -231,7 +231,7 @@ ColumnLayout {
         onOpened: { const content = surface.clipboardForPaste(); payload = content.text; pasteError = content.error; reviewedTerminal = root.terminal }
         contentItem: ColumnLayout {
             SelectableText { Layout.fillWidth: true; text: "This text may execute commands. Confirm only trusted content."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            SelectableText { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ScrollView {
                 Layout.fillWidth: true; Layout.preferredHeight: 140
                 TextArea { text: pasteReview.payload; readOnly: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; font.family: workspace.monospaceFamily }
