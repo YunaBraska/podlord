@@ -155,7 +155,7 @@ bool providerScenario(const QString& scenario) {
     server.expectedAuthorization = "Bearer " + expected;
     if (scenario == "provider_401") server.listStatus = 401;
     podlord::ResourceClient client;
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0; settings.requestHardLimitPerMinute = 0;
+    podlord::ReadSettings settings; settings.requestHardLimitPerMinute = 0;
     if (!client.configure(settings) || !client.open("session", connection, {})) return false;
     if (!waitFor([&] { return !client.loading("session") && !server.active; }) || !server.requests || server.authorizationMismatch) return false;
     if (scenario != "provider_401") return client.rows("session").size() == 1;
@@ -175,7 +175,7 @@ bool viewScenario(const QString& scenario) {
         if (scenario == "view_shared_limit" || scenario == "view_shared_backoff") result.contextId = "same-context";
         return result;
     };
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
+    podlord::ReadSettings settings;
     if (scenario == "view_limit" || scenario == "view_shared_limit") settings.requestHardLimitPerMinute = 60;
     if (scenario == "view_auth") second.listStatus = 401;
     if (scenario == "view_switch_initial") {
@@ -324,7 +324,7 @@ bool run(const QString& scenario) {
     podlord::ClusterConnection connection;
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
     if (scenario == "list_namespaced_fallback_preferred") connection.preferredNamespace = "team";
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
+    podlord::ReadSettings settings;
     settings.requestHardLimitPerMinute = scenario == "limit" ? 60 : 0;
     if (scenario == "discovery_invalid_body") server.discovery = QJsonObject{{"resources", "not-an-array"}};
     if (scenario == "discovery_invalid_entry") server.discovery = QJsonObject{{"resources", QJsonArray{

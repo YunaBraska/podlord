@@ -608,8 +608,7 @@ bool ResourceClient::logsShown(const QString& id, const QString& key) const {
 }
 bool ResourceClient::wanted(const QString& id) const {
     const auto state = states_.constFind(id);
-    return state != states_.cend() && state->open
-        && (isVisible(id) || !state->initialized || settings_.inactiveSyncMinutes > 0);
+    return state != states_.cend() && state->open;
 }
 bool ResourceClient::configure(ReadSettings settings) {
     if (!settings.valid()) return false;

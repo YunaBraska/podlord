@@ -294,7 +294,7 @@ bool run(const QString& scenario, const QString& configPath) {
     if (scenario == "revoked_streams") {
         const auto failed = [](const char* stage) { std::fprintf(stderr, "Credential stream revocation failed: %s\n", stage); return false; };
         podlord::ResourceClient client;
-        podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0; settings.requestHardLimitPerMinute = 0;
+    podlord::ReadSettings settings; settings.requestHardLimitPerMinute = 0;
         podlord::ClusterConnection first;
         first.server = QUrl(QString("http://127.0.0.1:%1").arg(api.serverPort()));
         first.authorization = "Bearer local-forward-token";

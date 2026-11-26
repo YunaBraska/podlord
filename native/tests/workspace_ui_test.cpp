@@ -7811,7 +7811,7 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
 #ifdef Q_OS_IOS
     if (!podlord::test::orientIosTestWindow(window)) return failure("system orientation");
 #endif
-    if (!workspace.saveReadSettings(1200,0,"5",workspace.collectionCacheHours()) || !waitFor([&] { return !workspace.busy() && workspace.requestLimit()==1200; })) return failure("read policy");
+    if (!workspace.saveReadSettings(1200,workspace.inactiveSyncMinutes(),"5",workspace.collectionCacheHours()) || !waitFor([&] { return !workspace.busy() && workspace.requestLimit()==1200; })) return failure("read policy");
     if (!workspace.quickImportFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; })) return failure("context discovery");
     if (!click(window,item(window,"mapWorkspaceButton"))) return failure("open imported context overview");
     std::printf("Real cluster TLS: supported=%d backend=%s available=%s loaded=%s built=%s\n", QSslSocket::supportsSsl(),

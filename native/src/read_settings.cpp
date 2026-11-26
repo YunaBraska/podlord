@@ -10,7 +10,7 @@
 #include <limits>
 
 namespace podlord {
-bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes >= 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && musicVolumePercent >= 0 && musicVolumePercent <= 100 && alertVolumePercent >= 0 && alertVolumePercent <= 100 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
+bool ReadSettings::valid() const { return requestHardLimitPerMinute >= 0 && requestHardLimitPerMinute <= 60000 && inactiveSyncMinutes > 0 && logLimitMb > 0 && yamlLimitMiB > 0 && radarWaterSpeedPercent >= 0 && radarWaterSpeedPercent <= 100 && collectionCacheHours > 0 && musicVolumePercent >= 0 && musicVolumePercent <= 100 && alertVolumePercent >= 0 && alertVolumePercent <= 100 && validAppearance(themeName, themeVariant) && validUiLanguage(language); }
 ReadSettingsStore::ReadSettingsStore(QString profile) : profile_(std::move(profile)) {}
 Result<ReadSettings> ReadSettingsStore::load() const {
     if (const auto failure = profileFailure(profile_)) return *failure;
@@ -51,6 +51,7 @@ Result<ReadSettings> ReadSettingsStore::load() const {
     if (!legacyVolumeDefaults && (!integer(root["musicVolumePercent"], 100) || !integer(root["alertVolumePercent"], 100)))
         return Failure{StoreError::InvalidData, "Audio volumes must be whole-number percentages from 0 to 100."};
     ReadSettings settings{root["requestHardLimitPerMinute"].toInt(), root["inactiveSyncMinutes"].toInt(), root["logLimitMb"].toInt(), root["yamlLimitMiB"].toInt()};
+    if (settings.inactiveSyncMinutes == 0) settings.inactiveSyncMinutes = ReadSettings{}.inactiveSyncMinutes;
     settings.themeName = root["themeName"].toString(); settings.themeVariant = root["themeVariant"].toString();
     settings.radarWaterEnabled = root["radarWaterEnabled"].toBool();
     settings.radarWaterSpeedPercent = root["radarWaterSpeedPercent"].toInt();
