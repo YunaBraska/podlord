@@ -398,11 +398,11 @@ void scenario(const QString& name) {
             "A closed context was analyzed after its background observation finished");
         return;
     }
-    if (name == "large_dynamic_update") {
+    if (name == "large_dynamic_update" || name == "large_dynamic_update_20k" || name == "large_manual_update_20k") {
         server.hold = true;
         podlord::IncidentAi ai(profile, endpoint);
         require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
-            && ai.setModel("local-test:9b") && ai.setEnabled(true)
+            && ai.setModel("local-test:9b") && ai.setEnabled(name != "large_manual_update_20k")
             && QTest::qWaitFor([&] { return ai.ready(); }, 2000), "Local model unavailable");
         auto snapshot = rows();
         for (int index = 0; index < 20; ++index) {
@@ -411,7 +411,7 @@ void scenario(const QString& name) {
                 {"path", "/api/v1/namespaces/team/pods/" + name}, {"uid", name},
                 {"status", "ImagePullBackOff"}, {"issue", "ImagePullBackOff"}, {"problemSeverity", 2}});
         }
-        for (int index = 0; index < 8000; ++index) {
+        for (int index = 0; index < (name == "large_dynamic_update" ? 8000 : 20000); ++index) {
             const auto name = QString("config-%1").arg(index);
             snapshot.append(QJsonObject{{"kind", "ConfigMap"}, {"name", name}, {"namespace", "team"},
                 {"path", "/api/v1/namespaces/team/configmaps/" + name}, {"uid", name}});
@@ -438,6 +438,17 @@ void scenario(const QString& name) {
         heartbeat.stop();
         std::printf("AI first observation, longest UI event gap: %lld ms\n", static_cast<long long>(longestGap));
         require(longestGap < 80, "AI observation blocked the UI event loop");
+        if (name == "large_manual_update_20k") {
+            longestGap = 0; lastTick = clock.elapsed(); heartbeat.start();
+            QElapsedTimer manual; manual.start();
+            ai.prepareManual("context", "/api/v1/namespaces/team/pods/failed-0");
+            const auto duration = manual.elapsed();
+            QTest::qWait(30); heartbeat.stop();
+            std::printf("AI manual observation for %lld resources: %lld ms, UI gap %lld ms\n",
+                static_cast<long long>(snapshot.size()), static_cast<long long>(duration), static_cast<long long>(longestGap));
+            require(duration < 40 && longestGap < 80, "Manual AI preparation blocked the UI event loop");
+            return;
+        }
         QSignalSpy changed(&ai, &podlord::IncidentAi::changed);
         ai.prepareManual("context", "/api/v1/namespaces/team/pods/failed-0");
         require(changed.isEmpty(), "An automatic incident was prepared again as a manual review");

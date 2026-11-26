@@ -747,6 +747,20 @@ QJsonArray ResourceClient::rows(const QString& id) const {
     const auto state = states_.constFind(id);
     return state == states_.cend() ? QJsonArray{} : state->snapshot;
 }
+QJsonArray ResourceClient::managedClusterRows(const QString& id) const {
+    QJsonArray rows;
+    const auto state = states_.constFind(id);
+    if (state == states_.cend()) return rows;
+    for (auto collection = state->collections.cbegin(); collection != state->collections.cend(); ++collection)
+        if (collection.key().startsWith("/apis/cluster.x-k8s.io/") && collection.key().endsWith("/clusters"))
+            for (const auto& row : collection->rows) rows.append(row);
+    return rows;
+}
+QString ResourceClient::failureTime(const QString& id, const QString& path) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && state->failures.contains(path)
+        ? state->failureTimes.value(path).toString(Qt::ISODateWithMs) : QString{};
+}
 QVariantMap ResourceClient::healthSummary(const QString& id) const {
     const auto state = states_.constFind(id);
     return state == states_.cend() ? QVariantMap{} : state->health;
@@ -1230,6 +1244,7 @@ bool ResourceClient::authenticate(const ClusterConnection& connection, const QSt
         ++it->revision;
         it->suspended = false;
         it->failures.remove("/authentication");
+        it->failureTimes.remove("/authentication");
         emit changed(it.key());
     }
     resetConnections_ = true; expire();
@@ -1260,7 +1275,12 @@ bool ResourceClient::forgetCredentials(const QString& credential) {
 }
 void ResourceClient::suspend(const QString& credential, const QString& message) {
     for (auto it = states_.begin(); it != states_.end(); ++it)
-        if (it->connection.credentialId == credential) { it->suspended = true; it->failures.insert("/authentication", message); emit changed(it.key()); }
+        if (it->connection.credentialId == credential) {
+            it->suspended = true;
+            it->failures.insert("/authentication", message);
+            it->failureTimes.insert("/authentication", now_());
+            emit changed(it.key());
+        }
     dropQueued([&](const auto& task) { return states_[task.id].suspended; });
     emit authenticationRejected(credential);
     scheduleSync();
@@ -1609,7 +1629,12 @@ void ResourceClient::dispatch() {
 }
 void ResourceClient::fail(const Task& task, QString message) {
     if (task.read == Read::Log) states_[task.id].logs[task.logKey].failures.insert(task.container, std::move(message));
-    else { states_[task.id].failures.insert(task.path, std::move(message)); states_[task.id].blocked.insert(task.path); }
+    else {
+        auto& state = states_[task.id];
+        state.failures.insert(task.path, std::move(message));
+        state.failureTimes.insert(task.path, now_());
+        state.blocked.insert(task.path);
+    }
 }
 void ResourceClient::discardStale(const Task& task) {
     const auto found = states_.find(task.id);
@@ -1731,9 +1756,11 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     else if (task.read == Read::Log) {
         auto& history = state.logs[task.logKey];
         if (const auto error = history.append(task.container, bytes, now_(), static_cast<qint64>(settings_.logLimitMb) * 1000000, history.limited)) fail(task, error->message);
-        if (task.revision == state.revision && !state.suspended) state.failures.remove("/authentication");
+        if (task.revision == state.revision && !state.suspended) {
+            state.failures.remove("/authentication"); state.failureTimes.remove("/authentication");
+        }
     } else if (task.read == Read::Delete || task.read == Read::VerifyDelete) {
-        state.failures.remove(task.path); state.blocked.remove(task.path);
+        state.failures.remove(task.path); state.failureTimes.remove(task.path); state.blocked.remove(task.path);
     } else {
         QJsonParseError error;
         const auto document = prepared ? QJsonDocument{} : QJsonDocument::fromJson(bytes, &error);
@@ -1741,8 +1768,11 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         else if (!prepared && (error.error != QJsonParseError::NoError || !document.isObject())) fail(task, "The server returned an invalid response.");
         else {
             state.failures.remove(task.path);
+            state.failureTimes.remove(task.path);
             state.blocked.remove(task.path);
-            if (task.revision == state.revision && !state.suspended) state.failures.remove("/authentication");
+            if (task.revision == state.revision && !state.suspended) {
+                state.failures.remove("/authentication"); state.failureTimes.remove("/authentication");
+            }
             if (task.read == Read::Probe) {
                 const auto root = document.object();
                 const auto field = task.path == "/api" ? "versions" : task.path == "/apis" ? "groups" : "resources";
@@ -1781,6 +1811,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
     if (task.read == Read::Log && logsShown(task.id, task.logKey)) emit logsChanged(task.id, state.logs[task.logKey].path);
     if ((task.read == Read::Detail || task.read == Read::Linked) && !state.resources.contains(task.path)) {
         state.failures.remove(task.path);
+        state.failureTimes.remove(task.path);
         state.blocked.remove(task.path);
     }
     const bool retryableRead = task.read == Read::Core || task.read == Read::Groups || task.read == Read::Discovery
@@ -1873,6 +1904,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document, cons
                     if (currentPaths.contains(path)) continue;
                     state.retryableFailures.remove(path);
                     state.failures.remove(path);
+                    state.failureTimes.remove(path);
                     state.blocked.remove(path);
                 }
             }
@@ -1882,6 +1914,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document, cons
                 retiredCollection = state.collections.remove(task.fallbackFrom) > 0;
                 state.deniedClusterLists.insert(task.fallbackFrom, now_().addSecs(15 * 60));
                 state.failures.remove(task.fallbackFrom);
+                state.failureTimes.remove(task.fallbackFrom);
                 state.blocked.remove(task.fallbackFrom);
             } else if (task.namespaced && !task.collection.contains("/namespaces/")
                 && state.deniedClusterLists.contains(task.collection)) {
@@ -1912,7 +1945,7 @@ void ResourceClient::consume(const Task& task, const QJsonObject& document, cons
                     if (!uid.isEmpty() && !observed.contains(uid)) removed.append(uid);
                 }
                 const bool complete = !task.collection.contains("/namespaces/");
-                if (complete || !removed.isEmpty()) emit managedClustersObserved(task.id, observed, removed, complete);
+                emit managedClustersObserved(task.id, observed, removed, complete);
             }
             emit collectionAccepted(task.id);
         }

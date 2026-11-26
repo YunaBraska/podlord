@@ -41,7 +41,6 @@
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
-#include <QPointer>
 #include <QSignalSpy>
 #include <QSslSocket>
 #include <QTcpServer>
@@ -161,7 +160,9 @@ public:
                         document = {{"resources", resources}};
                     } else if (path == "/apis/cluster.x-k8s.io/v1beta1") {
                         document = {{"resources", QJsonArray{QJsonObject{{"name", "clusters"}, {"kind", "Cluster"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
-                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1/clusters") {
+                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1/clusters"
+                        || (scenario == "map_auto_import_scoped_refresh" && path == "/apis/cluster.x-k8s.io/v1beta1/namespaces/default/clusters")) {
+                        if (scenario == "map_auto_import_scoped_refresh" && path == "/apis/cluster.x-k8s.io/v1beta1/clusters") status = 403;
                         auto cluster = pod("workload", "Cluster", "cluster.x-k8s.io/v1beta1");
                         auto metadata = cluster["metadata"].toObject(); metadata["uid"] = managedClusterUid; cluster["metadata"] = metadata;
                         cluster["spec"] = QJsonObject{{"controlPlaneEndpoint", QJsonObject{{"host", "wlc.example"}, {"port", 6443}}}};
@@ -210,6 +211,7 @@ public:
                         if (scenario == "invalid_list") document["items"] = QJsonArray{QJsonObject{{"kind", "Pod"}, {"metadata", QJsonObject{{"name", "../escape"}}}}};
                         if (scenario == "rate_limit" && refresh == 1) status = 429;
                         if (scenario == "retain" && refresh >= 3) status = 500;
+                        if (scenario == "recover_sync" && refresh == 3) status = 400;
                         if (scenario == "cache_expiry" && refresh >= 3) status = 500;
                         if (scenario == "sync" && refresh >= 3) document["items"] = QJsonArray{pod(second ? "bravo" : "alpha-updated")};
                         if (scenario == "periodic_sync") {
@@ -1424,6 +1426,33 @@ bool execute(const QString& requestedScenario) {
             if (!waitFor([&] { return strip->property("contentX").toReal() > 0; })) return false;
         }
         return saveShellFrame(window,scenario,item(window,"contextMapCards"));
+    }
+    if (scenario == "map_auto_import_scoped_refresh") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; }, 15000)) {
+            std::fprintf(stderr, "Scoped management import failed: contexts=%lld, error=%s\n", static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        const auto workload = [&] {
+            for (const auto& value : workspace.contexts()) if (value.toMap().value("context") == "workload") return value.toMap().value("id").toString();
+            return QString{};
+        }();
+        if (workload.isEmpty() || std::none_of(server.requests.cbegin(), server.requests.cend(), [](const auto& request) {
+                return request.startsWith("/apis/cluster.x-k8s.io/v1beta1/namespaces/default/clusters");
+            })) {
+            std::fprintf(stderr, "Scoped CAPI list missing: workload=%s, requests=%s\n", qPrintable(workload), qPrintable(server.requests.join(',')));
+            return false;
+        }
+        server.managedSecretVersion = 2;
+        reference = reference.addSecs(901);
+        if (!workspace.refresh()) return false;
+        const bool updated = waitFor([&] {
+            const auto result = podlord::KubeconfigStore(profile).connection(workload);
+            return std::holds_alternative<podlord::ClusterConnection>(result)
+                && std::get<podlord::ClusterConnection>(result).authorization == "Bearer managed-test-token-2";
+        }, 15000);
+        if (!updated) std::fprintf(stderr, "Scoped WLC credentials stayed old: requests=%s\n", qPrintable(server.requests.join(',')));
+        return updated;
     }
     if (scenario == "map_auto_import_new" || scenario == "map_auto_retire_new") {
         const auto management = workspace.contexts().first().toMap().value("id").toString();
@@ -6766,6 +6795,24 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (!type(window, item(window, "resourceFilter"), "bravo")) return false;
         return waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == 1; }) && server.requests.size() == calls;
+    }
+    if (scenario == "filter_compact_fields") {
+        auto* cpu = item(window, "sidebarField_cpu");
+        if (!cpu || cpu->isVisible() || !item(window, "sidebarField_name")->isVisible()) return false;
+        if (!saveShellFrame(window, scenario + "-compact")) return false;
+        if (!click(window, item(window, "showMoreFilters")) || !waitFor([&] { return cpu->isVisible(); })
+            || !saveShellFrame(window, scenario + "-expanded")) return false;
+        if (!click(window, item(window, "showMoreFilters")) || cpu->isVisible()
+            || !workspace.filterField("cpu", "100")) return false;
+        return waitFor([&] { return cpu->isVisible(); }) && workspace.resetResourceFilters()
+            && waitFor([&] { return !cpu->isVisible(); });
+    }
+    if (scenario == "recover_sync") {
+        if (!workspace.refresh() || !waitFor([&] { return text(window, "syncProblemMessage").contains("HTTP 400"); })) return false;
+        const auto failureTime = QLocale::system().toString(reference.toLocalTime(), QLocale::ShortFormat);
+        return text(window, "syncProblemMessage").contains(failureTime)
+            && waitFor([&] { return !workspace.loading(); }) && workspace.refresh()
+            && waitFor([&] { return server.refresh >= 4 && !workspace.loading() && text(window, "syncProblemMessage").isEmpty(); });
     }
     if (scenario == "retain") {
         if (!workspace.refresh()) return false;

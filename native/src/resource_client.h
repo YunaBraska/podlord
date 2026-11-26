@@ -33,6 +33,10 @@ public:
     bool watchInspector(const QString& id, const QString& path, const QString& view = {});
     bool dismissInspector(const QString& id);
     QJsonArray rows(const QString& id) const;
+    /** Accepted Cluster API list rows, without traversing the full resource snapshot. */
+    QJsonArray managedClusterRows(const QString& id) const;
+    /** Time of the active failure on this path. */
+    QString failureTime(const QString& id, const QString& path) const;
     QVariantMap healthSummary(const QString& id) const;
     bool collectionSnapshotAvailable(const QString& id) const;
     /** Bounded in-memory request metadata. Reading this snapshot never schedules transport. */
@@ -126,7 +130,7 @@ signals:
     void changed(const QString& id);
     void rowsChanged(const QString& id);
     void collectionAccepted(const QString& id);
-    /** Complete Cluster API list, or UIDs removed from one successfully refreshed scoped list. */
+    /** Cluster API list accepted, including unchanged namespace-scoped lists for Secret rotation checks. */
     void managedClustersObserved(const QString& id, const QStringList& observedUids,
                                  const QStringList& removedUids, bool complete);
     /** Validated, self-contained Secret payload. Never enters resource rows, detail cache or diagnostics. */
@@ -186,6 +190,7 @@ private:
         QMap<QString, QPair<QString, QDateTime>> managedKubeconfigChecks;
         QSet<QString> unresolvedDeletes;
         QMap<QString, QString> failures;
+        QMap<QString, QDateTime> failureTimes;
         QMap<QString, FailedRead> retryableFailures;
         QString forwardError;
         bool open = true;

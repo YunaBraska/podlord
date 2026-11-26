@@ -22,6 +22,7 @@ Pane {
     LayoutMirroring.enabled: workspace.uiRightToLeft
     LayoutMirroring.childrenInherit: true
     property string expandedField: ""
+    property bool moreFieldsExpanded: false
     property bool presetsExpanded: false
     property bool namingPreset: false
     readonly property string selectedSavedPreset: workspace.selectedFilterPreset !== "default" ? workspace.selectedFilterPreset : ""
@@ -40,11 +41,12 @@ Pane {
         presetsExpanded = false
         namingPreset = false
         expandedField = ""
+        moreFieldsExpanded = false
         renamePreset.close()
     }
     readonly property string page: workspace.workspacePage
     onPageChanged: expandedField = ""
-    onVisibleChanged: if (!visible) { expandedField = ""; presetsExpanded = false; namingPreset = false }
+    onVisibleChanged: if (!visible) { expandedField = ""; moreFieldsExpanded = false; presetsExpanded = false; namingPreset = false }
     function openField(field) {
         if (!workspace.prepareFilterPicker(field)) return
         filtersExpanded = true
@@ -315,8 +317,10 @@ Pane {
                 delegate: ColumnLayout {
                     id: fieldGroup
                     required property var modelData
+                    required property int index
                     Layout.fillWidth: true
                     spacing: 0
+                    visible: sidebar.moreFieldsExpanded || index < 6 || !!workspace.resourceFieldFilters[modelData.id] || sidebar.expandedField === modelData.id
                     FlatButton {
                     id: fieldButton
                     readonly property var modelData: fieldGroup.modelData
@@ -361,6 +365,18 @@ Pane {
                         }
                     }
                 }
+                }
+                FlatButton {
+                    objectName: "showMoreFilters"
+                    Layout.alignment: Qt.AlignRight
+                    implicitWidth: 38
+                    text: sidebar.moreFieldsExpanded ? "−" : "⋯"
+                    Accessible.name: workspace.uiText["filters.title"] + " " + workspace.uiText["action.more"]
+                    visible: workspace.filterFields.length > 6
+                    onClicked: {
+                        sidebar.moreFieldsExpanded = !sidebar.moreFieldsExpanded
+                        if (!sidebar.moreFieldsExpanded) sidebar.expandedField = ""
+                    }
                 }
             }
                 }

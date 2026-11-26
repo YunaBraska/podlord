@@ -492,11 +492,8 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (runtime_->owners.value(id) == this) {
             const auto snapshot = client_.rows(id);
             observeIncidentAi(id, snapshot);
-            for (const auto& value : snapshot) {
-                const auto row = value.toObject();
-                if (row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/"))
-                    client_.requestManagedKubeconfig(id, row);
-            }
+            for (const auto& value : client_.managedClusterRows(id))
+                client_.requestManagedKubeconfig(id, value.toObject());
         }
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
@@ -544,10 +541,9 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(&client_, &ResourceClient::managedClustersObserved, this,
         [this](const QString& id, const QStringList& observed, const QStringList& removed, bool complete) {
             if (runtime_->owners.value(id) == this) {
-                for (const auto& value : client_.rows(id)) {
+                for (const auto& value : client_.managedClusterRows(id)) {
                     const auto row = value.toObject();
-                    if (row["kind"] == "Cluster" && row["apiVersion"].toString().startsWith("cluster.x-k8s.io/")
-                        && observed.contains(row["uid"].toString())) client_.requestManagedKubeconfig(id, row);
+                    if (observed.contains(row["uid"].toString())) client_.requestManagedKubeconfig(id, row);
                 }
             }
             if (runtime_->owners.value(id) != this || busy_ || !sourceRemoval_.isEmpty()) return;
@@ -842,9 +838,15 @@ QString Workspace::syncProblem() const {
     if (authenticationRunning()) return {};
     auto message = client_.failureStatus(active_).section('\n', 0, 0);
     if (message.isEmpty()) return {};
-    if (message.startsWith('/')) message = message.section(": ", 1);
+    QString when;
+    if (message.startsWith('/')) {
+        const auto path = message.section(": ", 0, 0);
+        message = message.section(": ", 1);
+        when = displayDateTime(client_.failureTime(active_, path));
+    }
     const auto context = mapContextCaption();
-    return context.isEmpty() ? message : context + ": " + message;
+    const auto description = context.isEmpty() ? message : context + ": " + message;
+    return when.isEmpty() ? description : when + " · " + description;
 }
 QString Workspace::displayDateTime(const QString& value) const {
     const auto time = QDateTime::fromString(value, Qt::ISODateWithMs);

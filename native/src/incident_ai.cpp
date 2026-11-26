@@ -887,6 +887,7 @@ void IncidentAi::stopObserving(const QString& context) {
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
     }
     snapshots_.remove(context);
+    preparations_.remove(context);
     rawSnapshots_.remove(context);
     pendingObservations_.remove(context);
     activeKeys_.remove(context);
@@ -1151,6 +1152,46 @@ static QJsonArray screenedRows(const QJsonArray& rows) {
     }
     return safeRows;
 }
+struct IncidentAi::Preparation final {
+    QJsonArray rows;
+    std::shared_ptr<const ResourceGraph> graph;
+    ProblemIndex problems;
+    QMap<QString, QJsonObject> byUid, nodes, claims, volumes;
+    QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
+    QSet<QString> observedSecrets;
+    explicit Preparation(QJsonArray safeRows, bool prepareGraph) : rows(std::move(safeRows)) {
+        if (!prepareGraph) return;
+        graph = std::make_shared<const ResourceGraph>(rows);
+        problems = indexProblems(rows);
+        static const QRegularExpression safeEventReason("^[A-Za-z][A-Za-z0-9]{0,30}$");
+        for (const auto& value : rows) {
+            const auto row = value.toObject();
+            const auto uid = row["uid"].toString();
+            if (!uid.isEmpty()) byUid.insert(uid, row);
+            if (row["kubernetesEvent"].toBool()) {
+                if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
+                    && safeEventReason.match(row["eventReason"].toString()).hasMatch()
+                    && !row["eventTargetUid"].toString().isEmpty())
+                    warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
+                continue;
+            }
+            const auto kind = row["kind"].toString(), name = row["name"].toString();
+            if (name.isEmpty()) continue;
+            if (kind == "Node") nodes.insert(name, row);
+            else if (kind == "PersistentVolumeClaim") claims.insert(row["namespace"].toString() + '\n' + name, row);
+            else if (kind == "PersistentVolume") volumes.insert(name, row);
+            else if (kind == "Secret") observedSecrets.insert(row["namespace"].toString() + '\n' + name);
+            if (row["problemSeverity"].toInt() > 0 && !row["namespace"].toString().isEmpty()
+                && QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "PersistentVolumeClaim"}.contains(kind)) {
+                QString category;
+                for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
+                    if (resourceProblemCodes.contains(issue.trimmed())) { category = issue.trimmed(); break; }
+                if (category.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) category = row["status"].toString();
+                if (!category.isEmpty()) namespaceProblems[row["namespace"].toString()].insert(kind + ' ' + category);
+            }
+        }
+    }
+};
 void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force,
                          const QString& cluster) {
     if (!enabled() && model().isEmpty()) return;
@@ -1179,25 +1220,36 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
     pendingObservations_[context] = {language, refreshPath, revision};
     if (rows.size() < 256) {
         pendingObservations_.remove(context);
-        observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed, screenedRows(rows));
+        observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed,
+            std::make_shared<const Preparation>(screenedRows(rows), modelReady_));
         if (!refreshPath.isEmpty()) refresh(context, refreshPath);
         return;
     }
-    auto* watcher = new QFutureWatcher<QJsonArray>(this);
-    connect(watcher, &QFutureWatcher<QJsonArray>::finished, this,
+    auto* watcher = new QFutureWatcher<std::shared_ptr<const Preparation>>(this);
+    connect(watcher, &QFutureWatcher<std::shared_ptr<const Preparation>>::finished, this,
         [this, watcher, context, language, force, expired, retryElapsed, changedCluster, revision] {
-            auto safeRows = watcher->result();
+            auto prepared = watcher->result();
             watcher->deleteLater();
             const auto pending = pendingObservations_.value(context);
             if (pending.revision != revision) return;
             pendingObservations_.remove(context);
-            observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed, std::move(safeRows));
+            if (modelReady_ && !prepared->graph) {
+                pendingObservations_[context] = pending;
+                observe(context, rawSnapshots_.value(context), language, true, clusters_.value(context));
+                return;
+            }
+            observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed,
+                std::move(prepared));
             if (!pending.refreshPath.isEmpty()) refresh(context, pending.refreshPath);
         });
-    watcher->setFuture(QtConcurrent::run([rows] { return screenedRows(rows); }));
+    watcher->setFuture(QtConcurrent::run([rows, prepareGraph = modelReady_] {
+        return std::make_shared<const Preparation>(screenedRows(rows), prepareGraph);
+    }));
 }
 void IncidentAi::observePrepared(const QString& context, const QString& language, bool force,
-                                 bool changedCluster, bool expired, bool retryElapsed, QJsonArray safeRows) {
+                                 bool changedCluster, bool expired, bool retryElapsed,
+                                 std::shared_ptr<const Preparation> prepared) {
+    const auto& safeRows = prepared->rows;
     const auto previous = snapshots_.constFind(context);
     const bool changedSnapshot = previous == snapshots_.cend() || previous->first != safeRows || previous->second != language;
     bool changedEvidence = force || expired || retryElapsed || !activeKeys_.contains(context)
@@ -1213,6 +1265,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
         }
     }
     snapshots_[context] = {safeRows, language};
+    preparations_[context] = prepared;
     if (changedEvidence && changedSnapshot) {
         for (auto item = manualVisible_.begin(); item != manualVisible_.end();) {
             if (item->context != context) { ++item; continue; }
@@ -1224,8 +1277,6 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
     if (!enabled()) { if (changedSnapshot) emit changed(); return; }
     if (!modelReady_) return;
     if (!changedEvidence) return;
-    const ResourceGraph graph(safeRows);
-    const auto problems = indexProblems(safeRows);
     QMap<QString, Incident> previousVisible;
     for (auto item = visible_.begin(); item != visible_.end();) {
         if (item->context != context) { ++item; continue; }
@@ -1233,42 +1284,12 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
         item = visible_.erase(item);
     }
     QSet<QString> activeKeys;
-    QMap<QString, QJsonObject> byUid;
-    QMap<QString, QJsonObject> nodes, claims, volumes;
-    QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
-    QSet<QString> observedSecrets;
-    static const QRegularExpression safeEventReason("^[A-Za-z][A-Za-z0-9]{0,30}$");
     bool migrated = false;
-    for (const auto& value : safeRows) {
-        const auto row = value.toObject();
-        if (!row["uid"].toString().isEmpty()) byUid.insert(row["uid"].toString(), row);
-        if (row["kubernetesEvent"].toBool()) {
-            if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
-                && safeEventReason.match(row["eventReason"].toString()).hasMatch()
-                && !row["eventTargetUid"].toString().isEmpty())
-                warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
-            continue;
-        }
-        const auto kind = row["kind"].toString(), name = row["name"].toString();
-        if (name.isEmpty()) continue;
-        if (kind == "Node") nodes.insert(name, row);
-        else if (kind == "PersistentVolumeClaim") claims.insert(row["namespace"].toString() + '\n' + name, row);
-        else if (kind == "PersistentVolume") volumes.insert(name, row);
-        else if (kind == "Secret") observedSecrets.insert(row["namespace"].toString() + '\n' + name);
-        if (row["problemSeverity"].toInt() > 0 && !row["namespace"].toString().isEmpty()
-            && QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "PersistentVolumeClaim"}.contains(kind)) {
-            QString category;
-            for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
-                if (resourceProblemCodes.contains(issue.trimmed())) { category = issue.trimmed(); break; }
-            if (category.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) category = row["status"].toString();
-            if (!category.isEmpty()) namespaceProblems[row["namespace"].toString()].insert(kind + ' ' + category);
-        }
-    }
     for (const auto& value : safeRows) {
         const auto row = value.toObject();
         if (row["kubernetesEvent"].toBool()) continue;
         if (row.isEmpty() || row["kind"].toString().isEmpty() || row["path"].toString().isEmpty()) continue;
-        const auto reasons = warningReasons.value(row["uid"].toString());
+        const auto reasons = prepared->warningReasons.value(row["uid"].toString());
         if (row["problemSeverity"].toInt() == 0 && reasons.isEmpty()) continue;
         QString code;
         if (row["problemSeverity"].toInt() > 0) {
@@ -1290,19 +1311,19 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             if (owners.isEmpty()) break;
             const auto uid = owners.first().toObject()["uid"].toString();
             if (uid.isEmpty() || visited.contains(uid)) break;
-            if (!byUid.contains(uid)) {
+            if (!prepared->byUid.contains(uid)) {
                 const auto owner = root["owner"].toString().section(", ", 0, 0);
                 if (owner.contains('/')) root = QJsonObject{{"kind", owner.section('/', 0, 0)}, {"name", owner.section('/', 1)}};
                 break;
             }
-            visited.insert(uid); root = byUid.value(uid);
+            visited.insert(uid); root = prepared->byUid.value(uid);
         }
         const auto nameSpace = row["namespace"].toString();
         const auto group = root["kind"].toString() + '/' + root["name"].toString();
         QSet<QString> relatedSignals;
         for (const auto& reason : reasons) if (reason != code) relatedSignals.insert("Observed warning event: " + reason);
         int categories = 0;
-        auto namespaceCategories = namespaceProblems.value(nameSpace).values();
+        auto namespaceCategories = prepared->namespaceProblems.value(nameSpace).values();
         namespaceCategories.sort();
         for (const auto& category : namespaceCategories) {
             if (category == row["kind"].toString() + ' ' + code) continue;
@@ -1310,14 +1331,14 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             if (++categories == 8) break;
         }
         if (row["kind"] == "Pod") {
-            const auto node = nodes.value(row["node"].toString());
+            const auto node = prepared->nodes.value(row["node"].toString());
             const auto nodeStatus = node["status"].toString();
             if (nodeStatus == "Ready" || nodeStatus == "NotReady") relatedSignals.insert("Assigned Node: " + nodeStatus);
             for (const auto& claimReference : row["volumeClaims"].toArray()) {
-                const auto claim = claims.value(nameSpace + '\n' + claimReference.toString());
+                const auto claim = prepared->claims.value(nameSpace + '\n' + claimReference.toString());
                 const auto claimStatus = claim["status"].toString();
                 if (QStringList{"Pending", "Lost", "Bound"}.contains(claimStatus)) relatedSignals.insert("Referenced claim: " + claimStatus);
-                const auto volume = volumes.value(claim["boundVolume"].toString());
+                const auto volume = prepared->volumes.value(claim["boundVolume"].toString());
                 const auto volumeStatus = volume["status"].toString();
                 if (QStringList{"Pending", "Available", "Bound", "Released", "Failed"}.contains(volumeStatus))
                     relatedSignals.insert("Bound volume: " + volumeStatus);
@@ -1328,7 +1349,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
                 else {
                     bool observed = false, unverified = false;
                     for (const auto& reference : references) {
-                        if (observedSecrets.contains(nameSpace + '\n' + reference.toString())) observed = true;
+                        if (prepared->observedSecrets.contains(nameSpace + '\n' + reference.toString())) observed = true;
                         else unverified = true;
                     }
                     if (observed) relatedSignals.insert("Image pull Secret reference: seen among observed resources");
@@ -1336,7 +1357,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
                 }
             }
         } else if (row["kind"] == "PersistentVolumeClaim") {
-            const auto volume = volumes.value(row["boundVolume"].toString());
+            const auto volume = prepared->volumes.value(row["boundVolume"].toString());
             const auto volumeStatus = volume["status"].toString();
             if (QStringList{"Pending", "Available", "Bound", "Released", "Failed"}.contains(volumeStatus))
                 relatedSignals.insert("Bound volume: " + volumeStatus);
@@ -1347,7 +1368,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             ? QString("default") : thinkValue_.toVariant().toString();
         const auto account = provider_ == "chatgpt" ? chatgpt_.activeClientId()
             : provider_ == "claude" ? claude_.identity() : provider_ == "openrouter" ? openrouter_.identity() : QString{};
-        const auto evidence = incidentEvidence(graphEvidence(graph, problems, row),
+        const auto evidence = incidentEvidence(graphEvidence(*prepared->graph, prepared->problems, row),
             evidenceBudgetBytes(language, row["kind"].toString(), code, related));
         const auto kind = row["kind"].toString();
         const auto identity = clusters_.value(context, context) + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + kind + "\n22";
@@ -1490,8 +1511,10 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         ? QString("default") : thinkValue_.toVariant().toString();
     const auto account = provider_ == "chatgpt" ? chatgpt_.activeClientId()
         : provider_ == "claude" ? claude_.identity() : provider_ == "openrouter" ? openrouter_.identity() : QString{};
-    const ResourceGraph graph(snapshot->first);
-    const auto evidence = incidentEvidence(graphEvidence(graph, indexProblems(snapshot->first), selected),
+    const auto prepared = preparations_.value(context);
+    const auto graph = prepared && prepared->graph ? prepared->graph : std::make_shared<const ResourceGraph>(snapshot->first);
+    const auto problems = prepared && prepared->graph ? prepared->problems : indexProblems(snapshot->first);
+    const auto evidence = incidentEvidence(graphEvidence(*graph, problems, selected),
         evidenceBudgetBytes(snapshot->second, kind, code, related));
     const auto identity = context + '\n' + path + '\n' + code + '\n' + related.join("\n")
         + '\n' + incidentEvidenceText(evidence, false)

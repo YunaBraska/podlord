@@ -12,6 +12,7 @@
 #include <QVariantMap>
 #include <QUrl>
 #include <optional>
+#include <memory>
 #include "chatgpt_client.h"
 #include "api_ai_client.h"
 
@@ -88,6 +89,7 @@ signals:
     void changed();
     void analysisCompleted(const QString& context, const QString& path);
 private:
+    struct Preparation;
     struct Incident final {
         QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature;
         QStringList related;
@@ -105,7 +107,8 @@ private:
     void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
     void observePrepared(const QString& context, const QString& language, bool force,
-                         bool changedCluster, bool expired, bool retryElapsed, QJsonArray safeRows);
+                         bool changedCluster, bool expired, bool retryElapsed,
+                         std::shared_ptr<const Preparation> prepared);
     std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
@@ -128,6 +131,7 @@ private:
     QMap<QString, Incident> manualVisible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
+    QMap<QString, std::shared_ptr<const Preparation>> preparations_;
     QMap<QString, QString> clusters_;
     QMap<QString, QJsonArray> rawSnapshots_;
     struct PendingObservation final { QString language, refreshPath; quint64 revision = 0; };
