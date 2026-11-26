@@ -208,8 +208,8 @@ Pane {
         width: pageScroll.availableWidth
         height: Math.max(pageScroll.availableHeight, implicitHeight)
         spacing: 8
-        SelectableText { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
-        SelectableText { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+        SelectableText { id: error; objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+        SelectableText { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         ResourceGrid {
             id: ruleGrid
             objectName: "alertRulesTable"
@@ -363,7 +363,7 @@ Pane {
                     }
                     ActionButton { objectName: "previewAlertZoom"; text: "Preview"; Accessible.name: workspace.uiText["alert.autoFocus"] + ": " + text; enabled: !workspace.alerts.busy && !workspace.alerts.zoomPreviewBusy; onClicked: workspace.previewAlertZoom(view.ruleDraft()) }
                 }
-                SelectableText { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                SelectableText { objectName: "alertZoomPreviewError"; Layout.fillWidth: true; visible: text !== ""; text: workspace.alerts.zoomPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
                 FormRow {
                     label: workspace.uiText["alert.sound"]
                     WrappingCheckBox {
@@ -390,10 +390,6 @@ Pane {
         }
         Item { Layout.fillHeight: true; visible: !editor.visible }
         SelectableText { objectName: "alertEmptyState"; text: workspace.uiText[workspace.currentSession === "" ? "alert.emptyContext" : "alert.emptyMatches"]; visible: workspace.alerts.matches.length === 0; color: workspace.appearanceColors.muted }
-        Flow {
-            Layout.fillWidth: true; Layout.maximumWidth: pageScroll.availableWidth; Layout.preferredHeight: childrenRect.height; spacing: 6
-            Repeater { model: workspace.alerts.matches; FlatButton { required property var modelData; required property int index; objectName: "alertMatch_" + index; text: modelData.name + ": " + modelData.count; Accessible.name: text; onClicked: workspace.inspectPath(modelData.path) } }
-        }
         }
     }
 }

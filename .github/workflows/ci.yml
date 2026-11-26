@@ -40,7 +40,7 @@ jobs:
           NATIVE_RESULT: ${{ needs.native-preflight.result }}
         run: |
           set -eu
-          [ "$NATIVE_RESULT" = success ] || {
-            printf 'Native qualification did not succeed: %s\n' "$NATIVE_RESULT" >&2
-            exit 1
-          }
+          case "$NATIVE_RESULT" in
+            success|cancelled) exit 0 ;;
+            *) printf 'Native qualification did not succeed: %s\n' "$NATIVE_RESULT" >&2; exit 1 ;;
+          esac

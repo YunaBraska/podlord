@@ -3,6 +3,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLockFile>
+#include <QMutex>
 
 #ifdef Q_OS_MACOS
 #include <CoreFoundation/CoreFoundation.h>
@@ -45,14 +49,13 @@ QString accountName(const QString& profile, const QString& name) {
     const auto path = QDir::cleanPath(QDir(profile).absolutePath()).toUtf8();
     return name + "." + QString::fromLatin1(QCryptographicHash::hash(path, QCryptographicHash::Sha256).toHex());
 }
-const QString service = QStringLiteral("dev.podlord.ai");
 #ifdef Q_OS_MACOS
 CFStringRef string(const QString& value) {
     const auto bytes = value.toUtf8();
     return CFStringCreateWithBytes(kCFAllocatorDefault, reinterpret_cast<const UInt8*>(bytes.constData()),
         bytes.size(), kCFStringEncodingUTF8, false);
 }
-CFMutableDictionaryRef query(const QString& account) {
+CFMutableDictionaryRef query(const QString& service, const QString& account) {
     auto* result = CFDictionaryCreateMutable(kCFAllocatorDefault, 4, &kCFTypeDictionaryKeyCallBacks,
         &kCFTypeDictionaryValueCallBacks);
     CFDictionarySetValue(result, kSecClass, kSecClassGenericPassword);
@@ -65,20 +68,25 @@ CFMutableDictionaryRef query(const QString& account) {
     return result;
 }
 #elif defined(Q_OS_LINUX)
-const SecretSchema schema = [] {
+SecretSchema schemaFor(const char* name) {
     SecretSchema value{};
-    value.name = "dev.podlord.ai";
+    value.name = name;
     value.flags = SECRET_SCHEMA_NONE;
     value.attributes[0] = {"account", SECRET_SCHEMA_ATTRIBUTE_STRING};
     return value;
-}();
+}
+const SecretSchema legacySchema = schemaFor("dev.podlord.ai");
+const SecretSchema profileSchema = schemaFor("dev.podlord");
 #endif
 } // namespace
 
+SystemCredentialStore::SystemCredentialStore(Service service) : service_(service) {}
+
 CredentialStore::ReadResult SystemCredentialStore::read(const QString& profile, const QString& name) {
     const auto account = accountName(profile, name);
+    const auto service = service_ == Service::Profile ? QStringLiteral("dev.podlord") : QStringLiteral("dev.podlord.ai");
 #ifdef Q_OS_MACOS
-    auto* attributes = query(account);
+    auto* attributes = query(service, account);
     CFDictionarySetValue(attributes, kSecReturnData, kCFBooleanTrue);
     CFDictionarySetValue(attributes, kSecMatchLimit, kSecMatchLimitOne);
     CFTypeRef result = nullptr;
@@ -103,6 +111,7 @@ CredentialStore::ReadResult SystemCredentialStore::read(const QString& profile, 
     return {true, true, data, {}};
 #elif defined(Q_OS_LINUX)
     GError* failure = nullptr;
+    const auto& schema = service_ == Service::Profile ? profileSchema : legacySchema;
     auto* value = secret_password_lookup_sync(&schema, nullptr, &failure, "account", account.toUtf8().constData(), nullptr);
     if (failure) {
         g_error_free(failure);
@@ -119,8 +128,9 @@ CredentialStore::ReadResult SystemCredentialStore::read(const QString& profile, 
 
 bool SystemCredentialStore::write(const QString& profile, const QString& name, const QByteArray& data, QString& error) {
     const auto account = accountName(profile, name);
+    const auto service = service_ == Service::Profile ? QStringLiteral("dev.podlord") : QStringLiteral("dev.podlord.ai");
 #ifdef Q_OS_MACOS
-    auto* attributes = query(account);
+    auto* attributes = query(service, account);
     auto* value = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8*>(data.constData()), data.size());
     auto* update = CFDictionaryCreateMutable(kCFAllocatorDefault, 1, &kCFTypeDictionaryKeyCallBacks,
         &kCFTypeDictionaryValueCallBacks);
@@ -153,7 +163,8 @@ bool SystemCredentialStore::write(const QString& profile, const QString& name, c
     GError* failure = nullptr;
     const auto utf8 = data.toStdString();
     const auto key = account.toUtf8();
-    const bool saved = secret_password_store_sync(&schema, SECRET_COLLECTION_DEFAULT, "PodLord AI", utf8.c_str(),
+    const auto& schema = service_ == Service::Profile ? profileSchema : legacySchema;
+    const bool saved = secret_password_store_sync(&schema, SECRET_COLLECTION_DEFAULT, "PodLord", utf8.c_str(),
         nullptr, &failure, "account", key.constData(), nullptr);
     if (saved) return true;
     error = "System password store is unavailable or locked.";
@@ -168,8 +179,9 @@ bool SystemCredentialStore::write(const QString& profile, const QString& name, c
 
 bool SystemCredentialStore::remove(const QString& profile, const QString& name, QString& error) {
     const auto account = accountName(profile, name);
+    const auto service = service_ == Service::Profile ? QStringLiteral("dev.podlord") : QStringLiteral("dev.podlord.ai");
 #ifdef Q_OS_MACOS
-    auto* attributes = query(account);
+    auto* attributes = query(service, account);
     const auto status = SecItemDelete(attributes);
     CFRelease(attributes);
     if (status == errSecSuccess || status == errSecItemNotFound) return true;
@@ -183,6 +195,7 @@ bool SystemCredentialStore::remove(const QString& profile, const QString& name, 
 #elif defined(Q_OS_LINUX)
     GError* failure = nullptr;
     const auto key = account.toUtf8();
+    const auto& schema = service_ == Service::Profile ? profileSchema : legacySchema;
     const bool removed = secret_password_clear_sync(&schema, nullptr, &failure, "account", key.constData(), nullptr);
     if (removed) return true;
     error = "System password store is unavailable or locked.";
@@ -191,6 +204,118 @@ bool SystemCredentialStore::remove(const QString& profile, const QString& name, 
 #else
     error = "System password store is unavailable or locked.";
     return false;
+#endif
+}
+
+ProfileCredentialStore::ProfileCredentialStore(CredentialStore* vaultBackend, CredentialStore* legacyBackend)
+    : vaultBackend_(vaultBackend ? vaultBackend : &system_),
+      legacyBackend_(legacyBackend ? legacyBackend : (vaultBackend ? vaultBackend : &legacy_)) {}
+
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+namespace {
+const QString vaultName = QStringLiteral("podlord-profile-vault-v1");
+QMutex vaultMutex;
+struct Vault {
+    bool ok = false;
+    QJsonObject entries;
+    QString error;
+};
+Vault loadVault(CredentialStore& backend, const QString& profile) {
+    const auto stored = backend.read(profile, vaultName);
+    if (!stored.ok) return {false, {}, stored.error};
+    if (!stored.found) return {true, {}, {}};
+    const auto document = QJsonDocument::fromJson(stored.data);
+    if (!document.isObject() || document.object().value("version") != 1
+        || !document.object().value("entries").isObject())
+        return {false, {}, "PodLord credential vault is invalid."};
+    const auto entries = document.object().value("entries").toObject();
+    for (auto it = entries.begin(); it != entries.end(); ++it) {
+        if (it.key().isEmpty() || !it.value().isString()
+            || !QByteArray::fromBase64Encoding(it.value().toString().toLatin1(),
+                QByteArray::AbortOnBase64DecodingErrors))
+            return {false, {}, "PodLord credential vault is invalid."};
+    }
+    return {true, entries, {}};
+}
+bool saveVault(CredentialStore& backend, const QString& profile, const QJsonObject& entries, QString& error) {
+    const auto data = QJsonDocument(QJsonObject{{"version", 1}, {"entries", entries}}).toJson(QJsonDocument::Compact);
+    if (!backend.write(profile, vaultName, data, error)) return false;
+    const auto checked = backend.read(profile, vaultName);
+    if (checked.ok && checked.found && checked.data == data) return true;
+    error = checked.ok ? "PodLord credential vault could not be verified." : checked.error;
+    return false;
+}
+bool validName(const QString& name) { return !name.isEmpty() && name != vaultName; }
+}
+#endif
+
+CredentialStore::ReadResult ProfileCredentialStore::read(const QString& profile, const QString& name) {
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+    if (!validName(name)) return {false, false, {}, "Invalid credential name."};
+    auto vault = loadVault(*vaultBackend_, profile);
+    if (!vault.ok) return {false, false, {}, vault.error};
+    if (vault.entries.contains(name))
+        return {true, true, QByteArray::fromBase64(vault.entries.value(name).toString().toLatin1()), {}};
+    auto legacy = legacyBackend_->read(profile, name);
+    if (!legacy.ok || !legacy.found || !QDir(profile).exists()) return legacy;
+    QMutexLocker guard(&vaultMutex);
+    QLockFile lock(QDir(profile).filePath(".credential-vault.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(30000)) return {false, false, {}, "PodLord credentials are in use by another process."};
+    vault = loadVault(*vaultBackend_, profile);
+    if (!vault.ok) return {false, false, {}, vault.error};
+    if (vault.entries.contains(name))
+        return {true, true, QByteArray::fromBase64(vault.entries.value(name).toString().toLatin1()), {}};
+    legacy = legacyBackend_->read(profile, name);
+    if (!legacy.ok || !legacy.found) return legacy;
+    vault.entries.insert(name, QString::fromLatin1(legacy.data.toBase64()));
+    QString error;
+    if (!saveVault(*vaultBackend_, profile, vault.entries, error)) return {false, false, {}, error};
+    legacyBackend_->remove(profile, name, error);
+    return legacy;
+#else
+    return legacyBackend_->read(profile, name);
+#endif
+}
+
+bool ProfileCredentialStore::write(const QString& profile, const QString& name, const QByteArray& data, QString& error) {
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+    if (!validName(name)) { error = "Invalid credential name."; return false; }
+    QMutexLocker guard(&vaultMutex);
+    QLockFile lock(QDir(profile).filePath(".credential-vault.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(30000)) { error = "PodLord credentials are in use by another process."; return false; }
+    auto vault = loadVault(*vaultBackend_, profile);
+    if (!vault.ok) { error = vault.error; return false; }
+    vault.entries.insert(name, QString::fromLatin1(data.toBase64()));
+    if (!saveVault(*vaultBackend_, profile, vault.entries, error)) return false;
+    legacyBackend_->remove(profile, name, error);
+    return true;
+#else
+    return legacyBackend_->write(profile, name, data, error);
+#endif
+}
+
+bool ProfileCredentialStore::remove(const QString& profile, const QString& name, QString& error) {
+#if defined(Q_OS_MACOS) || defined(Q_OS_LINUX)
+    if (!validName(name)) { error = "Invalid credential name."; return false; }
+    QMutexLocker guard(&vaultMutex);
+    QLockFile lock(QDir(profile).filePath(".credential-vault.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(30000)) { error = "PodLord credentials are in use by another process."; return false; }
+    auto vault = loadVault(*vaultBackend_, profile);
+    if (!vault.ok) { error = vault.error; return false; }
+    if (!legacyBackend_->remove(profile, name, error)) return false;
+    if (!vault.entries.contains(name)) return true;
+    vault.entries.remove(name);
+    if (!vault.entries.isEmpty()) return saveVault(*vaultBackend_, profile, vault.entries, error);
+    if (!vaultBackend_->remove(profile, vaultName, error)) return false;
+    const auto checked = vaultBackend_->read(profile, vaultName);
+    if (checked.ok && !checked.found) return true;
+    error = checked.ok ? "PodLord credential vault could not be verified." : checked.error;
+    return false;
+#else
+    return legacyBackend_->remove(profile, name, error);
 #endif
 }
 } // namespace podlord

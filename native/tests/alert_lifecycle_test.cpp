@@ -246,6 +246,9 @@ bool run(const QString& scenario) {
     }
     if (scenario == "view_snapshot_pending") {
         if (countForRule() != 0 || effect()["color"] == "#123456") return false;
+        server.version = 2; server.restarts = 1; now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 1; })) return false;
         auto* pool = QThreadPool::globalInstance();
         pool->waitForDone();
         const int maximum = pool->maxThreadCount();
@@ -254,17 +257,16 @@ bool run(const QString& scenario) {
         auto held = QtConcurrent::run([&] { entered.release(); release.acquire(); });
         const auto restore = qScopeGuard([&] { release.release(); held.waitForFinished(); pool->setMaxThreadCount(maximum); });
         if (!entered.tryAcquire(1, 1000) || !alerts.setVisibleResources("session", {})) return false;
-        for (int version = 2; version <= 3; ++version) {
-            server.version = version; server.restarts = version - 1; now = now.addMSecs(1000);
-            if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
-                    && client.resource("session", path)["restarts"].toInt() == version - 1; })
-                || !alerts.setVisibleResources("session", {path})) return false;
-        }
+        if (!alerts.setVisibleResources("session", {path})) return false;
         const QString peer = "/api/v1/namespaces/default/pods/peer-0";
         if (!alerts.setVisibleResources("session", {peer})) return false;
         release.release(); held.waitForFinished();
-        if (!waitFor([&] { return countForRule() == 1; }) || effect()["color"] == "#123456"
-            || !alerts.setVisibleResources("session", {path}) || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
+        if (!waitFor([&] { return countForRule() == 0; }) || effect()["color"] == "#123456") return false;
+        server.version = 3; server.restarts = 2; now = now.addMSecs(1000);
+        if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
+                && client.resource("session", path)["restarts"].toInt() == 2; })) return false;
+        if (!waitFor([&] { return countForRule() == 1; }) || effect()["color"] == "#123456") return false;
+        if (!alerts.setVisibleResources("session", {path}) || !waitFor([&] { return effect()["color"] == "#123456"; })) return false;
         ++server.version; ++server.restarts; now = now.addMSecs(1000);
         if (!client.refresh("session") || !waitFor([&] { return !client.syncLoading("session")
                 && client.resource("session", path)["restarts"].toInt() == 3; })) return false;

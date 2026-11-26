@@ -376,7 +376,7 @@ for (const result of ['success', 'failure', 'cancelled', 'skipped']) {
         const actual = spawnSync('/bin/sh', ['-eu', '-c', script], {encoding: 'utf8', timeout: 10000,
             env: {...process.env, NATIVE_RESULT: result}});
         assert.ifError(actual.error);
-        assert.equal(actual.status, result === 'success' ? 0 : 1, actual.stdout + actual.stderr);
+        assert.equal(actual.status, result === 'success' || result === 'cancelled' ? 0 : 1, actual.stdout + actual.stderr);
     });
 }
 

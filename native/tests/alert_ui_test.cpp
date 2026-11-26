@@ -61,11 +61,9 @@ bool revealCpuMetric(QQuickWindow* window, int& navigationKeys) {
     auto* overview=item(window,"overviewScroll");
     if (!overview || !overview->isVisible()) return false;
     bool visible=true;
-    for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
-        auto* field=item(window,name);
-        if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
-            || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) visible=false;
-    }
+    auto* field=item(window,"overview_metric_cpu");
+    if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
+        || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) visible=false;
     if (visible) return !overview->property("moving").toBool();
     auto* model=overview->property("model").value<QAbstractItemModel*>();
     if (!model) return false;
@@ -74,7 +72,12 @@ bool revealCpuMetric(QQuickWindow* window, int& navigationKeys) {
     for (int row=0; row<model->rowCount(); ++row)
         if (model->data(model->index(row,0),Qt::UserRole).toMap()["id"]=="metric_cpu") { cpuRow=row; break; }
     const auto current=overview->property("currentIndex").toInt();
-    if (cpuRow<0 || current==cpuRow) return false;
+    if (cpuRow<0) return false;
+    if (current==cpuRow) {
+        QQmlExpression reveal(qmlContext(overview),overview,QString("positionViewAtIndex(%1, ListView.Center)").arg(cpuRow));
+        reveal.evaluate();
+        return false;
+    }
     overview->forceActiveFocus(Qt::TabFocusReason);
     QTest::keyClick(window,current<cpuRow ? Qt::Key_Down : Qt::Key_Up);
     ++navigationKeys;
@@ -156,6 +159,7 @@ public:
     QString radarScenario;
     bool secondFailed = false;
     bool holdPodResponses = false;
+    QByteArray fixedPods;
     QList<QPair<QPointer<QTcpSocket>, QByteArray>> heldPodResponses;
     const QDateTime created=QDateTime::currentDateTimeUtc().addSecs(-3600);
     const QDateTime measured=QDateTime::currentDateTimeUtc();
@@ -168,6 +172,13 @@ public:
                     socket->disconnect(this); ++requests;
                     const auto path = QUrl::fromEncoded(bytes->split(' ')[1]).path();
                     if (path=="/external-image") ++externalImageRequests;
+                    if (path=="/api/v1/pods" && !fixedPods.isEmpty()) {
+                        const auto payload=fixedPods;
+                        socket->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+                            + QByteArray::number(payload.size()) + "\r\n\r\n" + payload);
+                        socket->disconnectFromHost(); connect(socket,&QTcpSocket::disconnected,socket,&QObject::deleteLater);
+                        return;
+                    }
                     QJsonObject body;
                     if (path == "/api") body = {{"versions", QJsonArray{"v1"}}};
                     else if (path == "/apis") body = {{"groups", metricScenario.isEmpty() || metricScenario=="metric_empty" ? QJsonArray{} : QJsonArray{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "metrics.k8s.io/v1beta1"}}}}}}};
@@ -297,7 +308,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     };
     QTemporaryDir temporary; if (!temporary.isValid()) return setupFailure("temporary-profile");
     Kubernetes server; if (realConfig.isEmpty() && !server.listen(QHostAddress::LocalHost, 0)) return setupFailure("fixture-listen");
-    if (scenario.startsWith("metric_")) server.metricScenario=scenario;
+    if (scenario.startsWith("metric_")) server.metricScenario=scenario == "metric_many_refresh_nonblocking" ? "metric_many" : scenario;
     if (scenario == "dashboard") server.metricScenario="metric_dashboard";
     if (scenario == "baseline_problem_sound") server.phase="Failed";
     if (scenario == "baseline_warning_sound") server.healthScenario="health_pod_not_ready";
@@ -331,7 +342,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return workspace.importFile(realConfig.isEmpty() ? source.fileName() : realConfig) && waitFor([&] { return !workspace.busy() && !workspace.contexts().isEmpty(); })
             && workspace.openContext(workspace.contexts().first().toMap()["id"].toString())
             && waitFor([&] { return realConfig.isEmpty() ? scenario=="radar_loading_partial" ? workspace.totalResourceCount()==1 && workspace.loading()
-                : workspace.totalResourceCount() == (scenario=="metric_many" || scenario=="reference_zoom_preview_many" ? 5000 : scenario.startsWith("health_restart_") || scenario=="radar_health_restarts" ? 6
+                : workspace.totalResourceCount() == (scenario=="metric_many" || scenario=="metric_many_refresh_nonblocking" || scenario=="reference_zoom_preview_many" ? 5000 : scenario.startsWith("health_restart_") || scenario=="radar_health_restarts" ? 6
                     : scenario.startsWith("radar_focus_") || scenario=="reference_zoom_preview_unsaved" ? 2 : 1) && !workspace.loading()
                 : workspace.totalResourceCount()>=1051; }, realConfig.isEmpty() ? 9000 : 180000);
     };
@@ -1067,11 +1078,11 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     && item(window, "resourceFilter")->isVisible(); }) && server.requests == requests;
         }
         if (scenario=="radar_loading_partial") {
-            const auto* summary=item(window, "radarHealthSummary");
-            if (!summary || !summary->property("text").toString().contains("1 resources") || !summary->property("text").toString().contains("Loading")
+            const auto* radar=item(window, "resourceRadar");
+            if (!radar || radar->property("count").toInt()!=1 || !workspace.loading()
                 || !workspace.alerts()->matches().isEmpty() || !focus.isEmpty()) return false;
             if (!waitFor([&] { return !workspace.loading() && workspace.resourceCount()==2; })) return false;
-            return summary->property("text").toString().contains("2 resources") && !summary->property("text").toString().contains("Loading");
+            return radar->property("count").toInt()==2;
         }
         if (scenario=="radar_refresh_preserves_alarm") {
             const auto problemCount=[&] {
@@ -1119,7 +1130,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         return server.requests==requests;
     }
     if (!click(window, "alertsWorkspaceButton")) return false;
-    const auto alphaMatch=[&] { for (int i=0; i<4; ++i) if (auto* match=item(window, "alertMatch_"+QString::number(i)); match && match->property("text").toString()=="Alpha rule: 1") return true; return false; };
+    const auto activeCount=[&](const QString& rule) {
+        const auto* model=workspace.alerts()->tableModel();
+        for (int row=0; row<model->rowCount(); ++row)
+            if (model->index(row, 2).data().toString()==rule) return model->index(row, 1).data().toString();
+        return QString{};
+    };
+    const auto alphaMatch=[&] { return activeCount("Alpha rule") == "1"; };
     if (scenario=="and" || scenario=="missing_metric") return !alphaMatch();
     if (scenario=="regex_limit") return waitFor([&] { return item(window, "alertEvaluationError")->property("text").toString().contains("exceeded"); }) && !alphaMatch();
     if (!waitFor(alphaMatch, realConfig.isEmpty() ? 9000 : 60000)) {
@@ -1128,9 +1145,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     }
     if (scenario.startsWith("health_")) {
         const int expected=scenario=="health_restart_outlier" ? 2 : scenario=="health_event_warning" || scenario=="health_event_missing_time" || scenario=="health_event_invalid_time" || scenario=="health_event_expiry" || scenario=="health_pvc_pending" || scenario=="health_pod_not_ready" || scenario=="health_restart_population" ? 1 : 0;
-        const auto* match=item(window,"alertMatch_0");
-        const bool correct=expected>0 ? match && match->property("text").toString()==QString("Problem color: %1").arg(expected) : !match || !match->property("text").toString().startsWith("Problem color:");
-        if (!correct) std::fprintf(stderr,"Expected problems=%d; visible problem summary=%s\n",expected,qPrintable(match ? match->property("text").toString() : "none"));
+        const bool correct=activeCount("Problem color") == QString::number(expected);
+        if (!correct) std::fprintf(stderr,"Expected problems=%d; table count=%s\n",expected,qPrintable(activeCount("Problem color")));
         if (scenario=="health_event_warning" || scenario=="health_pvc_pending" || scenario=="health_pod_not_ready") {
             const auto collection=scenario=="health_event_warning" ? "events" : scenario=="health_pvc_pending" ? "persistentvolumeclaims" : "pods";
             if (!workspace.setWorkspacePage("resources") || !workspace.inspectPath(QString("/api/v1/namespaces/default/%1/alpha").arg(collection))) return false;
@@ -1141,8 +1157,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             const auto requests=server.requests; const int after=scenario=="health_event_expiry" ? 0 : 1;
             if (!waitFor([&] { return workspace.dashboardSummary().contains(QString("%1 with problems.").arg(after)); }) || !workspace.setWorkspacePage("alerts")) return false;
             return waitFor([&] {
-                const auto* updated=item(window,"alertMatch_0");
-                return after>0 ? updated && updated->property("text").toString()=="Problem color: 1" : !updated || !updated->property("text").toString().startsWith("Problem color:");
+                return activeCount("Problem color") == QString::number(after);
             }) && server.requests==requests;
         }
         return true;
@@ -1168,8 +1183,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
             window->requestActivate();
             if (!waitFor([&] { return window->isExposed() && window->isActive(); },5000)) return failure("foreground desktop availability");
         }
-        const auto* problems=item(window,"alertMatch_0");
-        if (!problems || !problems->property("text").toString().startsWith("Problem color:") || problems->property("text").toString().section(':',1).trimmed().toInt()<34) return failure("default problem alarm");
+        if (activeCount("Problem color").toInt()<34 || item(window, "alertMatch_0")) return failure("default problem alarm");
         if (!workspace.filter("no-resource-matches-this") || workspace.resourceCount()!=0 || !alphaMatch()) return failure("session-wide alarm despite empty filter");
         QSignalSpy inspectorFrames(window,&QQuickWindow::frameSwapped);
         if (!workspace.filter("visual-pending-storage-1") || !workspace.setWorkspacePage("resources") || !workspace.inspectPath("/api/v1/namespaces/visual-a/persistentvolumeclaims/visual-pending-storage-1")) return failure("open pending PVC inspector");
@@ -1233,7 +1247,7 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         int navigationKeys=0;
         const bool inspected = waitFor([&] {
             if (!workspace.canEditYaml() || !revealCpuMetric(window,navigationKeys)) return false;
-            const auto* usage=item(window,"metric_cpu_usage");
+            const auto* usage=item(window,"overview_metric_cpu");
             return usage && usage->property("text").toString().contains("mCPU") && !usage->property("text").toString().contains("incomplete");
         },60000);
         if (!inspected) return failure("fresh Inspector and visible CPU gauge");
@@ -1380,6 +1394,41 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         for (auto it=pages.begin();it!=pages.end();++it) { auto sorted=it.value(); const auto cold=sorted.first(); std::sort(sorted.begin(),sorted.end()); std::fprintf(stdout,"%s: first=%lld us, p50=%lld us, p95=%lld us\n",qPrintable(it.key()),cold,sorted[5],sorted[9]); }
         return server.requests==requests && workspace.resourceCount()==5000;
     }
+    if (scenario=="metric_many_refresh_nonblocking") {
+        QJsonArray items;
+        for (int index=0;index<5000;++index) items.append(QJsonObject{
+            {"apiVersion","v1"}, {"kind","Pod"},
+            {"metadata",QJsonObject{{"name",index==0 ? QString("alpha") : QString("load-%1").arg(index)},
+                                    {"namespace","default"},{"uid",index==0 ? QString("uid-alpha") : QString("uid-load-%1").arg(index)},
+                                    {"resourceVersion","2"}}},
+            {"status",QJsonObject{{"phase","Failed"}}}});
+        server.fixedPods=QJsonDocument(QJsonObject{{"metadata",QJsonObject{}},{"items",items}}).toJson(QJsonDocument::Compact);
+        QTest::qWait(800);
+        QElapsedTimer elapsed; elapsed.start();
+        qint64 lastTick=elapsed.elapsed(), longestGap=0;
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat,&QTimer::timeout,&workspace,[&] {
+            const auto now=elapsed.elapsed();
+            longestGap=std::max(longestGap,now-lastTick);
+            lastTick=now;
+        });
+        heartbeat.start();
+        QTest::qWait(1000);
+        std::printf("Idle longest UI event gap: %lld ms\n",static_cast<long long>(longestGap));
+        longestGap=0; lastTick=elapsed.elapsed();
+        const auto requested=server.requests;
+        QElapsedTimer refreshElapsed; refreshElapsed.start();
+        const bool accepted=workspace.refresh();
+        std::printf("Refresh command returned in %lld ms\n",static_cast<long long>(refreshElapsed.elapsed()));
+        if (!accepted || !waitFor([&] {
+            return server.requests>requested && !workspace.loading() && workspace.table()->rowCount()==5000
+                && workspace.table()->index(0,3).data().toString()=="Failed";
+        },30000)) return false;
+        heartbeat.stop();
+        std::printf("5000 Pod refresh, longest UI event gap: %lld ms\n", static_cast<long long>(longestGap));
+        return longestGap<=80;
+    }
     if (scenario=="metric_repeat") {
         QSignalSpy changed(&workspace, &podlord::Workspace::resourcePresentationChanged);
         const auto requests=server.requests;
@@ -1425,8 +1474,8 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         int navigationKeys=0;
         const auto failure=[&](const char* stage) {
             auto* overview=item(window,"overviewScroll");
-            const auto* usage=item(window,"metric_cpu_usage");
-            const auto* reference=item(window,"metric_cpu_references");
+            const auto* usage=item(window,"overview_metric_cpu");
+            const auto* reference=item(window,"metric_cpu_marker_values");
             std::fprintf(stderr,"Metric Inspector failed at %s: path=%s page=%s fresh=%d error=%s status=%s requests=%d overviewY=%g originY=%g height=%g contentHeight=%g usage=%s references=%s\n",
                 stage,qPrintable(workspace.inspectorPath()),qPrintable(workspace.inspectorPage()),workspace.canEditYaml(),
                 qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus()),server.requests,
@@ -1460,12 +1509,9 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         auto* overview=item(window,"overviewScroll");
         if (!overview || !overview->isVisible()) return failure("Overview available");
         const auto visibleMetric=[&] {
-            for (const auto* name : {"metric_cpu_usage","metric_cpu_references"}) {
-                auto* field=item(window,name);
-                if (!field || !field->isVisible() || field->width()<=0 || field->height()<=0
-                    || !podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())))) return false;
-            }
-            return true;
+            auto* field=item(window,"overview_metric_cpu");
+            return field && field->isVisible() && field->width()>0 && field->height()>0
+                && podlord::test::visibleBounds(window,field).contains(field->mapRectToScene(QRectF(QPointF{},field->size())));
         };
         if (!waitFor([&] {
             if (!workspace.canEditYaml() || workspace.inspectorPath()!="/api/v1/namespaces/default/pods/alpha") return false;
@@ -1473,18 +1519,18 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
         })) return failure("fresh detail and visible CPU gauge");
         const bool measured=waitFor([&] {
             if (!visibleMetric()) return false;
-            const auto* measured=item(window, "metric_cpu_usage");
+            const auto* measured=item(window, "overview_metric_cpu");
             if (!measured) return false;
             const auto usage=measured->property("text").toString();
-            if (scenario=="metric_empty") return usage.contains("Unavailable");
-            if (scenario=="metric_invalid") return usage.contains("Unavailable") && workspace.status().contains("Invalid Metrics API quantity");
+            if (scenario=="metric_empty") { const auto* bar=item(window,"metric_cpu_bar"); return usage.contains("request: 10 mCPU") && (!bar || !bar->isVisible()); }
+            if (scenario=="metric_invalid") return usage.contains("request: 10 mCPU") && workspace.status().contains("Invalid Metrics API quantity");
             if (scenario=="metric_zero") return usage.contains("0 mCPU") && !usage.contains("Unavailable");
             if (scenario=="metric_partial") return usage.contains("25 mCPU") && usage.contains("incomplete");
             if (scenario=="metric_stale") return usage.contains("25 mCPU") && !usage.contains("stale");
-            const auto* reference=item(window, "metric_cpu_references");
+            const auto* reference=item(window, "metric_cpu_marker_values");
             return usage.contains("25 mCPU") && reference
-                && reference->property("text").toString().contains("request: 10 mCPU")
-                && reference->property("text").toString().contains("limit: 100 mCPU");
+                && reference->property("text").toString().contains("request 10 mCPU")
+                && reference->property("text").toString().contains("limit 100 mCPU");
         });
         if (!measured) return failure("metric semantics");
         return measured;

@@ -33,7 +33,7 @@ Click Map again to return to All Contexts. Context settings are shared when you 
 
 Select a resource to inspect its details, events, YAML, logs and supported actions. ConfigMap and Secret keys are listed separately. Secret values stay hidden until you explicitly reveal or copy them.
 
-The map highlights linked resources when the inspector is open. The highlight fades with each relationship. Use Links to open a related resource.
+The map highlights linked resources when the inspector is open. The highlight fades with each relationship. Links lists the selected resource first, then related resources with their known problems and messages. Open a row to inspect that resource.
 
 Wait for current YAML before editing. Applying YAML and deleting resources require confirmation. Changing a filter or column does not change the cluster.
 
@@ -41,9 +41,9 @@ Wait for current YAML before editing. Applying YAML and deleting resources requi
 
 ## AI analysis
 
-On desktop, choose a model in **Settings → AI**. The list groups models under connected ChatGPT, Claude API and OpenRouter accounts or local Ollama. PodLord never changes your selected model when you connect another provider. Enable **Auto** for a context if you want new problems analyzed automatically. The AI tab appears only when a provider is available.
+On desktop, choose a model in **Settings → AI**. The list groups models under connected ChatGPT, Claude API and OpenRouter accounts or local Ollama. PodLord never changes your selected model when you connect another provider. Enable **Auto** once to analyze new problems in every open context with the selected model. The AI tab appears only when a provider is available.
 
-The report separates **Observation**, **Possible cause** and **Next check**. Known resource names in the answer open those resources in the inspector. **Request** shows the instructions and resource facts that would be sent. The refresh icon asks for a new answer, including when a warning was not analyzed automatically. Otherwise, unchanged problems reuse a cached answer for up to 90 days. The copyable `kubectl` command is a read-only suggestion. PodLord does not run it or require `kubectl` locally.
+The report separates **Observation**, **Possible cause** and **Next check**. Known resource names in the answer open those resources in the inspector. **Request** shows the instructions and resource facts that would be sent. Auto makes at most one attempt per cluster, namespace, known workload, error code and resource type within 90 days. Pod replacements under that workload, changed messages or metrics, and model or language changes do not repeat it. The refresh icon requests a new answer immediately, including after a failed attempt. The copyable `kubectl` command is a read-only suggestion. PodLord does not run it or require `kubectl` locally.
 
 The model can receive names, statuses, selected Warning Events and linked Pod, Node, volume and other resource facts. Secret values, kubeconfigs, full logs, file contents and full YAML are not included. Event and status messages are masked on a best-effort basis. Review **Request** before enabling AI for sensitive clusters. [Privacy details]({{ '/privacy.html' | relative_url }}) explain the data flow.
 

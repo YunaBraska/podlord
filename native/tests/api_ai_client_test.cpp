@@ -196,7 +196,7 @@ void scenario(bool claude) {
         "Combined model list contains selectable provider placeholders");
     require(ai.model().isEmpty() && ai.selectModel(providerName, model) && ai.provider() == providerName
         && ai.model() == model, "Selecting a model did not activate its provider");
-    require(ai.setEnabled("cluster-one", true), "Cannot enable incident analysis");
+    require(ai.setEnabled(true), "Cannot enable incident analysis");
     const auto resourcePath = QStringLiteral("/api/v1/nodes/broken");
     ai.observe("cluster-one", QJsonArray{QJsonObject{{"uid", "node-one"}, {"kind", "Node"}, {"name", "broken"},
         {"path", resourcePath}, {"issue", "NotReady"}, {"status", "NotReady"}, {"problemSeverity", 2},

@@ -4,6 +4,7 @@
 #include "pod_logs.h"
 #include <QElapsedTimer>
 #include <QJsonArray>
+#include <QFutureWatcher>
 #include "background_http.h"
 #include <QSet>
 #include <QPointer>
@@ -32,6 +33,11 @@ public:
     bool watchInspector(const QString& id, const QString& path, const QString& view = {});
     bool dismissInspector(const QString& id);
     QJsonArray rows(const QString& id) const;
+    /** Accepted Cluster API list rows, without traversing the full resource snapshot. */
+    QJsonArray managedClusterRows(const QString& id) const;
+    /** Time of the active failure on this path. */
+    QString failureTime(const QString& id, const QString& path) const;
+    QVariantMap healthSummary(const QString& id) const;
     bool collectionSnapshotAvailable(const QString& id) const;
     /** Bounded in-memory request metadata. Reading this snapshot never schedules transport. */
     QVariantList requestAudit(const QString& id) const;
@@ -72,6 +78,8 @@ public:
     QJsonObject resource(const QString& id, const QString& path) const;
     /** Membership in the current session collection snapshot, excluding retained detail-only entries. */
     bool containsResource(const QString& id, const QString& path) const;
+    /** Read a Cluster API kubeconfig Secret for an observed Cluster through the shared request scheduler. */
+    bool requestManagedKubeconfig(const QString& id, const QJsonObject& cluster);
     Result<QString> startPortForward(const QString& id, const QString& path, int localPort, int remotePort);
     bool stopPortForward(const QString& id, const QString& token);
     QVariantList portForwards(const QString& id) const;
@@ -122,9 +130,16 @@ signals:
     void changed(const QString& id);
     void rowsChanged(const QString& id);
     void collectionAccepted(const QString& id);
+    /** Cluster API list accepted, including unchanged namespace-scoped lists for Secret rotation checks. */
+    void managedClustersObserved(const QString& id, const QStringList& observedUids,
+                                 const QStringList& removedUids, bool complete);
+    /** Validated, self-contained Secret payload. Never enters resource rows, detail cache or diagnostics. */
+    void managedKubeconfigReceived(const QString& id, const QString& clusterUid, const QString& endpoint, const QByteArray& yaml);
+    void managedKubeconfigFailed(const QString& id, const QString& clusterUid, const QString& reason);
     /** A dispatched detail read completed; cached timestamps are not fresh-read authority. */
     void detailFinished(const QString& id, const QString& path, bool accepted);
     void authenticationRejected(const QString& credential);
+    void authenticationExpired(const QString& credential);
     void logsChanged(const QString& id, const QString& path);
     void yamlApplyFinished(const QString& id, const QString& path, const QString& token,
                            const QString& outcome, const QString& message, const QJsonObject& current);
@@ -158,7 +173,7 @@ private:
     struct Collection final { QJsonArray rows; QDateTime at; QString kind; bool namespaced = false; qint64 received = 0; bool deletable = false; int stableReads = 0; };
     struct Detail final { QJsonObject value; QDateTime at; QJsonObject document; quint64 revision = 0; };
     struct CachedResource final { QJsonObject value; qint64 received = 0; };
-    enum class Read { Core, Groups, Discovery, List, Detail, Linked, Probe, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
+    enum class Read { Core, Groups, Discovery, List, Detail, Linked, Probe, ManagedKubeconfig, Log, Apply, Verify, Delete, VerifyDelete, ForwardTarget, ForwardPods, ForwardSocket, TerminalTarget, TerminalSocket, FileTarget, FileSocket };
     struct FailedRead final { Read read; QString collection, kind; bool namespaced = false, deletable = false; };
     struct State final {
         ClusterConnection connection;
@@ -168,11 +183,14 @@ private:
         QMap<QString, PodLogHistory> logs;
         QMap<QString, CachedResource> resources;
         QJsonArray snapshot;
+        QVariantMap health;
         QMap<QString, QString> issueByPath;
         QSet<QString> blocked;
         QMap<QString, QDateTime> deniedClusterLists;
+        QMap<QString, QPair<QString, QDateTime>> managedKubeconfigChecks;
         QSet<QString> unresolvedDeletes;
         QMap<QString, QString> failures;
+        QMap<QString, QDateTime> failureTimes;
         QMap<QString, FailedRead> retryableFailures;
         QString forwardError;
         bool open = true;
@@ -183,9 +201,16 @@ private:
         double progress = 0;
         bool initialized = false;
         quint64 revision = 0;
+        quint64 accountingEpoch = 0;
         QDateTime lastSync;
+        QDateTime lastDiscovery;
         QList<QDateTime> requestStarts;
+        qint64 lastRequestStart = -1;
+        qint64 backoffUntil = 0;
         QDateTime presentationExpiry;
+        quint64 presentationRevision = 0;
+        quint64 presentationJob = 0;
+        bool presentationRunning = false;
     };
     struct Change final { QString token; QJsonObject baseline, desired; ClusterConnection connection; QString outcome; };
     struct Task final {
@@ -198,10 +223,12 @@ private:
         QJsonArray page;
         QSet<QString> tokens;
         quint64 revision = 0;
+        quint64 accountingEpoch = 0;
         QString logKey, container;
         QString forwardToken, streamToken, selector;
         QString terminalToken;
         QString fileToken, fileUid;
+        QString managedUid, managedEndpoint;
         QUrl fileServer;
         QPointer<ContainerFiles> fileView;
         qint64 received = 0;
@@ -210,12 +237,19 @@ private:
         std::optional<Change> change;
         QJsonArray patch;
     };
+    struct PreparedList final {
+        QJsonArray rows;
+        QString continuation, error;
+    };
     PlatformNetworkAccessManager network_;
     QMap<QString, State> states_;
     QList<Task> queue_;
     QVariantList completedRequests_;
     std::optional<Task> running_;
     QMap<QNetworkReply*, Task> reads_;
+    QMap<QFutureWatcher<PreparedList>*, Task> preparing_;
+    quint64 nextPresentationRevision_ = 0;
+    quint64 nextAccountingEpoch_ = 0;
     QTimer gate_;
     QTimer expiry_;
     QTimer sync_;
@@ -231,10 +265,11 @@ private:
     ReadSettings settings_;
     bool enabled_ = true;
     qint64 lastStart_ = -1;
+    int focusedReadStreak_ = 0;
     bool resetConnections_ = false;
     QElapsedTimer clock_;
-    qint64 backoffUntil_ = 0;
     bool enqueue(Task task);
+    QString contextKey(const QString& id) const;
     static bool collectionRead(Read read);
     static bool parallelRead(const Task& task);
     void updateProgress(const QString& id);
@@ -251,8 +286,11 @@ private:
     void discardHiddenReads();
     void dispatch();
     void recordRequestStarted(const Task& task);
-    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail);
-    void consume(const Task& task, const QJsonObject& document);
+    void discardStale(const Task& task);
+    void finish(const Task& task, int status, const QByteArray& bytes, bool transportError, const QByteArray& retryAfter, const QString& transportDetail,
+                const std::optional<PreparedList>& prepared = std::nullopt);
+    void consume(const Task& task, const QJsonObject& document, const PreparedList* prepared = nullptr);
+    static PreparedList prepareList(const Task& task, const QByteArray& bytes);
     void fail(const Task& task, QString message);
     QString logKey(const QString& id, const QString& path) const;
     const PodLogHistory* logHistory(const QString& id, const QString& path) const;

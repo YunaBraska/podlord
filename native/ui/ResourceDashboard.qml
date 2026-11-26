@@ -13,7 +13,6 @@ Pane {
             objectName: "dashboardSummary"
             Layout.fillWidth: true
             text: workspace.dashboardSummary
-            Accessible.name: text
         }
         ListView {
             id: metricRows

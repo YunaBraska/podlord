@@ -19,7 +19,7 @@ It turns Kubernetes from scattered YAML and terminal state into one cache-backed
 - Import standard Kubernetes kubeconfigs from files, folders, pasted YAML and default locations. Configurations exported by local Kubernetes tools use the same import paths.
 - K3d belongs only to local/CI Kubernetes test infrastructure. The native product has no K3d discovery command, importer, executable lookup or installation requirement. Historical stored source identities remain readable without invoking a generator.
 - Store app-owned kubeconfig snapshots with content hashes to avoid duplicates.
-- Detect changed kubeconfig files and create new snapshots while preserving existing session bindings.
+- Reimport changed kubeconfigs as new snapshots. Manual file and folder imports review matching context names before updating or adding them. The explicit source refresh updates matching same-path tabs.
 - Open contexts in tabs or detached windows while sharing context preferences and the same cache.
 - Keep each actual tab in one window. A context may be open in several tabs or windows.
 - List Kubernetes resources in a flat, sortable, filterable table.
@@ -95,7 +95,7 @@ streams, cached data and accessible tab presentation.
 | CTX-006 | Native pre-release formats MUST NOT be migrated or backed up automatically. Current tabs, context settings, filter presets, read settings, table layouts and alert rules use only their current formats. Old files remain untouched. This supersedes historical native-format upgrade implementation notes below. Explicit supported imports and immutable kubeconfig or credential formats remain separately scoped. |
 | CTX-007 | Locked, malformed or unwritable current metadata MUST fail explicitly without resetting existing files. Removing catalog membership MUST prevent access even if dependent cleanup fails. |
 | CTX-008 | Removing a context MUST remove its current preference record and close its owned tabs/connections. Late preference writes MUST NOT recreate a removed context. Original kubeconfig files remain unchanged. |
-| CTX-009 | The context overview MUST sort by explicit context usage count descending, then last-use time descending. Opening a context from the overview or switching to another context tab counts. Re-selecting a context already displayed in the active tab, restoring tabs and background refresh MUST NOT count. These are current per-context totals, not old saved-session histories. |
+| CTX-009 | The context overview MUST sort by last-use time descending, then usage count for equal times. Opening a context from the overview or switching to another context tab counts. Re-selecting a context already displayed in the active tab, restoring tabs and background refresh MUST NOT count. These are current per-context totals, not old saved-session histories. |
 | CTX-010 | The overview MUST freeze the order of existing cards while visible, including uses in other windows. It MUST apply updated ranking only when opened again. Imports may add cards and removal may remove cards without reshuffling the surviving cards. Equal usage and timestamps MUST preserve the existing deterministic source/context order. |
 | CTX-011 | Context usage MUST persist locally without credentials, resource data or per-use history. Removing membership MUST remove its usage record. A pending use MUST NOT recreate a removed context. Opening the overview MUST NOT contact clusters or read storage synchronously. |
 | CTX-012 | An asynchronous catalog read started before a committed source import, edit or removal MUST NOT republish its superseded membership or usage in another window. It MUST read the current local catalog before publishing, without starting cluster requests or authentication on behalf of the overview. |
@@ -112,10 +112,10 @@ These requirements were confirmed on 2026-09-30. Confirmation establishes requir
 | ID | Required observable behavior |
 |---|---|
 | SES-001 | When an imported kubeconfig file changes, Podlord MUST preserve the previously imported snapshot and import the changed content as a new snapshot. |
-| SES-002 | An existing session MUST remain bound to its original snapshot until the user explicitly chooses a replacement session. A source-file change MUST NOT silently change its API endpoint or authentication configuration. |
-| SES-003 | Re-importing unchanged content from the same source path MUST NOT create duplicate snapshots or sessions. |
+| SES-002 | An external source-file change MUST NOT alter an open tab until import or source refresh. Manual file and folder imports MUST review matching context names before updating a selected target or adding a distinct context. The explicit source refresh updates same-path tabs with the new endpoint and credentials. A tab whose context name was removed MUST stop using its old credentials and show an error. |
+| SES-003 | Re-importing unchanged current content from the same source path MUST NOT create duplicate snapshots or sessions, change import recency, or open a conflict dialog. |
 | SES-004 | Session selection MUST prioritize frequently used sessions so obsolete, rarely used sessions move out of the prominent part of the list. This ordering MUST NOT delete sessions or their snapshots. |
-| SES-005 | When changed source configuration produces a replacement session, the replacement MUST inherit its predecessor's base display name with a numeric suffix, whether that base name was assigned automatically or by the user. Numbering follows SES-007, SES-017, and SES-018. |
+| SES-005 | Explicitly created replacement sessions inherit the predecessor's base display name with a numeric suffix, whether that base name was assigned automatically or by the user. Source reimport under SES-002 reconnects the existing tab instead. Numbering follows SES-007, SES-017, and SES-018. |
 | SES-006 | Creating a replacement session MUST preserve the names of all existing sessions. |
 | SES-007 | Successive replacements MUST use numeric suffixes starting at 2: `Production`, `Production 2`, `Production 3`, or `dev`, `dev 2`, `dev 3`. The suffix MUST NOT accumulate into names such as `Production 2 2`. Deletion and name collisions follow SES-017 and SES-018. |
 | SES-008 | Explicitly opening a session or switching to it MUST count as usage. Background synchronization MUST NOT count as usage. |
@@ -138,7 +138,7 @@ These requirements were confirmed on 2026-09-30. Confirmation establishes requir
 | SES-025 | Switching between open session tabs MUST preserve their running port-forwards. A tab switch MUST NOT stop or recreate those forwards. |
 | SES-026 | While a log view is not visible, Podlord MUST pause polling for that view. Switching away from its session tab MUST pause its log polling. |
 | SES-027 | When returning to a visible log view, Podlord MUST show available cached logs immediately and resume their refresh unless the user has paused that view. Cache availability remains subject to the existing TTL rules. |
-| SES-028 | Open sessions MUST be presented as one genuine, accessible tab strip with a clear selected tab, horizontal overflow, keyboard switching, full-name tooltips and grouped close/window actions. Tab creation, restoration and model changes MUST NOT activate sessions or start connections. Deliberate activation MUST use the existing session and unsaved-YAML guards. Existing tab order and actions MUST be preserved. |
+| SES-028 | Open sessions MUST be presented as one genuine, accessible tab strip with a clear selected tab, horizontal overflow, keyboard switching, full-name tooltips and grouped close/window actions. When the strip and header controls fit, center it in the free header space. Otherwise place it in a second row. Tab creation, restoration and model changes MUST NOT activate sessions or start connections. Deliberate activation MUST use the existing session and unsaved-YAML guards. Existing tab order and actions MUST be preserved. |
 
 ### What is currently proven for native session-owned port forwards?
 
@@ -210,10 +210,11 @@ layout document to version 4 without discarding Resources/Events preferences.
 | SES-025 | Start forwards in two session tabs and switch between the tabs without closing either. | Both forwards remain running at their existing local endpoints. | Planned check; implementation review pending. |
 | SES-026 | Open a polling log view, then switch to another session tab or hide the log view. | No further polling requests are initiated for the hidden view while it remains hidden. | Planned check; implementation review pending. |
 | SES-027 | Return to a log view with available cached logs while the next refresh is delayed. | Cached logs appear immediately, before the refresh returns; polling resumes while the view is visible. | Planned check; implementation review pending. |
-| SES-005, SES-006 | Rename a session to `Production`, change its source configuration, and refresh the source. | The replacement is named `Production 2`; the original remains `Production`. | Planned check; implementation review pending. |
-| SES-005, SES-006, SES-007 | Keep an automatically assigned name `dev`, change its source configuration, and refresh the source. | The replacement is named `dev 2`; the original remains `dev`. A further changed import produces `dev 3` while both predecessors remain. | Planned check; implementation review pending. |
-| SES-006, SES-007 | Change the configuration again after creating `Production 2` and refresh the source. | The next replacement is `Production 3`; the earlier names remain unchanged. | Planned check; implementation review pending. |
-| SES-003, SES-007 | Refresh the unchanged configuration after creating `Production 2`. | No replacement or additional numeric suffix is created. | Planned check; implementation review pending. |
+| SES-002 | Rename a session to `Production`, change its source configuration, and explicitly reimport the source. | The same tab remains named `Production` and uses the new credentials. | Planned check; implementation review pending. |
+| SES-002 | Keep an automatically assigned name `dev`, change its source configuration, and explicitly reimport twice. | The same tab remains named `dev` and each successful import replaces its active connection. | Planned check; implementation review pending. |
+| SES-002 | Remove the active context name from a reimported source file, then repair and reimport it. | The tab remains visible and stops using old credentials while invalid. It reconnects with the repaired credentials. | Passing native `management.source_manage_refresh_removed` and `ui.shell_source_rebind_invalid` Basic/Fusion. |
+| SES-002 | Reimport changed credentials while matching tabs are open in two windows. | Both windows keep their tabs and use the new credentials for further requests. | Passing native `window.source_rebind_windows` Basic/Fusion. |
+| SES-003 | Reimport unchanged source content. | No new snapshot or session is created. | Passing native `management.source_manage_refresh_repeat` Basic/Fusion. |
 
 ### Open Decisions
 
@@ -519,8 +520,9 @@ Presentation refinement, confirmed on 2026-11-06:
   accessibility, copying and session isolation remain supported.
 - As confirmed on 2026-11-07, Settings uses a gear and filter disclosure a funnel.
   Saved filters have one inline disclosure, not a separate actions popup.
-  Name entry and Save remain directly reachable. The expanded area retains
-  preset selection, reload, local-file import, rename and delete. Collapsing it
+  Save remains directly reachable and reveals Name only when used. The expanded
+  area lists named presets with rename and delete on the selected row. It has no
+  routine reload or file import/export actions. Collapsing it
   reserves no action/list space and releases hidden keyboard focus. Escape
   returns focus to disclosure. The protected default, validation, existing
   persistence and active-session-only application rules remain unchanged.
@@ -573,8 +575,8 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | FLT-012 | A field value picker MUST read the complete current session cache. Its open option snapshot MUST stay stable until an explicit reload, preserve selected values absent from a refreshed cache, and close on a session change. |
 | FLT-013 | CPU, memory and storage quantity filters MUST compare actual cached measurements only. Missing measurements MUST NOT match a numeric comparison or be substituted with zero, requests, limits or capacity. References remain separate from measured usage. |
 | FLT-014 | Wide-window sidebar fields MUST open a nonmodal, viewport-bounded flyout at the selected field, leaving workspace navigation operable. Escape, outside presses, session changes and an anchor leaving or being reused in the list MUST close it. The complete field picker and narrow-window selection MUST remain centered and operable. Checkbox state, borders and keyboard focus MUST remain visible in the selected theme. |
-| FLT-015 | The reference row Limit MUST remain available, default to 1,024 and accept 1 through 5,000 rows. It MUST cap table presentation after filtering and sorting, not discovery, synchronization, the complete filtered match count, Radar, field-picker values or alarm evaluation. Invalid/nonpositive textual input uses the reference default; positive values above the maximum clamp to 5,000. Changing the Limit MUST NOT initiate a Kubernetes request or replay alerts. |
-| FLT-016 | The row Limit MUST follow its session across tab/window changes and restart, be retained by saved presets and legacy preset import, and return to 1,024 when resource filters are reset or the protected default preset is loaded. Earlier native records without a stored Limit MUST retain 256 without an implicit write. Explicit saved resource and preset limits MUST remain unchanged. The protected default preset MUST use 1,024 when read, including older default records, without an implicit write. Invalid current records MUST be retained and rejected explicitly. |
+| FLT-015 | The resource table MUST present matching rows in pages of 512 after filtering and sorting. Paging MUST NOT limit discovery, synchronization, match counts, Radar, field-picker values or alarms. Changing pages MUST NOT initiate a Kubernetes request or replay alerts. There is no user row-limit control. |
+| FLT-016 | Paging MUST follow the current filtered and sorted set. If that set shrinks, the selected page MUST move to the last available page. The current preset format retains its validated legacy limit field for compatibility, but that field MUST NOT control page size. |
 
 Filter and sort retention across app restarts is governed by STR-003 and STR-004,
 with the native storage boundary recorded in [ADR 0027](../adr/0027-session-filter-and-sort-persistence.md).
@@ -614,9 +616,9 @@ not an inferred change to other counters. These quantities use actual measuremen
 under FLT-013; quantity ranges use AND and exact numeric alternatives use OR.
 Display-text filters can explicitly match unavailable and incomplete labels
 without inventing a measurement. Problems/Activity and native saved presets now
-have the scoped contracts below. Age, UID and explicit legacy preset import have
-public-boundary coverage. The row Limit now retains reference display semantics
-under FLT-015/016; installed-process migration and complete paired presentation
+have the scoped contracts below. Age and UID have
+public-boundary coverage. The resource table uses paging under FLT-015/016;
+installed-process migration and complete paired presentation
 remain separate gates. Implementation and public-boundary evidence
 are tracked independently in the [test map](k3d-test-map.md).
 
@@ -840,9 +842,10 @@ These requirements were confirmed on 2026-10-02. Implementation conformance has 
 | SYN-011 | Settings MUST present a stable snapshot refreshed through explicit user action or bounded TTL refresh, rather than continuously rebuilding large lists. |
 | SYN-012 | Discovery metadata MUST have a longer cache freshness TTL than live measurements. |
 | SYN-013 | A refresh failure MUST preserve available cached presentation, retain the last successful update time, and report the failure separately rather than clear the view. |
+| SYN-014 | Switching tabs or windows MUST NOT abandon another open context's initial collection load. Once initialized, an inactive context follows a positive configured background cadence. Existing profiles with zero use the 15-minute default. Waiting contexts MUST continue to receive request slots. The configured requests-per-minute limit and server Retry-After apply per context. The global 400 ms start spacing and four-slot ceiling still apply across all contexts. |
 | SYN-CACHE-01 | Resource collection retention MUST default to 24 hours and be configurable in Sync settings as positive whole hours. Changing retention MUST use the existing atomic settings owner and MUST NOT initiate requests. Sync settings MUST show a captured estimate of cached payload size alongside this setting, not label it as allocated process memory. Detail freshness, metrics, logs and credential lifetimes remain governed by their existing policies. Persistent visual map previews do not extend resource retention. |
 
-Read coalescing does not authorize coalescing writes. Cancellation rules above concern changes in view relevance, not transport failure handling or application shutdown. TTL values, discovery membership, sync cadence, and the existing request-limit configuration remain for later scope reconciliation; no numeric defaults are invented here. SYN-013 does not extend cache retention or override its existing TTL rules.
+Read coalescing does not authorize coalescing writes. Cancellation rules above concern changes in view relevance, not transport failure handling or application shutdown. Discovery membership, sync cadence, and the existing request-limit configuration remain for later scope reconciliation. SYN-013 does not extend cache retention or override its existing TTL rules.
 
 ### Acceptance And Evidence
 
@@ -861,6 +864,8 @@ Read coalescing does not authorize coalescing writes. Cancellation rules above c
 | SYN-011 | Open Settings, leave its snapshot unchanged while background data changes, and then explicitly refresh or reach the applicable refresh TTL. | Large lists are not continuously rebuilt; an authorized bounded refresh updates the snapshot. | Planned check; implementation review pending. |
 | SYN-012 | Observe discovery metadata and live measurements across their configured freshness intervals. | Discovery metadata has a longer freshness TTL than live measurements. | Planned check; implementation review pending. |
 | SYN-013 | Fail a fresh request while the view's cached content remains available. | The content and its last successful update time remain available. The refresh error is shown separately. | Planned check; implementation review pending. |
+| SYN-014, LOAD-002 | Switch between two large contexts before either initial load finishes, then revisit both. | Both loads finish, both health strips reach full height only after their own collections finish, and later refreshes do not shrink them. | Native UI and read-boundary regression tests. |
+| SYN-014, LOAD-004 | Apply a per-minute limit or a 429 response while two contexts are open, including duplicate tabs for one context. | Distinct contexts share the global start spacing but not their configured limit or server backoff. Duplicate tabs share both constraints. | Native read-boundary regression tests. |
 
 ## Confirmed Error And Recovery Requirements
 
@@ -1167,7 +1172,7 @@ increment, not complete Inspector, accessibility or release parity.
 | Action | What Podlord Does | Why |
 |---|---|---|
 | Import kubeconfig | Validates, snapshots, hashes, deduplicates, creates sessions | Stable app-owned sources without changing user files |
-| Source file changes | Creates a new snapshot for changed content and preserves existing session bindings | Keep changed configuration available without silently retargeting active work |
+| Source file changes | An explicit import creates a new snapshot and reconnects matching open tabs | Keep old bytes for history without using old credentials after reimport |
 | Select session | Restores cached rows, filters, radar state, and open tab state | Fast context switching without losing work |
 | Refresh data | Queues Kubernetes API calls with pacing, TTL, and backoff | Avoid API spam while keeping data current |
 | Display resources | Reads from cache and applies local filters immediately | UI stays responsive during sync |
@@ -1352,6 +1357,14 @@ that path directly. Invalid URL metadata must fail explicitly instead of silentl
 selecting another file. Focused macOS CLI and visible-UI evidence is recorded in
 [the test map](k3d-test-map.md);
 OS-native chooser interaction and actual additional-platform proof remain open.
+Desktop folder selection and drag/drop use this same import path. The selected folder
+is level zero. Files through eight nested folder levels are considered. Deeper
+folders are skipped with one reported issue. The scan skips unrelated files by
+content, including when they share a common kubeconfig filename extension.
+Conflicting context names across files in one import batch are reviewed together
+before any source is saved. Each match shows its source and server. An Update
+keeps the selected target's display name and open tabs. An Add gives the new
+context a distinct label. Repeated current file content is a no-op.
 
 ## What is required of the shared native application shell?
 
@@ -1375,7 +1388,7 @@ records presentation ownership and non-duplicated cache summary semantics.
 | SHL-011 | The tab strip exposes a quick file-open action and an anchored dropdown for usage-ranked saved sessions and imported contexts. File acceptance depends on kubeconfig content, not a suffix. Invalid, missing and unreadable files do not import or change the selected session, cache, filters or notices. Valid import never implicitly activates a context, executes a credential command or opens authentication. Profile/write failures remain visible. Session/context selection retains the existing draft-discard and authentication safeguards. |
 | SHL-012 | Compact landscape windows (at least 600 logical pixels wide and less than 600 high) retain the shared single-line icon navigation, with 44-pixel targets. The former separate left-hand navigation rail is superseded by the confirmed automatic workspace-menu overflow. The small Radar is automatically hidden and closed filters occupy only the narrow filter icon rail. Filters can be expanded without clearing active filters; the full Map remains available. Returning to a larger layout restores the same Radar and its camera without extra synchronization or a new renderer. Rotation and disclosure preserve session, query, cache and Radar pose without issuing requests. Portrait retains the drawer; no orientation lock or second UI is introduced. Header metrics follow SHL-003. With search and a validation error visible, at least one complete resource row remains operable above the horizontal scrollbar. Android input keeps the app visible instead of replacing it with a fullscreen keyboard editor. The normal system keyboard remains available. Automatic small-Radar hiding and the collapsed filter rail remain unchanged. |
 | SHL-014 | Primary shell navigation MUST remain one row at every supported size. Icon actions which no longer fit MUST move into the existing hamburger menu, using the same actions, enabled state and selected indication. Activating the already selected workspace MUST NOT clear its selected indication, either in the toolbar or overflow menu. Resizing MUST restore fitting icons automatically, without resetting the session, filters, camera or draft or issuing requests. Tooltip and accessibility labels MUST retain the full action names. Navigation and metric overflow MUST NOT create a second row or duplicate action behavior. Confirmed on 2026-11-08. |
-| SHL-013 | The single-line footer matches the reference categories: visible/cached resource counts, admitted API requests in the preceding minute for the selected session, and age of its latest accepted collection snapshot (seconds/minutes/hours, or never). The session Map labels and counts all filter matches against the cache total, independently of the table's row limit. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Failed reads do not create a fresh snapshot timestamp. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
+| SHL-013 | The single-line footer shows visible/cached resource counts and admitted API requests in the preceding minute for the selected session. It does not show a "Synced" age. The session Map labels and counts all filter matches against the cache total, independently of table pagination. Table and other workspace counts remain unchanged. Enqueued requests and rejected local operations are not counted. Errors remain visible separately, with full accessible text and a tooltip. Footer rendering does not schedule transport. |
 
 Normal empty, loading and connection feedback uses user-facing resource/context terms rather than cache, snapshot or queue implementation details. Routine successful imports produce no log-style notice. An import with failed inputs retains a concise warning and reachable failure details. An unavailable metric remains omitted in the compact summary.
 
@@ -1408,26 +1421,25 @@ rules. Partial cached resources remain usable while collections arrive.
 | LOAD-001 | Collection loading MUST suppress alert effects, notification sounds and automatic alarm focus. The first completed sync MUST establish a silent baseline rather than classify the initial population as new. |
 | LOAD-002 | The health strip MUST fill from bottom to top only during a session's initial collection load, monotonically until admitted collection work and its discovery/pagination follow-ups have completed. After that baseline it MUST retain full height through passive sync, explicit refresh, cached reopen and authentication retry; only cached health proportions adjust. An uninitialized session or its incomplete/failed authentication MUST NOT claim completion. Authentication/loading status remains separately visible; retained full height is not proof that a later login succeeded. |
 | LOAD-003 | Health segments MUST be ordered critical red at the top, warning yellow below it, and healthy green at the bottom. Their proportions use the complete session cache, independent of presentation filters. Unknown health before resources arrive MUST be neutral, not fabricated green health. |
-| LOAD-004 | Independent reads MAY overlap within four active slots. Admission MUST retain the global minimum start spacing, configured hard limit and Retry-After. Writes and port-forward handshakes remain exclusive; dispatched work is never interrupted to prioritize another request. |
+| LOAD-004 | Independent reads MAY overlap within four active slots. Admission MUST retain the global minimum start spacing. The configured hard limit and Retry-After apply per context. Writes and port-forward handshakes remain exclusive; dispatched work is never interrupted to prioritize another request. |
 | FLT-014 | Problems and Activity MUST be mutually exclusive and combine with search and field expressions. Switching modes and resetting MUST operate entirely on the session cache and update table, radar and counts together. |
 | FLT-015 | Activity MUST follow the reference statuses and recent change/creation semantics (15 minutes). Events use five minutes for normal/success activity and thirty minutes for warnings; future, Observed and Historical events are not activity. |
-| FLT-016 | Named resource filter presets MUST be shared within the profile, while applying a preset affects only the active session. Save/overwrite, load, rename, delete and reload MUST be reachable controls. The empty default cannot be changed, renamed or deleted. |
+| FLT-016 | Named resource filter presets MUST be shared within the profile, while applying a preset affects only the active session. Save/overwrite, load, rename and delete MUST be reachable controls. The protected default is accessed through reset and cannot be changed, renamed or deleted. Presets load automatically from the profile. |
 | FLT-017 | Presets and per-session mode state MUST survive restart. Atomic private persistence MUST detect conflicting writers and retain malformed/newer documents instead of replacing them with defaults. |
 
 Native presets capture search, implemented field expressions and Problems/Activity,
 not table sort or radar camera. Session views version 5 preserve older supported
-documents on read and upgrade only when a view actually changes. Saved-filter
-import does not import a complete application profile.
+documents on read and upgrade only when a view actually changes. The sidebar
+does not import or export saved-filter files.
 
-### How Must Saved-Filter Migration Behave?
+### How Must Saved-Filter Compatibility Behave?
 
-- FLT-018: Import MUST be explicit and accept a regular local JSON file in a supported saved-filter format, within the existing 64 KiB bound. It MUST NOT access an ambient reference profile or modify the selected source.
-- FLT-019: Import MUST preserve search, Problems/Activity and supported field expressions. Mutually conflicting modes, malformed fields, unsupported fields and case-insensitive name collisions MUST fail without partial replacement. Repeating the same named state MUST be idempotent; differing state MUST NOT silently overwrite an existing name.
-- FLT-020: Import MUST use the existing asynchronous preset owner and private atomic persistence. Failure MUST preserve existing presets and report an error without exposing document contents. Import and applying the resulting filter MUST NOT initiate Kubernetes requests.
+- FLT-018: The private profile is the only preset source. Supported older records MUST be read automatically without rewriting their bytes.
+- FLT-019: Malformed fields, conflicting modes, unsupported fields and case-insensitive name collisions MUST fail without partial replacement.
+- FLT-020: Loading and saving MUST use the existing asynchronous preset owner. Failure MUST preserve existing presets and report an error without exposing document contents. Applying a preset MUST NOT initiate Kubernetes requests.
 
-Import clears an obsolete Id field rather than inventing a UID predicate. Its row-limit is a display cap, not a filter; the native virtualized
-view retains all matching cached resources. This bounded compatibility behavior
-and rollback are owned by ADR 0031.
+The sidebar has no saved-filter file import or export. Compatibility and rollback
+are owned by ADR 0031.
 
 ### How Must The Values Inspector Apply The Shared Table Contract?
 
@@ -1461,7 +1473,7 @@ YAML and its configurable patch limit.
 | UI-SRC-02 | Activating a Sources row opens its source-only inspector, not a context connection. Overview and YAML use the existing inspector area, including the confirmed narrow-window takeover. Viewing, editing and applying a source do not activate sessions, contact clusters or initiate authentication. |
 | UI-SRC-03 | YAML comes only from the validated app-owned snapshot for the inspected context. Reads run outside the UI thread. Missing, damaged, symlinked, removed or unrelated copies fail explicitly, without falling back to an original file. UI getters read cached editor state only. |
 | UI-SRC-04 | Source YAML is initially read-only. Explicit Edit becomes available only after the owned copy loads successfully. The local draft uses the existing Stay/Discard protection for close and navigation. Raw kubeconfig contents are confined to this explicitly selected editor, not table metadata, error messages or logs. |
-| UI-SRC-05 | Apply validates and imports edited YAML with its existing owned origin, including supported mobile document origins. Changed content creates a new immutable snapshot. Identical content retains snapshot and context identities and may refresh import recency under the ordinary import contract. Original files, prior snapshot contents and every existing session binding remain unchanged. The newly imported version becomes current without connecting or authenticating. |
+| UI-SRC-05 | Apply validates and imports edited YAML with its existing owned origin, including supported mobile document origins. Changed content creates a new immutable snapshot. Identical content retains snapshot and context identities without changing import recency. Original files and prior snapshot contents remain unchanged. Matching open tabs reconnect with the new configuration through the existing authentication flow. |
 | UI-SRC-06 | Rejected Apply preserves the local draft and presents a safe error. Discard returns to the valid owned baseline and permits editing again. A failed baseline read never permits editing. Existing source-import size and UTF-8 validation remain enforced. |
 | UI-SRC-07 | Confirmed removal cannot discard another window's open source editor. While removal is in flight, the same context cannot enter editing elsewhere. Successful removal clears matching inspectors. Closing clears the editor buffers, and a late read completion cannot reopen the inspector. Removing a source still requires the existing explicit context/session cascade confirmation. Applying an edit never performs that cascade. |
 | UI-SRC-08 | While editing Source YAML with the on-screen keyboard and less than 480 logical pixels of usable height, the existing input-priority layout also applies in portrait. It temporarily hides headers, tabs and toolbars without changing the draft, session or connection. Dismissing the keyboard restores those controls. This reuses the shared layout behavior, not a separate portrait editor. Other inspectors retain their existing landscape rule. Confirmed on 2026-11-03. |
@@ -1485,7 +1497,7 @@ The context-card overview is distinct from each opened context's live map.
 - RAD-CTX-01: The overview MUST show one card per context across all imported kubeconfig files and retain its latest visual map preview across application restarts, based on the last visit or successful update. Three contexts in one file produce three cards. Card captions show the local context alias and referenced cluster name. Contexts remain locally renameable without modifying their source kubeconfig or preview identity. Preview pixels contain only map surfaces and colored points, with no resource, namespace, cluster or context text, Kubernetes objects, YAML or Secret contents. The runtime resource cache remains separate under SYN-CACHE-01. Several contexts may reference the same cluster and MUST NOT be merged.
 - RAD-CTX-02: Opening, scrolling or rendering the overview MUST NOT open sessions, schedule synchronization or trigger authentication. Only visible previews need to be loaded. Entries without a saved preview MUST show a question mark, not invented resource data. An explicit context selection uses the existing context-opening flow. Saved previews are not live health or alarm evidence. Additional per-cluster age/connection panels remain outside this increment.
 - RAD-CTX-03: When the corresponding catalog entry is removed, its saved preview MUST also be removed. Startup/catalog reload MAY reconcile orphaned previews after the authoritative catalog has loaded successfully; a transient read, import or authentication failure MUST NOT be treated as deletion.
-- RAD-CTX-04: The overview MUST show contexts from only the most recently imported snapshot of each normalized source origin. Older immutable snapshots remain available to their saved sessions but MUST NOT create additional cards. Existing import recency and deterministic tie ordering select the current snapshot. Explicitly importing older content again may make it current without duplicating the immutable snapshot. Removing every context from the current snapshot MUST NOT promote historical versions back into the overview.
+- RAD-CTX-04: The overview MUST show contexts from the most recently imported snapshot of each normalized source origin. Older immutable snapshots remain available to their saved sessions. A version explicitly retained through Add also has its own card and credentials. Unchanged current content does not change import recency. Explicitly updating to earlier content may make it current again. Removing every context from the current snapshot MUST NOT promote unselected historical versions back into the overview.
 - RAD-CTX-05: If source records cannot be read, remaining readable versions MAY remain openable, with a visible warning that cards may represent older versions. A failed whole-catalog read retains the last readable cards with the same warning. A successful complete catalog reload MUST clear the warning. These user-confirmed failure semantics do not authorize preview deletion, automatic connection or authentication.
 
 Different namespace scopes MUST NOT be silently merged or treated as complete
@@ -1511,7 +1523,7 @@ This increment aligns the Alerts arrangement and reachable editing controls. It 
 
 - UI-INSP-01: Previous and Next, the elided Kind/name title, refresh, review-deletion and close actions share one stable header. Actions use the established glyph control with accessible names, visible keyboard focus and touch-sized narrow targets. Delete uses the reference Trash glyph, not the Close glyph. Port forwarding is offered only for supported targets. Existing confirmation and request-priority owners remain unchanged.
 - UI-INSP-02: Inspector tabs retain native TabBar selection and keyboard behavior, compact theme-aware backgrounds and a persistent active indication. Narrow tabs remain horizontally reachable and use at least 44 logical-pixel targets. Optional Values, Logs and Terminal tabs retain their existing availability rules. Resource-document cache/freshness status appears on Overview, YAML and Values only. Events, Links, Logs and Terminal retain their own data, connection and error presentation without an unrelated document-cache status line.
-- UI-INSP-03: Overview presents a Field/Value/Metric header and bordered metadata rows. It retains virtualized delegates, selectable plain-text values, readiness and metric gauges, and cache-first refresh with preserved scroll position. This presentation change must not add transport, timers or a second overview model.
+- UI-INSP-03: Overview presents Field, Value and optional Metric columns in one aligned list. Filter actions align at the right edge of every row. CPU, memory and storage use the same rows as other fields. A metric row appears only when a measurement or configured reference is available. A usage bar requires measured usage and at least one numeric request, limit or capacity. Reference markers share that bar. With only one number, show the number without a bar. Values remain selectable. The list retains cache-first refresh and scroll position without new transport, timers or a second overview model.
 - UI-INSP-04: YAML copy and terminal expansion are contextual icon actions. Fresh-only YAML editing, Secret masking, draft/discard handling, deletion read-back and terminal/session ownership remain governed by their existing specifications. Captioned controls do not display duplicate caption tooltips; icon-only controls retain explanatory tooltips.
 - UI-INSP-05: YAML retains the reference syntax colors in dark variants. As confirmed on 2026-10-26, light variants use darker complementary syntax colors instead of the low-contrast reference palette. Every syntax role must reach at least 4.5:1 against each shipped light variant's editor background. Theme changes recolor the existing document without changing its text, selection, scroll position or edit state. YAML retains synchronized line numbers and selectable plain text. Formatting must not change copied bytes, initiate transport, reveal masked Secrets or enable editing stale data. Line-number painting is bounded to the visible viewport, including after scroll and refresh; hidden YAML has no formatting or painting loop. The numerical syntax-color check follows [W3C's normal-text contrast criterion](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html), not a claim of complete application accessibility conformance.
 - UI-INSP-06: Nonempty, supported metadata values expose an accessible exact-match field-filter action without changing the global search or inspected target. Values retain the theme's existing deterministic identity/status colors. Missing values and unsupported metadata have no filter action. Filtering uses the existing cache, escaping, persistence and Radar projection owners, without transport.
@@ -1544,6 +1556,9 @@ the raw action remains available. Unknown keys/representations and a closed
 Inspector cannot overwrite the clipboard. These actions read only the active
 cached document and neither refresh nor save it. The complete values-table
 toolbox and installed visual parity remain separate acceptance gates.
+The Overview shows a compact key/value list for ConfigMaps and Secrets. Its
+copy action uses the same preferred representation and masking rules as the
+Values tab. The compact list omits table search and column controls.
 
 ### Welche Import- und Session-Aktionen sind im nativen Client ergänzt?
 
@@ -1642,7 +1657,7 @@ Token, CA, client-certificate and private-key references share the existing 16 M
 
 When reading cached provider tokens: when no explicit token or token-file value is selected, read `auth-provider.config.access-token`, falling back to `id-token` when absent or empty. Validate the chosen value with the shared bearer-token checks and never expose it in source metadata or errors. Malformed selected provider token/config types fail explicitly. Import and connection resolution remain network- and execution-free.
 
-This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot; old sessions remain bound to the old one. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
+This is not a legacy provider refresh implementation. Without a cached token, report that the user must refresh externally and explicitly reimport. A 401 suspends automatic requests and does not launch a browser or executable. Reimported inline provider credentials create a new snapshot and matching open tabs use it. Referenced token files remain externally owned rather than becoming frozen copies. Mixed exec/provider configurations and unsupported impersonation, including `as-uid`, fail explicitly rather than silently changing identity.
 
 ### What must native mobile OIDC authentication prove before release?
 
@@ -1871,7 +1886,7 @@ Confirmed on 2026-11-09:
 - The delivered app must use its embedded OpenSSL runtime for supported client-certificate connections. A missing TLS runtime fails explicitly before creating a workspace, rather than silently selecting a backend that cannot use the configured key. Transport failure details reach the bounded request audit without authorization values, URL credentials, query strings or fragments. The compact error identifies the affected context and a concise cause. Auth failures still require the existing explicit recovery.
 - Drag-and-drop, positional files and OS document-open events use the existing content-based asynchronous importer. Multiple documents are deduplicated and imports wait while that importer is busy. Invalid input is quiet in quick-open paths. Profile, lock and write failures remain actionable. Import never opens a context, runs an exec plugin or authenticates. OAuth callback URLs retain their separate owner.
 - Context cards retain their existing click-to-open loader and expose adjacent tab/window choices. The duplicate inline source-management form is removed. File/paste and credential-management capabilities remain in quick-open and Sources settings. Saved views preserve independent session configuration and names.
-- An explicit All resources filter is always selectable and visibly selected when no resource filter is active. It uses the existing reset owner. Existing saved presets, including older named defaults, are not silently overwritten.
+- The existing reset action clears resource filters. The protected default is not duplicated in the named-filter list. Existing saved presets are not silently overwritten.
 - Modal tasks visibly dim blocked content and provide one consistent top-right close action, respecting busy and dirty-state safeguards. Save actions use the existing vector glyph. Single-tab strips remain hidden under the existing layout rule.
 - Diagnostics refreshes on entry and at a five-second cadence only while its section and window are visible. It stops when hidden. Its timer belongs to the Settings surface and adds no Kubernetes requests. Dates are stored unchanged as UTC and displayed using the system locale and local time with a short date/time format. No timezone or Snapshot prefix is required in ordinary chrome.
 
@@ -1921,8 +1936,9 @@ Explicit reveal and subsequent concealment update that same accessible value.
 
 A metric surface must distinguish a missing measurement from a measured zero.
 Keep internal measurement times and freshness state without labeling routine
-metric values "stale". Show rounded values, configured references and visible
-reference markers. Use a short local date and time where the measurement
+metric values "stale". Hide empty measurements and bars with only one numeric
+value. Show rounded values, configured references and visible reference markers
+when measured usage and a numeric reference are both present. Use a short local date and time where the measurement
 timestamp is shown. Radar quick details show a shared timestamp once and
 truncate long ancillary fields. Full values remain available in the inspector.
 

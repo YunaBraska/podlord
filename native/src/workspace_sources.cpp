@@ -5,14 +5,50 @@
 #include <QGuiApplication>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
+#include <QDir>
+#include <QStandardPaths>
 
 namespace podlord {
+QUrl Workspace::suggestedKubeconfigExportUrl(const QString& contextId) const {
+    QString name;
+    for (const auto& entry : contexts()) if (entry.toMap().value("id").toString() == contextId) {
+        name = entry.toMap().value("name").toString(); break;
+    }
+    name = name.left(128).trimmed();
+    for (auto& character : name) if (!character.isPrint() || QStringLiteral("/\\:*?\"<>|").contains(character)) character = '-';
+    while (name.startsWith('.') || name.endsWith('.') || name.endsWith(' ')) {
+        if (name.startsWith('.')) name.remove(0, 1);
+        else name.chop(1);
+    }
+    if (name.isEmpty()) name = "kubeconfig";
+    auto folder = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (folder.isEmpty()) folder = QDir::homePath();
+    return QUrl::fromLocalFile(QDir(folder).filePath(name + ".kubeconfig"));
+}
+bool Workspace::exportKubeconfig(const QString& contextId, const QUrl& destination) {
+    if (std::none_of(sources_.sources.cbegin(), sources_.sources.cend(), [&](const auto& source) {
+        return std::any_of(source.contexts.cbegin(), source.contexts.cend(), [&](const auto& context) { return context.id == contextId; });
+    })) { sourceImportError_ = "Selected kubeconfig context is unavailable."; emit changed(); return false; }
+    sourceImportError_.clear(); emit changed();
+    auto* watcher = new QFutureWatcher<Result<bool>>(this);
+    connect(watcher, &QFutureWatcher<Result<bool>>::finished, this, [this, watcher] {
+        const auto result = watcher->result(); watcher->deleteLater();
+        if (const auto* failure = std::get_if<Failure>(&result)) { sourceImportError_ = failure->message; emit changed(); }
+    });
+    const auto profile = profile_;
+    watcher->setFuture(QtConcurrent::run([profile, contextId, destination] {
+        return KubeconfigStore(profile).exportContext(contextId, destination);
+    }));
+    return true;
+}
 namespace {
 QVariantMap sourceInspectionMetadata(const SourceSnapshot& source, const SourceContext& context) {
     QVariantList fields;
     for (const auto& entry : QList<QPair<QString,QString>>{
         {"Name",context.displayName},{"Context",context.name},{"Cluster",context.cluster},{"Server",context.server},
-        {"User",context.user},{"Authentication",context.authType},{"Source",source.sourcePath},{"Owned copy",source.ownedPath},
+        {"User",context.user},{"Authentication",context.authType},
+        {"Source",source.sourcePath.startsWith("managed://capi/") ? QStringLiteral("Cluster API") : source.sourcePath},
+        {"Owned copy",source.ownedPath},
         {"Imported",QLocale::system().toString(source.importedAt.toLocalTime(),QLocale::ShortFormat)},{"Hash",source.contentHash},{"Context ID",context.id},
         {"Detail",context.brokenReferences.join(", ")}})
         fields.append(QVariantMap{{"label",entry.first},{"value",entry.second.isEmpty() ? QStringLiteral("-") : entry.second}});
@@ -96,7 +132,13 @@ bool Workspace::applySourceDraft() {
         sourceImportNotice_.clear();
         emit sourceInspectionChanged(); emit sourceDraftChanged(); emit yamlEditChanged();
         ++runtime_->contextCatalogRevision;
-        reloadCatalogs(false); emit sourceImportFinished(true);
+        reloadCatalogs(true);
+        for (auto* other : runtime_->windows) if (other != this && !other->windowClosed_
+            && !other->reloadCatalogs(true)) {
+            other->pendingCatalogReload_ = true;
+            other->pendingCatalogReconnect_ = true;
+        }
+        emit sourceImportFinished(true);
     });
     const auto profile=profile_;
     sourceEditFuture_=QtConcurrent::run([profile,snapshot,contextId,draft] { return KubeconfigStore(profile).editOwnedYaml(snapshot,contextId,draft); });

@@ -35,6 +35,34 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile"), path = QDir(profile).filePath("table-layouts.json");
     const TableLayoutStore store(profile, schemas);
     auto layout = defaults.value("resource");
+    if (name == "inspector_link_upgrade") {
+        const TableSchemas expanded{{"inspectorLink", {"from", "relation", "to", "namespace", "status", "resource", "message"}}};
+        const TableLayoutStore upgraded(profile, expanded);
+        TableLayout old{{"from", true, false, 180}, {"relation", true, false, 110},
+            {"to", true, false, 260}, {"namespace", false, false, 160}, {"status", true, false, 120}};
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"inspectorLink", input(old)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = upgraded.load();
+        if (!std::holds_alternative<TableLayouts>(loaded)) return false;
+        auto expected = old; expected.prepend({"message", true, false, 480}); expected.prepend({"resource", true, false, 240});
+        if (std::get<TableLayouts>(loaded).value("inspectorLink") != expected || read(path) != bytes) return false;
+        expected[1].width = 520;
+        const auto saved = upgraded.save("inspectorLink", input(expected), std::get<TableLayouts>(loaded).value("inspectorLink"));
+        return std::holds_alternative<TableLayouts>(saved)
+            && std::get<TableLayouts>(upgraded.load()).value("inspectorLink") == expected;
+    }
+    if (name == "event_time_upgrade") {
+        const TableSchemas expanded{{"event", {"eventTime", "eventType", "eventReason", "namespace", "eventTargetName", "eventCount", "eventMessage", "name", "owner"}}};
+        const TableLayoutStore upgraded(profile, expanded);
+        auto old = defaultTableLayouts(expanded).value("event");
+        for (auto& column : old) if (column.id == "eventTime") column.visible = false;
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"event", input(old)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = upgraded.load();
+        return std::holds_alternative<TableLayouts>(loaded)
+            && std::get<TableLayouts>(loaded).value("event") == defaultTableLayouts(expanded).value("event")
+            && read(path) == bytes;
+    }
     if (name == "reject_obsolete_format") {
         const QJsonObject layouts{{"resource", input(layout)}, {"event", input(defaults.value("event"))}};
         for (int version = 1; version < 10; ++version) {
@@ -57,7 +85,7 @@ bool scenario(const QString& name) {
         QStringList eventIds; for (const auto& column:events) eventIds.append(column.id);
         if (eventIds!=QStringList{"eventType","name","eventReason","owner","namespace","eventMessage","eventTime","eventCount","eventTargetName"}
             || events[0].width!=120 || events[3].width!=165 || events[5].width!=420
-            || events[4].visible || events[6].visible || events[7].visible || events[8].visible) return false;
+            || events[4].visible || !events[6].visible || events[7].visible || events[8].visible) return false;
         if (name=="reference_defaults") return true;
         auto saved=actual; saved.swapItemsAt(0,2); saved[0].pinned=true; saved[1].width=345;
         if (!std::holds_alternative<TableLayouts>(reference.save("resource",input(saved),actual))) return false;

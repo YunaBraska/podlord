@@ -149,13 +149,13 @@ bool providerScenario(const QString& scenario) {
         if (newContext == context) return false;
         const auto oldConnection = store.connection(context), newConnection = store.connection(newContext);
         if (!std::holds_alternative<podlord::ClusterConnection>(oldConnection) || !std::holds_alternative<podlord::ClusterConnection>(newConnection)) return false;
-        if (std::get<podlord::ClusterConnection>(oldConnection).authorization != "Bearer private-access-token") return false;
+        if (std::get<podlord::ClusterConnection>(oldConnection).authorization != "Bearer private-new-token") return false;
         connection = std::get<podlord::ClusterConnection>(newConnection); expected = "private-new-token";
     }
     server.expectedAuthorization = "Bearer " + expected;
     if (scenario == "provider_401") server.listStatus = 401;
     podlord::ResourceClient client;
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0; settings.requestHardLimitPerMinute = 0;
+    podlord::ReadSettings settings; settings.requestHardLimitPerMinute = 0;
     if (!client.configure(settings) || !client.open("session", connection, {})) return false;
     if (!waitFor([&] { return !client.loading("session") && !server.active; }) || !server.requests || server.authorizationMismatch) return false;
     if (scenario != "provider_401") return client.rows("session").size() == 1;
@@ -169,19 +169,64 @@ bool viewScenario(const QString& scenario) {
     if (!first.listen(QHostAddress::LocalHost, 0) || !second.listen(QHostAddress::LocalHost, 0)) return false;
     auto now = QDateTime::currentDateTimeUtc();
     podlord::ResourceClient client(nullptr, [&] { return scenario == "view_focus" ? now : QDateTime::currentDateTimeUtc(); });
-    const auto connection = [](const Kubernetes& server, const QString& credential) {
+    const auto connection = [&](const Kubernetes& server, const QString& credential) {
         podlord::ClusterConnection result;
         result.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); result.credentialId = credential;
+        if (scenario == "view_shared_limit" || scenario == "view_shared_backoff") result.contextId = "same-context";
         return result;
     };
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
-    if (scenario == "view_limit") settings.requestHardLimitPerMinute = 60;
+    podlord::ReadSettings settings;
+    if (scenario == "view_limit" || scenario == "view_shared_limit") settings.requestHardLimitPerMinute = 60;
     if (scenario == "view_auth") second.listStatus = 401;
+    if (scenario == "view_switch_initial") {
+        first.allDelay = 150;
+        second.allDelay = 150;
+        if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
+            || !waitFor([&] { return first.requests > 0; }) || !client.showSession("second")
+            || !client.open("second", connection(second, "second"), {})) return false;
+        if (!waitFor([&] { return !client.loading("second") && client.rows("second").size() == 1; }, 20000)) return false;
+        return waitFor([&] { return !client.loading("first") && client.initialSyncComplete("first")
+            && client.rows("first").size() == 1; }, 20000);
+    }
+    if (scenario == "view_backoff_isolation") {
+        first.responseStatuses.insert("/api", 429);
+        first.retryAfter = "5";
+        if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
+            || !client.showSession("second", "secondary")
+            || !client.open("second", connection(second, "second"), {})) return false;
+        return waitFor([&] { return second.requests > 0; }, 2500)
+            && waitFor([&] { return !client.loading("second") && client.rows("second").size() == 1; }, 16000);
+    }
+    if (scenario == "view_shared_backoff") {
+        first.responseStatuses.insert("/api", 429);
+        first.retryAfter = "2";
+        if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
+            || !client.showSession("second", "secondary")
+            || !client.open("second", connection(second, "second"), {})
+            || !waitFor([&] { return first.pathRequests.value("/api") > 0; }, 1500)) return false;
+        QTest::qWait(1000);
+        if (second.requests != 0) return false;
+        return waitFor([&] { return second.requests > 0; }, 4000);
+    }
+    if (scenario == "view_hidden_failure") {
+        first.responseStatuses.insert("/api", 500);
+        if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
+            || !client.showSession("second") || !client.open("second", connection(second, "second"), {})) return false;
+        if (!waitFor([&] { return !client.loading("first") && !client.loading("second") && !first.active; }, 16000)) return false;
+        const auto requests = first.requests;
+        QTest::qWait(1800);
+        return requests > 0 && first.requests == requests;
+    }
     QList<qint64> starts;
-    QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
+    QMap<QString, QList<qint64>> startsBySession;
+    QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString& id, const QString&, qint64 at) {
+        starts.append(at);
+        startsBySession[id].append(at);
+    });
     if (!client.configure(settings) || !client.open("first", connection(first, "first"), {})
         || !client.showSession("second", "secondary") || !client.open("second", connection(second, "second"), {})) return false;
-    if (!waitFor([&] { return !client.loading("first") && !client.loading("second") && !first.active && !second.active; }, scenario == "view_limit" ? 30000 : 16000)) return false;
+    if (!waitFor([&] { return !client.loading("first") && !client.loading("second") && !first.active && !second.active; },
+            scenario == "view_limit" || scenario == "view_shared_limit" ? 30000 : 16000)) return false;
     if (client.rows("first").size() != 1) return false;
     const auto path = QString("/api/v1/namespaces/default/pods/alpha");
     if (scenario == "view_auth") {
@@ -248,10 +293,23 @@ bool viewScenario(const QString& scenario) {
         return client.moveSession("detached", "detached") && client.inspect("first", path)
             && waitFor([&] { return !client.document("first", path).isEmpty(); });
     }
-    if (scenario == "view_logs" || scenario == "view_limit") {
+    if (scenario == "view_logs" || scenario == "view_limit" || scenario == "view_shared_limit") {
         if (!waitFor([&] { return client.logEntries("first", path).size() >= 2 && !first.active; })) return false;
         for (qsizetype i = 1; i < starts.size(); ++i)
-            if (starts[i] - starts[i - 1] < (scenario == "view_limit" ? 1000 : 400)) return false;
+            if (starts[i] - starts[i - 1] < 400) return false;
+        if (scenario == "view_limit") {
+            bool interleaved = false;
+            for (qsizetype i = 1; i < starts.size(); ++i) interleaved = interleaved || starts[i] - starts[i - 1] < 1000;
+            if (!interleaved) return false;
+            for (const auto& times : startsBySession)
+                for (qsizetype i = 1; i < times.size(); ++i)
+                    if (times[i] - times[i - 1] < 1000) return false;
+        }
+        if (scenario == "view_shared_limit") {
+            for (qsizetype i = 1; i < starts.size(); ++i)
+                if (starts[i] - starts[i - 1] < 1000) return false;
+            if (client.requestCountLastMinute("first") != client.requestCountLastMinute("second")) return false;
+        }
         return first.logs.value("alpha") > 0 && first.logs.value("beta") > 0 && second.logs.value("alpha") > 0 && second.logs.value("beta") > 0;
     }
     return false;
@@ -266,7 +324,7 @@ bool run(const QString& scenario) {
     podlord::ClusterConnection connection;
     connection.server = QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort())); connection.credentialId = "local";
     if (scenario == "list_namespaced_fallback_preferred") connection.preferredNamespace = "team";
-    podlord::ReadSettings settings; settings.inactiveSyncMinutes = 0;
+    podlord::ReadSettings settings;
     settings.requestHardLimitPerMinute = scenario == "limit" ? 60 : 0;
     if (scenario == "discovery_invalid_body") server.discovery = QJsonObject{{"resources", "not-an-array"}};
     if (scenario == "discovery_invalid_entry") server.discovery = QJsonObject{{"resources", QJsonArray{
@@ -353,7 +411,64 @@ bool run(const QString& scenario) {
                 {"reason", "CrashLoopBackOff"}, {"message", "Back-off restarting failed container"}}}}}},
             QJsonObject{{"name", "beta"}, {"ready", true}, {"restartCount", 0}, {"state", QJsonObject{{"running", QJsonObject{}}}}}}}};
     }
+    if (scenario == "large_list_nonblocking" || scenario == "rebind_stale_projection") {
+        QJsonArray items;
+        for (int index = 0; index < 20000; ++index) items.append(QJsonObject{
+            {"apiVersion", "v1"}, {"kind", "Pod"},
+            {"metadata", QJsonObject{{"name", QString("pod-%1").arg(index)}, {"namespace", "default"},
+                                      {"uid", QString("uid-%1").arg(index)}, {"resourceVersion", "1"}}},
+            {"status", QJsonObject{{"phase", "Running"}}}});
+        server.responseBytes.insert("/api/v1/pods", QJsonDocument(QJsonObject{
+            {"metadata", QJsonObject{}}, {"items", items}}).toJson(QJsonDocument::Compact));
+    }
     if (!client.configure(settings)) return false;
+    if (scenario == "rebind_stale_projection") {
+        Kubernetes replacement;
+        if (!replacement.listen(QHostAddress::LocalHost, 0)) return false;
+        replacement.podNamespace = "other";
+        auto renewed = connection;
+        renewed.server = QUrl(QString("http://127.0.0.1:%1").arg(replacement.serverPort()));
+        renewed.credentialId = "replacement";
+        bool rebound = false, projectionPending = false;
+        QObject::connect(&client, &podlord::ResourceClient::changed, &client, [&](const QString& id) {
+            if (rebound || id != "session" || !client.rows(id).isEmpty()) return;
+            for (const auto& value : client.requestAudit(id)) {
+                const auto request = value.toMap();
+                if (request.value("path") != "/api/v1/pods" || request.value("status") != "Success") continue;
+                projectionPending = client.loading(id);
+                rebound = true;
+                QTimer::singleShot(0, &client, [&] { client.open("session", renewed, {}); });
+                break;
+            }
+        });
+        if (!client.open("session", connection, {}) || !waitFor([&] {
+            return rebound && projectionPending && !client.loading("session") && client.rows("session").size() == 1
+                && client.rows("session").first().toObject()["path"] == "/api/v1/namespaces/other/pods/alpha";
+        }, 30000)) return false;
+        QTest::qWait(500);
+        return client.rows("session").size() == 1
+            && client.rows("session").first().toObject()["path"] == "/api/v1/namespaces/other/pods/alpha";
+    }
+    if (scenario == "large_list_nonblocking") {
+        QElapsedTimer elapsed; elapsed.start();
+        qint64 lastTick = elapsed.elapsed(), longestGap = 0;
+        QTimer heartbeat;
+        heartbeat.setInterval(10);
+        QObject::connect(&heartbeat, &QTimer::timeout, &client, [&] {
+            const auto now = elapsed.elapsed();
+            longestGap = std::max(longestGap, now - lastTick);
+            lastTick = now;
+        });
+        heartbeat.start();
+        if (!client.open("session", connection, {})) return false;
+        const bool published = waitFor([&] { return client.rows("session").size() == 20000; }, 30000);
+        heartbeat.stop();
+        if (!published || longestGap > 80) {
+            std::fprintf(stderr, "Large list: published=%d, longest UI event gap=%lld ms\n", published, static_cast<long long>(longestGap));
+            return false;
+        }
+        return true;
+    }
     QList<qint64> starts;
     QObject::connect(&client, &podlord::ResourceClient::requestStarted, &client, [&](const QString&, const QString&, qint64 at) { starts.append(at); });
     if (scenario == "parallel" || scenario == "limit" || scenario == "coalesce") server.allDelay = 2000;

@@ -57,11 +57,15 @@ status/version changes, filters or sorting. The same resource set published in a
 different order produces the same positions. Kubernetes UID remains an identity
 input, including when an object is replaced at the same API path.
 
-All discovered listable kinds participate in the same layout. When native
-discovery includes kinds outside the built-in catalog, common resource tiles
-may move as the island is redistributed. A frozen reference-only skeleton or
-separate layout for additional kinds would contradict the confirmed product
-behavior; parity comparisons must use the same resource set.
+All discovered listable kinds share the same navigable layout. The normalized
+Kubernetes Event flag places Events on spaced water cells beyond the connected
+land of their namespace or cluster scope. Events retain selection, filtering and
+camera fit. Custom resources named Event remain on the resource island.
+
+When native discovery includes kinds outside the built-in catalog, common
+resource tiles may move as the island is redistributed. A frozen reference-only
+skeleton or separate layout for additional kinds would contradict the confirmed
+product behavior; parity comparisons must use the same resource set.
 
 The existing per-session Workspace navigation owns the camera. Replace the old
 one-dimensional GridView offset and discrete tile-size APIs, rather than keeping
@@ -272,6 +276,14 @@ without closing its tab. The overview action on the map is icon-only and retains
 an accessible name. The context card menu includes local rename and removal.
 Removal uses the same application-level confirmation from Map and Sources. It
 never deletes a remote cluster or changes the original kubeconfig.
+
+When an opened cluster exposes Cluster API `Cluster` objects with control-plane
+endpoints, Map derives management/workload groups from those observations and
+the imported context server addresses. Multiple contexts for the same
+management endpoint share one group. Existing WLC contexts join it regardless
+of their source. Groups disappear when no matching WLC context remains. This
+presentation is derived from cached resources and catalog entries, with no
+group setting or persisted relationship.
 
 On windows at least 1000 logical pixels wide, mouse-hover details appear next to
 the resource and remain within the window. They do not reserve layout space or

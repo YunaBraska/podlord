@@ -34,6 +34,7 @@ signals:
     void changed();
     void analysisSent(const QString& subject);
 private:
+    void restore(const CredentialStore::ReadResult& loaded);
     struct Account {
         QString clientId, subject, email, idToken, accessToken, refreshToken, scopes;
         QDateTime expiresAt;
@@ -57,9 +58,11 @@ private:
     QPointer<QNetworkReply> loginReply_, refreshReply_, modelsReply_, analysisReply_, revokeReply_;
     std::unique_ptr<QLockFile> refreshLock_;
     QList<std::function<void(bool)>> accessWaiters_;
+    std::function<void(QString, QString)> analysisDone_;
+    quint64 analysisGeneration_ = 0;
     QByteArray savedBytes_;
     bool writable_ = true;
-    SystemCredentialStore systemCredentials_;
+    ProfileCredentialStore systemCredentials_;
     CredentialStore* credentials_;
 };
 } // namespace podlord

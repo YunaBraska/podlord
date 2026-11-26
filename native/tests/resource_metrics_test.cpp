@@ -98,6 +98,7 @@ bool run(const QString& scenario) {
         if (scenario=="summary_missing") { result.remove("cpu"); rows=QJsonArray{result}; }
         if (scenario=="summary_zero") { result["cpu"]=0; rows=QJsonArray{result}; }
         if (scenario=="summary_stale") { result["metricStale"]=true; rows=QJsonArray{result}; }
+        if (scenario=="summary_usage_only") { result.remove("metricReferences"); rows=QJsonArray{result}; }
         if (scenario=="summary_partial") {
             auto missing=result; missing["uid"]="uid-beta"; missing["name"]="beta"; missing.remove("cpu"); rows.append(missing);
         }
@@ -129,7 +130,10 @@ bool run(const QString& scenario) {
         if (scenario=="summary_zero") return usage.startsWith("0 mCPU");
         if (scenario=="summary_partial") return usage.contains("incomplete");
         if (scenario=="summary_stale") return !usage.contains("stale")
+            && summary[0].toMap()["bar"].toBool()
             && !summary[0].toMap()["description"].toString().contains(measured.toUTC().toString(Qt::ISODateWithMs));
+        if (scenario=="summary_usage_only") return usage=="25 mCPU"
+            && summary[0].toMap()["available"].toBool() && !summary[0].toMap()["bar"].toBool();
         if (scenario=="summary_node") return usage.startsWith("1000 mCPU / 4000 mCPU") && summary[3].toMap()["usage"]=="1" && summary[4].toMap()["usage"]=="1";
         if (scenario=="summary_overflow") return usage.startsWith("Unavailable (overflow)");
         if (scenario=="summary_storage") return summary[2].toMap()["usage"]=="Unavailable / 3 GiB";
@@ -144,7 +148,9 @@ bool run(const QString& scenario) {
     if (scenario=="attach_stale") return result["metricStale"].toBool() && !cpu["usage"].toString().contains("stale") && cpu["timestamp"].toString()==measured.toString(Qt::ISODateWithMs);
     if (scenario=="attach_repeat") return result==podlord::withResourceMetrics(result,normalized,measured);
     if (scenario=="attach_storage") return views.last().toMap()["usage"]=="Unavailable";
-    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("request: 10 mCPU") && !cpu["references"].toString().contains("%") && cpu["markers"].toList().size()==2 && views[1].toMap()["usage"]=="32 MiB";
+    return cpu["usage"]=="25 mCPU" && cpu["references"].toString().contains("request: 10 mCPU") && !cpu["references"].toString().contains("%")
+        && cpu["markers"].toList().size()==2 && cpu["markerLabels"]=="request 10 mCPU · limit 100 mCPU"
+        && views[1].toMap()["usage"]=="32 MiB" && views[1].toMap()["markerLabels"]=="request 16 MiB · limit 64 MiB";
 }
 }
 int main(int argc,char** argv) {

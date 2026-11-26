@@ -1,14 +1,14 @@
 # How Does The Native Workspace Synchronize And Expire Snapshots?
 
-Status: accepted, 2026-10-03. Updated 2026-11-20.
+Status: accepted, 2026-10-03. Updated 2026-11-26.
 
 ## Decision
 
 One read controller owns the synchronization, request gate, cache expiry and retry timing. UI input and rendering read cached snapshots. Up to four reads can overlap, with at least 400 ms between starts. A user request limit can increase that spacing. Writes remain exclusive. Inspector reads precede background work. Server backoff applies even to manual refresh.
 
-The visible session's timer runs after 20, 45 or 120 seconds as activity falls. Empty focused sessions retry after 12 seconds, or 25 seconds following a failure. Unfocused populated sessions wait 240 seconds, shortened to 30 seconds during retryable failures. Hidden sessions sync only when the user enables their interval. Closed sessions do not sync. One session can move between views without copying its cache or starting another scheduler.
+The visible session's timer runs after 20, 45 or 120 seconds as activity falls. Empty focused sessions retry after 12 seconds, or 25 seconds following a failure. Unfocused populated sessions wait 240 seconds, shortened to 30 seconds during retryable failures. Open sessions without a view sync at the configured positive interval, 15 minutes by default. Existing zero intervals load as the default. Closed sessions do not sync. One session can move between views without copying its cache or starting another scheduler.
 
-The timer checks which discovered collections are due. A changed collection is eligible after 25 seconds. Each identical accepted list extends the next interval, up to 180 seconds for Pods, Nodes, Events and live metrics, or 900 seconds for other kinds. A change resets that collection's interval. A newly observed resource problem prompts a read of collections containing directly linked resources. Requests for one collection are coalesced. Manual refresh rediscovers the API.
+The timer checks which discovered collections are due. A changed collection is eligible after 25 seconds. Each identical accepted list extends the next interval, up to 180 seconds for Pods, Nodes, Events and live metrics, or 900 seconds for other kinds. A change resets that collection's interval. A newly observed resource problem prompts a read of collections containing directly linked resources. Requests for one collection are coalesced. API discovery repeats after 30 minutes while a context is eligible for background sync. It lists newly discovered kinds without re-listing every known kind. Foreground refresh after authentication rediscovers the API.
 
 Transport failures, HTTP 429 and server errors are retried on the next session cycle without restarting. The controller remembers the failed read's kind and collection so it can retry that path without rediscovering every kind. It clears a resource failure if a later accepted list shows that resource was removed. Authentication and rejected writes are never retried this way. A newly failing read produces one audible cue per short burst when alerts are enabled.
 
@@ -20,7 +20,7 @@ Collections keep their last successful timestamp and expire after the configured
 
 Public controller and UI tests cover overlapping reads, request spacing, focus and inactivity, adaptive intervals, transient recovery, related-resource refresh, audit results and the audible failure signal. The clean Linux and cross-platform package checks remain release gates.
 
-Collection refresh still uses Kubernetes list requests. A watch stream and automatic discovery of newly added API kinds are not implemented. Background synchronization never retries a denied write or launches an authentication flow.
+Collection refresh still uses Kubernetes list requests. A watch stream is not implemented. Background synchronization never retries a denied write or launches an authentication flow.
 
 ## Migration And Rollback
 

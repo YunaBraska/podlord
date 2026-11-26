@@ -6,7 +6,7 @@ Accepted scope: the user-confirmed whole-session alarm contract. Implementation 
 
 ## What Owns Alarm Evaluation And Persistence?
 
-One native alarm owner evaluates cached snapshots from ResourceClient for every open session, independently of view filters. Immutable evaluation work runs off the UI thread and coalesces newer snapshots. Results carry their originating session/generation; late work cannot populate another session. Radar actions resolve through filtered resource membership, and tab activation does not repeat already observed notifications.
+One native alarm owner evaluates cached snapshots from ResourceClient for every open session, independently of view filters. Rule evaluation and effect projection run off the UI thread and coalesce newer snapshots. Only the generation-checked result, sound and focus actions return to the UI thread. The first complete cache presentation is the alarm baseline, so partial loading cannot announce a new failure. Results carry their originating session/generation; late work cannot populate another session. Radar actions resolve through filtered resource membership, and tab activation does not repeat already observed notifications.
 
 Persist rule definitions and the mute/reduced-motion preferences in a private, versioned `alert-rules.json`, using the existing lock, optimistic conflict and atomic-save conventions. Invalid data must remain recoverable. Do not persist resource snapshots, Secret values, evaluation results or per-resource effect state in this document.
 

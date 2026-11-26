@@ -59,6 +59,7 @@ class Kubernetes final : public QTcpServer {
 public:
     QWebSocketServer streams{"Kubernetes boundary", QWebSocketServer::NonSecureMode};
     int requests = 0, upgrades = 0;
+    QStringList authorizations;
     QString nameSpace = "default";
     QStringList names{"alpha", "beta"};
     bool hasEvents = false;
@@ -79,6 +80,8 @@ public:
                     const auto bytes = socket->peek(65536);
                     if (!bytes.contains("\r\n\r\n")) return;
                     socket->setProperty("handled", true);
+                    for (const auto& line : bytes.split('\n'))
+                        if (line.toLower().startsWith("authorization:")) authorizations.append(QString::fromUtf8(line.trimmed().toLower()));
                     authorized = authorized && bytes.toLower().contains("authorization: bearer window-test-token\r\n");
                     if (bytes.toLower().contains("upgrade: websocket")) { ++upgrades; streams.handleConnection(socket); return; }
                     socket->readAll(); ++requests;
@@ -155,7 +158,7 @@ bool run(const QString& scenario) {
     const auto a = firstId.toString(QUuid::WithoutBraces), b = secondId.toString(QUuid::WithoutBraces);
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(secondId)));
     REQUIRE(std::holds_alternative<podlord::SessionCatalog>(store.activate(firstId)));
-    if (scenario == "audio_volumes") {
+    if (scenario == "audio_volumes" || scenario == "source_rebind_windows") {
         podlord::Workspace primary(profile.path());
         REQUIRE(waitFor([&] { return !primary.busy() && !primary.filterPresetsBusy(); }));
         podlord::WindowHost host(primary);
@@ -171,6 +174,24 @@ bool run(const QString& scenario) {
         REQUIRE(detached->activate(b));
         REQUIRE(waitFor([&] { return !detached->busy() && !detached->syncLoading()
             && detached->totalResourceCount() == api.names.size(); }));
+        if (scenario == "source_rebind_windows") {
+            REQUIRE(primary.activate(a));
+            REQUIRE(waitFor([&] { return !primary.busy() && !primary.syncLoading()
+                && primary.totalResourceCount() == api.names.size(); }));
+            const auto updated = QString(yaml).replace("window-test-token", "replacement-token");
+            REQUIRE(primary.importText(profile.filePath("source.yaml"), updated));
+            REQUIRE(waitFor([&] { return !primary.busy() && !detached->busy()
+                && primary.contexts().size() == 2 && detached->contexts().size() == 2; }));
+            const auto before = api.authorizations.size();
+            REQUIRE(primary.refresh() && detached->refresh());
+            REQUIRE(waitFor([&] { return !primary.syncLoading() && !detached->syncLoading()
+                && api.authorizations.size() > before; }));
+            REQUIRE(primary.currentSession() == a && detached->currentSession() == b
+                && primary.tabs().size() == 1 && detached->tabs().size() == 1);
+            for (int index = before; index < api.authorizations.size(); ++index)
+                REQUIRE(api.authorizations[index] == "authorization: bearer replacement-token");
+            return true;
+        }
         const int requests = api.requests;
         REQUIRE(primary.saveAudioVolumes(48, 19));
         REQUIRE(waitFor([&] { return !primary.busy() && detached->musicVolumePercent() == 48 && detached->alertVolumePercent() == 19; }));
@@ -875,12 +896,13 @@ bool run(const QString& scenario) {
         pool->setMaxThreadCount(1);
         pool->start([entered, release] { entered->release(); release->acquire(); });
         REQUIRE(waitFor([&] { return entered->available() == 1; }));
-        // All session/store setup is complete. Only HTTP ingress and synchronous
-        // public projections are awaited while the global pool is held.
+        // The request can finish while projection waits for a worker. Keep the
+        // previous visible snapshot until that projection completes.
         api.names = {"queued", "superseded"};
         const int beforeQueued = api.requests;
         REQUIRE(primary.refresh());
-        REQUIRE(waitFor([&] { return !primary.loading() && api.requests > beforeQueued && matches(api.names, 2); }));
+        REQUIRE(waitFor([&] { return primary.loading() && api.requests > beforeQueued
+            && matches({"alpha", "beta"}, 2); }));
         if (scenario == "snapshot_detach" || scenario == "snapshot_close_window") {
             podlord::Workspace* moved = nullptr;
             if (scenario == "snapshot_detach") {
@@ -912,6 +934,10 @@ bool run(const QString& scenario) {
         }
         const bool hidden = scenario == "snapshot_hidden";
         if (hidden) { main->hide(); REQUIRE(!main->isVisible()); }
+        release->release(); blocked = false;
+        pool->setMaxThreadCount(previousMaximum);
+        REQUIRE(waitFor([&] { return !primary.loading()
+            && (hidden ? matches({"alpha", "beta"}, 2) : matches(api.names, 2)); }));
         if (!hidden) REQUIRE(primary.filter("=latest") && matches({}, 2));
         api.names = {"fresh", "latest", "newest"};
         const int beforeLatest = api.requests;
@@ -920,11 +946,8 @@ bool run(const QString& scenario) {
             && (hidden ? !primary.property("syncLoading").toBool() : matches({"latest"}, 3)); }));
         if (!hidden) REQUIRE(primary.filter("") && matches(api.names, 3));
         const int completedRequests = api.requests;
-        release->release(); blocked = false;
-        pool->setMaxThreadCount(previousMaximum);
         REQUIRE(waitFor([&] { return !primary.busy() && !primary.loading(); }));
-        // Finish the superseded task/callout, then the latest task it may queue.
-        // No private preparation flags or synthetic ResourceClient rows are used.
+        // Finish public view updates without inspecting private preparation state.
         for (int phase = 0; phase < 2; ++phase) {
             REQUIRE(pool->waitForDone(15000));
             QCoreApplication::processEvents();

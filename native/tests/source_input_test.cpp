@@ -232,7 +232,7 @@ bool management(const QString& scenario, const QString& root, const QString& pro
                 }
                 if (mode == "changed") {
                     write(origin, yaml + "# changed\n"); press("refreshSourceFilesButton"); settle();
-                    require(sourceCount() == 2 && workspace.contexts().first().toMap()["name"] == "local", "A new immutable snapshot inherited another snapshot's alias");
+                    require(sourceCount() == 2 && workspace.contexts().first().toMap()["name"] == "Operations", "Changed credentials discarded the context alias");
                 }
             }
         }
@@ -240,7 +240,9 @@ bool management(const QString& scenario, const QString& root, const QString& pro
         require(std::holds_alternative<podlord::ClusterConnection>(after), "Renaming broke connection resolution");
         const auto beforeConnection = std::get<podlord::ClusterConnection>(connection), afterConnection = std::get<podlord::ClusterConnection>(after);
         require(beforeConnection.server == afterConnection.server && beforeConnection.authorization == afterConnection.authorization
-            && beforeConnection.credentialId == afterConnection.credentialId && catalog() == original && workspace.currentSession() == activeBeforeRename, "Source alias changed credentials, tabs or activation");
+            && (mode == "changed" ? beforeConnection.credentialId != afterConnection.credentialId
+                : beforeConnection.credentialId == afterConnection.credentialId)
+            && catalog() == original && workspace.currentSession() == activeBeforeRename, "Source alias changed credentials, tabs or activation");
         require(!workspace.sourceImportError().contains("source-input-secret"), "Alias error exposed credentials");
         require(!bindingLoop, "Alias UI emitted a binding loop");
         return true;
@@ -251,12 +253,42 @@ bool management(const QString& scenario, const QString& root, const QString& pro
             press("importHomeButton"); settle();
             require(sourceCount() == 1 && workspace.contexts().size() == 2, "Explicit home import did not populate owned contexts");
         } else if (mode.startsWith("refresh")) {
+            QString oldContext;
+            podlord::ClusterConnection oldConnection;
+            if (mode == "refresh_rebind" || mode == "refresh_removed") {
+                const auto listed = sources.list();
+                require(std::holds_alternative<podlord::SourceCatalog>(listed), "Cannot read original contexts");
+                oldContext = std::get<podlord::SourceCatalog>(listed).sources.first().contexts.first().id;
+                const auto resolved = sources.connection(oldContext);
+                require(std::holds_alternative<podlord::ClusterConnection>(resolved), "Cannot resolve original credentials");
+                oldConnection = std::get<podlord::ClusterConnection>(resolved);
+            }
             if (mode == "refresh_changed") write(origin, yaml + "# updated source\n");
+            if (mode == "refresh_rebind") write(origin, QByteArray(yaml).replace("source-input-secret", "replacement-token"));
+            if (mode == "refresh_removed") write(origin, QByteArray(yaml).replace("contexts:\n- name: local", "contexts:\n- name: replacement"));
             if (mode == "refresh_missing") require(QFile::remove(origin), "Cannot remove external source for failure case");
             press("refreshSourceFilesButton"); settle();
-            require(sourceCount() == (mode == "refresh_changed" ? 2 : 1), "Source refresh lost or duplicated an immutable snapshot");
+            require(sourceCount() == (mode == "refresh_changed" || mode == "refresh_rebind" || mode == "refresh_removed" ? 2 : 1), "Source refresh lost or duplicated an immutable snapshot");
             require(workspace.sourceImportIssues().size() == (mode == "refresh_missing" ? 1 : 0), "Refresh did not report unavailable source files");
-            if (mode == "refresh_repeat") { press("refreshSourceFilesButton"); settle(); require(sourceCount() == 1, "Repeated refresh duplicated snapshots"); }
+            if (mode == "refresh_removed") {
+                require(workspace.contexts().size() == 2, "Removed contexts remain selectable");
+                require(std::holds_alternative<podlord::Failure>(sources.connection(oldContext)), "Removed context still uses old credentials");
+            }
+            if (mode == "refresh_rebind") {
+                require(workspace.contexts().size() == 2, "Older versions created duplicate context choices");
+                const auto resolved = sources.connection(oldContext);
+                require(std::holds_alternative<podlord::ClusterConnection>(resolved), "Original context no longer resolves");
+                const auto& replacement = std::get<podlord::ClusterConnection>(resolved);
+                require(replacement.contextId == oldContext && replacement.authorization != oldConnection.authorization
+                    && replacement.credentialId != oldConnection.credentialId
+                    && replacement.authorization == "Bearer replacement-token", "Existing context still uses old imported credentials");
+            }
+            if (mode == "refresh_repeat") {
+                const auto importedAt = workspace.contexts().first().toMap()["imported"];
+                press("refreshSourceFilesButton"); settle();
+                require(sourceCount() == 1 && workspace.contexts().first().toMap()["imported"] == importedAt,
+                    "Repeated import changed an unchanged source or its ordering");
+            }
         } else {
             press("pasteSourceButton");
             require(QTest::qWaitFor([&] { return item("pasteSourceYaml") != nullptr; }, 2000), "Paste dialog did not open");
@@ -321,6 +353,215 @@ int main(int argc, char* argv[]) {
         const QString directory = root + "/sources";
         const QString home = root + "/home";
         require(QDir().mkpath(directory) && QDir().mkpath(home), "Cannot create isolated inputs");
+        if (scenario.startsWith("conflict_")) {
+            const auto first = directory + "/first.yaml";
+            const auto second = directory + "/second.yaml";
+            write(first, config());
+            podlord::Workspace workspace(profile);
+            QQmlApplicationEngine engine;
+            engine.rootContext()->setContextProperty("workspace", &workspace);
+            engine.load(QUrl("qrc:/podlord/Main.qml"));
+            require(!engine.rootObjects().isEmpty(), "Cannot open context import UI");
+            auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());
+            if (scenario == "conflict_narrow" || scenario == "conflict_batch_narrow") window->resize(390, 720);
+            require(window && QTest::qWaitFor([&] { return !workspace.busy(); }), "Context import UI did not settle");
+            require(workspace.importFile(first) && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }), "Initial context import failed");
+            const auto oldId = workspace.contexts().first().toMap().value("id").toString();
+            const auto oldTab = podlord::SessionStore(profile).openTab(oldId);
+            require(std::holds_alternative<podlord::SessionCatalog>(oldTab), "Cannot create existing context tab");
+            const auto oldSession = std::get<podlord::SessionCatalog>(oldTab).sessions.first().id;
+            require(workspace.renameSourceContext(oldId, "Operations") && QTest::qWaitFor([&] {
+                return !workspace.busy() && workspace.contexts().first().toMap().value("name") == "Operations";
+            }), "Cannot prepare renamed context");
+            if (scenario == "conflict_noop") {
+                const auto imported = workspace.contexts().first().toMap().value("imported");
+                require(workspace.importFiles({first, QUrl::fromLocalFile(first).toString()})
+                    && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.sourceImportChoices().isEmpty() && workspace.contexts().first().toMap().value("imported") == imported,
+                    "Identical input changed source recency or opened a conflict dialog");
+                return 0;
+            }
+            if (scenario == "conflict_recent") {
+                write(second, QByteArray(config("https://127.0.0.1:11")).replace("- name: local\n  context:", "- name: other\n  context:"));
+                require(workspace.importFile(second) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.contexts().size() == 2;
+                }), "Cannot import a separate context");
+                require(workspace.contexts().first().toMap().value("source") == second,
+                    "Sources are not initially ordered by the most recent change");
+                require(workspace.importFile(first) && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.contexts().first().toMap().value("source") == second,
+                    "An unchanged reimport moved an old source to the top");
+                return 0;
+            }
+            if (scenario == "conflict_same_path_add") {
+                write(first, QByteArray(config("https://127.0.0.1:13")).replace("source-input-secret", "version-two"));
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Changed file did not offer Add or Update");
+                const auto candidate = workspace.sourceImportChoices().first().toMap().value("candidateId").toString();
+                require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", QString{}}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 2; }),
+                    "Add from the same file did not retain both versions");
+                const auto oldConnection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(oldConnection)
+                    && std::get<podlord::ClusterConnection>(oldConnection).authorization == "Bearer source-input-secret",
+                    "Kept context silently switched to new credentials");
+                podlord::Workspace restored(profile);
+                require(QTest::qWaitFor([&] { return !restored.busy() && restored.contexts().size() == 2; }),
+                    "Added context version was lost on restart");
+                return 0;
+            }
+            if (scenario == "conflict_revert") {
+                write(first, QByteArray(config("https://127.0.0.1:13")).replace("source-input-secret", "version-two"));
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Changed file did not offer an update");
+                auto candidate = workspace.sourceImportChoices().first().toMap().value("candidateId").toString();
+                require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", oldId}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; }),
+                    "Cannot update the first source version");
+                write(first, config());
+                require(workspace.importFile(first) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+                }), "Restored file content was mistaken for an unchanged current import");
+                const auto choice = workspace.sourceImportChoices().first().toMap();
+                candidate = choice.value("candidateId").toString();
+                const auto target = choice.value("targets").toList().first().toMap().value("id").toString();
+                require(candidate == oldId && workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", target}}})
+                    && QTest::qWaitFor([&] { return !workspace.busy(); }), "Cannot restore the earlier source version");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(workspace.sourceImportError().isEmpty() && workspace.contexts().size() == 1
+                    && workspace.contexts().first().toMap().value("name") == "Operations"
+                    && std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer source-input-secret",
+                    "Restored version lost the alias, tab or original credentials");
+                return 0;
+            }
+            if (scenario == "conflict_historical_tabs") {
+                write(first, QByteArray(config("https://127.0.0.1:10")).replace("source-input-secret", "intermediate-secret"));
+                require(workspace.refreshSources() && QTest::qWaitFor([&] { return !workspace.busy(); })
+                    && workspace.contexts().size() == 1, "Cannot prepare historical context version");
+            }
+            write(second, QByteArray(config("https://127.0.0.1:11")).replace("source-input-secret", "new-secret"));
+            if (scenario == "conflict_batch" || scenario == "conflict_batch_narrow") {
+                const auto third = directory + "/third.yaml";
+                write(third, config("https://127.0.0.1:14"));
+                require(workspace.importFile(directory) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.sourceImportChoices().size() == 2;
+                }), "Folder conflicts were not collected into one decision");
+                const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+                require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture batch conflict dialog");
+                require(std::get<podlord::SourceCatalog>(podlord::KubeconfigStore(profile).list()).sources.size() == 1,
+                    "Folder import saved a source before review");
+                QVariantList decisions;
+                for (const auto& value : workspace.sourceImportChoices()) {
+                    const auto choice = value.toMap();
+                    decisions.append(QVariantMap{{"candidateId", choice.value("candidateId")},
+                        {"targetId", choice.value("sourcePath") == second ? QVariant(oldId) : QVariant(QString{})}});
+                }
+                require(workspace.resolveSourceImport(decisions) && QTest::qWaitFor([&] {
+                    return !workspace.busy() && workspace.contexts().size() == 2;
+                }), "Folder choices did not apply together");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer new-secret",
+                    "Folder update did not rebind the existing tab");
+                return 0;
+            }
+            require(workspace.importFile(second) && QTest::qWaitFor([&] {
+                return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+            }), "Matching context did not wait for a choice");
+            require(workspace.contexts().size() == 1 && std::get<podlord::SourceCatalog>(podlord::KubeconfigStore(profile).list()).sources.size()
+                == (scenario == "conflict_historical_tabs" ? 2 : 1),
+                "Conflict imported content before confirmation");
+            auto* dialog = window->findChild<QObject*>("sourceConflictDialog");
+            require(dialog && QTest::qWaitFor([&] { return dialog->property("visible").toBool(); }), "Conflict choices are not visible");
+            if (scenario == "conflict_narrow") {
+                require(dialog->property("width").toReal() <= window->width() - 20, "Conflict dialog clips in a narrow window");
+                const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+                require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture narrow conflict dialog");
+                const auto dropdown = qEnvironmentVariable("PODLORD_CONFLICT_DROPDOWN_SCREENSHOT");
+                if (!dropdown.isEmpty()) {
+                    require(podlord::test::clickVisible(window, "sourceConflictChoice_0"), "Cannot open narrow conflict options");
+                    QCoreApplication::processEvents();
+                    require(window->grabWindow().save(dropdown), "Cannot capture narrow conflict options");
+                }
+                return 0;
+            }
+            const auto capture = qEnvironmentVariable("PODLORD_CONFLICT_SCREENSHOT");
+            require(capture.isEmpty() || window->grabWindow().save(capture), "Cannot capture conflict dialog");
+            const auto choice = workspace.sourceImportChoices().first().toMap();
+            const auto candidate = choice.value("candidateId").toString();
+            const auto target = choice.value("targets").toList().first().toMap().value("id").toString();
+            if (scenario == "conflict_ui_update") {
+                require(podlord::test::clickVisible(window, "sourceConflictChoice_0"), "Cannot open the conflict action selector");
+                QTest::keyClick(window, Qt::Key_Down);
+                QTest::keyClick(window, Qt::Key_Down);
+                QTest::keyClick(window, Qt::Key_Return);
+                auto* selector = podlord::test::visibleItem(window->contentItem(), "sourceConflictChoice_0");
+                require(selector && QTest::qWaitFor([&] { return selector->property("currentValue").toString() == target; }),
+                    "Keyboard could not choose Update");
+                require(podlord::test::clickVisible(window, "confirmSourceConflicts")
+                    && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1
+                        && workspace.contexts().first().toMap().value("source") == second; }),
+                    "Conflict dialog did not apply the selected update");
+                return 0;
+            }
+            if (scenario == "conflict_cancel") {
+                require(workspace.cancelSourceImport() && workspace.contexts().size() == 1, "Cancelled import changed contexts");
+                return 0;
+            }
+            if (scenario == "conflict_stale") write(second, config("https://127.0.0.1:12"));
+            require(workspace.resolveSourceImport({QVariantMap{{"candidateId", candidate}, {"targetId", scenario == "conflict_add" ? QString{} : target}}}),
+                "Selected context action was rejected");
+            require(QTest::qWaitFor([&] { return !workspace.busy(); }), "Context decision did not finish");
+            if (scenario == "conflict_stale") {
+                require(workspace.contexts().size() == 1 && workspace.sourceImportError().contains("changed", Qt::CaseInsensitive),
+                    "Changed input was imported after review");
+                return 0;
+            }
+            if (scenario == "conflict_add") {
+                require(workspace.contexts().size() == 2, "Add did not keep both contexts");
+                QStringList labels;
+                for (const auto& value : workspace.contexts()) labels.append(value.toMap().value("name").toString());
+                require(labels.contains("Operations") && labels.contains("local · second.yaml"), "Added context is not distinguishable");
+            } else {
+                require(workspace.contexts().size() == 1 && workspace.contexts().first().toMap().value("name") == "Operations"
+                    && workspace.contexts().first().toMap().value("source") == second,
+                    "Update lost the renamed context or its new source");
+                const auto connection = podlord::KubeconfigStore(profile).connection(oldId);
+                require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                    && std::get<podlord::ClusterConnection>(connection).authorization == "Bearer new-secret",
+                    "Existing tab did not resolve the new credentials");
+                const auto tabs = podlord::SessionStore(profile).list();
+                require(std::holds_alternative<podlord::SessionCatalog>(tabs)
+                    && std::get<podlord::SessionCatalog>(tabs).sessions.first().id == oldSession,
+                    "Update replaced the open tab");
+                if (scenario == "conflict_refresh_old") {
+                    write(first, config("https://127.0.0.1:15"));
+                    require(workspace.refreshSources() && QTest::qWaitFor([&] { return !workspace.busy(); }),
+                        "Old source refresh did not finish");
+                    require(workspace.contexts().size() == 1
+                        && workspace.contexts().first().toMap().value("source") == second,
+                        "Refreshing the replaced source silently restored a duplicate context");
+                    const auto rebound = podlord::KubeconfigStore(profile).connection(oldId);
+                    require(std::holds_alternative<podlord::ClusterConnection>(rebound)
+                        && std::get<podlord::ClusterConnection>(rebound).authorization == "Bearer new-secret",
+                        "Refreshing an old source changed the updated tab credentials");
+                }
+                if (scenario == "conflict_remove") {
+                    const auto newId = workspace.contexts().first().toMap().value("id").toString();
+                    require(workspace.requestSourceRemoval(newId) && workspace.confirmSourceRemoval()
+                        && QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().isEmpty(); }),
+                        "Removing an updated context left an old version visible");
+                    const auto remaining = podlord::SessionStore(profile).list();
+                    require(std::holds_alternative<podlord::SessionCatalog>(remaining)
+                        && std::get<podlord::SessionCatalog>(remaining).sessions.isEmpty(),
+                        "Removing an updated context left its old tab open");
+                }
+            }
+            return 0;
+        }
         if (scenario.startsWith("source_alias_contract_")) {
             const QString mode = scenario.mid(22);
             const QString origin = directory + "/config";
@@ -430,7 +671,7 @@ int main(int argc, char* argv[]) {
             const bool folder = QStringList{"folder_url", "folder_plain", "empty_folder", "partial_folder", "private_folder"}.contains(mode);
             if (mode.startsWith("ui_")) {
                 if (mode != "ui_file") input = QUrl::fromLocalFile(directory).toString();
-                if (mode == "ui_partial") write(directory + "/broken.yaml", "not kubeconfig: [\n");
+                if (mode == "ui_partial") write(directory + "/broken.yaml", "contexts: [\n");
                 return ui(profile, input, mode == "ui_partial") ? 0 : 1;
             }
             if (folder) {
@@ -439,8 +680,9 @@ int main(int argc, char* argv[]) {
                     write(directory + "/nested/deeper/no-extension", config());
                     write(directory + "/arbitrary.txt", config());
                     write(directory + "/.hidden", config());
+                    write(directory + "/notes.txt", "This folder also has unrelated notes.\n");
                 }
-                if (mode == "partial_folder") write(directory + "/broken.yaml", "not kubeconfig: [\n");
+                if (mode == "partial_folder") write(directory + "/broken.yaml", "contexts: [\n");
                 input = mode == "folder_plain" ? directory : QUrl::fromLocalFile(directory).toString(QUrl::FullyEncoded);
             }
             if (mode == "private_folder") {
@@ -478,6 +720,30 @@ int main(int argc, char* argv[]) {
             require(result.code == 0 && result.json["sources"].toArray().isEmpty() && result.json["errors"].toArray().isEmpty(), "Empty directory did not return an explicit empty report");
             return 0;
         }
+        if (scenario == "depth_eight") {
+            write(first, config());
+            QString nested = directory;
+            for (int depth = 1; depth <= 9; ++depth) {
+                nested += "/level" + QString::number(depth);
+                if (depth == 8 || depth == 9) write(nested + "/config", config("https://127.0.0.1:" + QByteArray::number(depth)));
+            }
+            write(directory + "/readme.md", "Unrelated project notes.\n");
+            const auto result = run(executable, profile, {"import-path", directory}, home);
+            require(result.code == 1 && result.json["sources"].toArray().size() == 2
+                && result.json["errors"].toArray().size() == 1, "Folder import did not stop after eight nested folders");
+            const auto catalog = run(executable, profile, {"list"}, home);
+            require(catalog.code == 0 && catalog.json["sources"].toArray().size() == 2,
+                "A skipped folder or unrelated file entered the catalog");
+            return 0;
+        }
+        if (scenario == "json_folder") {
+            write(directory + "/config.json", R"({"apiVersion":"v1","kind":"Config","clusters":[{"name":"local","cluster":{"server":"https://127.0.0.1:9"}}],"users":[{"name":"local","user":{"token":"source-input-secret"}}],"contexts":[{"name":"local","context":{"cluster":"local","user":"local"}}]})");
+            write(directory + "/notes.json", R"({"project":"unrelated"})");
+            const auto result = run(executable, profile, {"import-path", directory}, home);
+            require(result.code == 0 && result.json["sources"].toArray().size() == 1
+                && result.json["errors"].toArray().isEmpty(), "JSON kubeconfig was skipped or unrelated JSON was imported");
+            return 0;
+        }
         if (scenario == "missing" || scenario == "blank" || scenario == "arguments") {
             const QStringList args = scenario == "arguments" ? QStringList{"import-path", directory, "extra"}
                 : QStringList{"import-path", scenario == "blank" ? " " : root + "/missing"};
@@ -487,9 +753,31 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         write(first, config());
+        if (scenario == "exec_null_env" || scenario == "exec_invalid_env") {
+            const QByteArray yaml = "apiVersion: v1\nkind: Config\n"
+                "clusters:\n- name: local\n  cluster:\n    server: https://127.0.0.1:9\n"
+                "users:\n- name: local\n  user:\n    exec:\n"
+                "      apiVersion: client.authentication.k8s.io/v1\n"
+                "      command: kubectl\n      interactiveMode: Never\n"
+                "      args: [oidc-login, get-token, --oidc-issuer-url=https://issuer.example.test, --oidc-client-id=podlord-store]\n"
+                "      env: "
+                + QByteArray(scenario == "exec_null_env" ? "null\n" : "{EXAMPLE: value}\n")
+                + "contexts:\n- name: local\n  context:\n    cluster: local\n    user: local\n";
+            write(first, yaml);
+            const podlord::KubeconfigStore store(profile);
+            const auto imported = store.importFile(first);
+            require(std::holds_alternative<podlord::SourceSnapshot>(imported), "Exec kubeconfig import failed");
+            const auto connection = store.connection(std::get<podlord::SourceSnapshot>(imported).contexts.first().id);
+            if (scenario == "exec_invalid_env") require(std::holds_alternative<podlord::Failure>(connection)
+                && std::get<podlord::Failure>(connection).message.contains("exec.env"), "Invalid exec.env was accepted");
+            else require(std::holds_alternative<podlord::ClusterConnection>(connection)
+                && std::get<podlord::ClusterConnection>(connection).exec.has_value()
+                && std::get<podlord::ClusterConnection>(connection).exec->environment.isEmpty(), "Null exec.env was rejected");
+            return 0;
+        }
         if (scenario.startsWith("layout_")) return ui(profile, directory, false, scenario.mid(7).toInt()) ? 0 : 1;
         if (scenario == "nested") write(directory + "/deep/more/other.yml", config("https://127.0.0.1:10"));
-        if (scenario == "partial" || scenario == "ui_partial") write(directory + "/broken.yml", "not kubeconfig: [\n");
+        if (scenario == "partial" || scenario == "ui_partial") write(directory + "/broken.yml", "contexts: [\n");
         if (scenario == "ui" || scenario == "ui_partial") return ui(profile, directory, scenario == "ui_partial") ? 0 : 1;
         if (scenario == "inside_profile") {
             profile = directory + "/owned";
@@ -512,7 +800,7 @@ int main(int argc, char* argv[]) {
         }
         if (scenario == "unsupported_home") path = "~another/kube";
         if (scenario == "all_invalid") {
-            write(first, "malformed: [\n");
+            write(first, "contexts: [\n");
         }
         if (scenario == "busy") {
             require(QDir().mkpath(profile + "/kubeconfigs"), "Cannot create lock directory");

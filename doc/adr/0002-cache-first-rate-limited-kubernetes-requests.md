@@ -12,14 +12,21 @@ Early application builds could trigger `429 TooManyRequests` against k3d because
 
 ## Decision
 
-Use a cache-first resource service with a prioritized request queue and a process-wide Kubernetes request gate.
+Use a cache-first resource service with one prioritized request queue and a process-wide minimum start spacing. Apply the configured per-minute limit and server backoff to the originating context, including its duplicate tabs and windows.
 
 - UI reads cached snapshots first.
 - Background refresh warms selected remote scopes.
 - Detail and log requests use cached data immediately when available, then refresh through the queue.
-- Foreground, user-visible, and background requests share one serialized gate.
-- `Retry-After` from Kubernetes is honored before the next request instead of immediately surfacing a noisy UI error.
+- Foreground, user-visible, and background requests share the queue. Starts remain at least 400 ms apart overall, with at most four active reads. Waiting contexts receive request slots during a focused context's load.
+- `Retry-After` from Kubernetes pauses that context without holding unrelated contexts.
 - Real k3d tests run without test-level API stampedes.
+
+List JSON validation and resource projection run in bounded background jobs before
+their results enter the canonical cache. A newer collection read wins over an
+older result, and projection results check their presentation revision. Large table
+snapshots are prepared in the same background path. The UI receives only the
+current session's completed projection. This adds no second persisted resource cache.
+Prepared table publication notifies only changed rows when practical.
 
 ## Consequences
 
@@ -31,7 +38,7 @@ Positive:
 
 ## Confirmed Scheduling And Lifecycle Extension
 
-Confirmed on 2026-10-02; implementation conformance for this extension remains unreviewed. SYN-001 through SYN-013 in the [operational specification](../spec/podlord-operational-spec.md#confirmed-cache-and-request-scheduling-requirements) own the extended behavior.
+Confirmed on 2026-10-02; implementation conformance for this extension remains unreviewed. SYN-001 through SYN-014 in the [operational specification](../spec/podlord-operational-spec.md#confirmed-cache-and-request-scheduling-requirements) own the extended behavior.
 
 Keep central session synchronization separate from surface lifecycle. Prioritize explicit foreground reads over waiting background work without bypassing the request gate or interrupting dispatched work. Share equivalent reads only within their original session and authorization context; a shared read remains relevant while any consumer still needs it.
 
@@ -59,6 +66,6 @@ Workspace restoration preserves navigation and configuration, not authorization 
 
 Trade-offs:
 
-- Multiple clusters currently share one process-wide gate, which is conservative but slower than a per-cluster limiter.
+- The process-wide 400 ms spacing still bounds aggregate throughput across clusters even when each context has its own configured limit.
 - The current engine still uses list/poll cache warming rather than full watch supervision.
 - Streaming log follow is represented by queued tail polling until a native watch/stream supervisor is added.

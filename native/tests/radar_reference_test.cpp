@@ -95,6 +95,84 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
     }
     return result;
 }
+bool eventsOffLand() {
+    const QString eventPath = "/api/v1/namespaces/default/events/observed-first";
+    const QString eventOnlyPath = "/api/v1/namespaces/other/events/observed-second";
+    QJsonArray rows;
+    for (int index = 0; index < 12; ++index) {
+        const auto name = "pod-" + QString::number(index);
+        rows.append(QJsonObject{{"path", "/api/v1/namespaces/default/pods/" + name},
+            {"name", name}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", name}});
+    }
+    rows.append(QJsonObject{{"path", "/apis/example/v1/namespaces/default/events/custom"},
+        {"name", "custom"}, {"namespace", "default"}, {"kind", "Event"}, {"uid", "custom"}});
+    podlord::ResourceTable table;
+    podlord::ResourceFilter filter;
+    filter.setSourceModel(&table);
+    podlord::RadarIsland radar;
+    radar.setWidth(640); radar.setHeight(480); radar.setSource(&filter);
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == rows.size(); }, 3000)) return false;
+    const auto land = coordinates(radar.tiles());
+    rows.append(QJsonObject{{"path", eventPath}, {"name", "observed-first"}, {"namespace", "default"},
+        {"kind", "Event"}, {"uid", "event-1"}, {"kubernetesEvent", true}});
+    rows.append(QJsonObject{{"path", eventOnlyPath}, {"name", "observed-second"}, {"namespace", "other"},
+        {"kind", "Event"}, {"uid", "event-2"}, {"kubernetesEvent", true}});
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == rows.size(); }, 3000)) return false;
+    const auto withEvents = coordinates(radar.tiles());
+    for (auto point = land.cbegin(); point != land.cend(); ++point) {
+        if (point.value() != withEvents.value(point.key())) return setupFailure("Event changed resource island geometry");
+        for (const auto& path : {eventPath, eventOnlyPath}) {
+            const auto offset = withEvents.value(path) - point.value();
+            if (std::abs(offset.x()) + std::abs(offset.y()) <= 7) return setupFailure("Event occupied or touched resource land");
+        }
+    }
+    if (!radar.fitView()) return false;
+    QImage image(640, 480, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    radar.paint(&painter);
+    painter.end();
+    const auto pose = radar.viewPose();
+    for (const auto& path : {eventPath, eventOnlyPath}) {
+        const auto point = QPointF(320, 240) + (withEvents.value(path) + QPointF(pose.value("x").toDouble(), pose.value("y").toDouble())) * pose.value("zoom").toDouble();
+        if (!image.rect().contains(point.toPoint()) || image.pixelColor(point.toPoint()).alpha() == 0
+            || radar.resourceAt(point.x(), point.y()) != path) return setupFailure("Event was not painted and selectable after fit");
+    }
+    if (!filter.filter({}, {{"name", "observed-"}}) || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 2; }, 3000)) return false;
+    const auto filtered = coordinates(radar.tiles());
+    return filtered.value(eventPath) == withEvents.value(eventPath) && filtered.value(eventOnlyPath) == withEvents.value(eventOnlyPath);
+}
+bool filteredContextVisibility() {
+    const QString first = "/api/v1/namespaces/default/pods/first";
+    const QString second = "/api/v1/namespaces/default/pods/second";
+    const QString warning = "/api/v1/namespaces/default/pods/warning";
+    const QString nameSpace = "/api/v1/namespaces/default";
+    podlord::ResourceTable table;
+    podlord::ResourceFilter filter;
+    filter.setSourceModel(&table);
+    podlord::RadarIsland radar;
+    radar.setWidth(800); radar.setHeight(800); radar.setSource(&filter);
+    const QJsonArray rows{
+        QJsonObject{{"path", first}, {"name", "first"}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", "first"}, {"problemSeverity", 2}},
+        QJsonObject{{"path", second}, {"name", "second"}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", "second"}},
+        QJsonObject{{"path", warning}, {"name", "warning"}, {"namespace", "default"}, {"kind", "Pod"}, {"uid", "warning"}, {"problemSeverity", 1}},
+        QJsonObject{{"path", nameSpace}, {"name", "default"}, {"namespace", "default"}, {"kind", "Namespace"}, {"uid", "default"}}};
+    if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 4; }, 3000)) return false;
+    const auto positions = coordinates(radar.tiles());
+    if (!filter.filter({}, {}, "problems")
+        || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == 2; }, 3000)) return false;
+    const auto paint = [&] {
+        QImage image(800, 800, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter painter(&image); radar.paint(&painter);
+        return image;
+    };
+    const auto frame = paint();
+    const auto color = [&](const QString& path) { return frame.pixelColor((QPointF(400, 400) + positions.value(path)).toPoint()); };
+    return (color(first) == QColor("#FF5C5C") && color(warning) == QColor("#FFE866") && color(second) == QColor("#50575B")
+        && color(nameSpace) == QColor("#50575B"))
+        || setupFailure("Problems colors must distinguish failing resources from healthy resources and markers");
+}
 bool highlightFill() {
     QJsonArray rows;
     QStringList paths;
@@ -602,6 +680,8 @@ bool exercise(const QStringList& args) {
     if (args.size() == 2 && args[1] == "projection_identity_proxy") return projectionIdentity(true);
     if (args.size() == 2 && args[1] == "water_exposed_only") return waterExposedOnly();
     if (args.size() == 2 && args[1] == "highlight_fill") return highlightFill();
+    if (args.size() == 2 && args[1] == "events_off_land") return eventsOffLand();
+    if (args.size() == 2 && args[1] == "filtered_context_visibility") return filteredContextVisibility();
     if (args.size()==2 && args[1]=="silhouettes") return silhouettes();
     if (args.size()==2 && args[1]=="input") return input();
     if (args.size()==2 && args[1]=="proxy_metadata") return proxyMetadata();
@@ -793,7 +873,7 @@ import QtQuick.Window
 import "qrc:/podlord/"
 Window {
     width: 1208; height: 1240; visible: true; color: "#12212B"
-    ResourceRadar { anchors.fill: parent; compact: true; background: Rectangle { color: "#12212B" } }
+    ResourceRadar { anchors.fill: parent; background: Rectangle { color: "#12212B" } }
 })qml", QUrl("qrc:/podlord/radar-reference.qml"));
     if (engine.rootObjects().size() != 1) return setupFailure("QML window creation");
     auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().first());

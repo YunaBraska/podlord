@@ -17,6 +17,11 @@ ApplicationWindow {
     readonly property real controlHeight: Math.max(touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.body * 1.3) + 12)
     property bool sidebarOpen: true
     property bool searchOpen: false
+    onSearchOpenChanged: if (!searchOpen && workspace.currentSession !== "") {
+        workspace.filter("")
+        workspace.filterEvents("")
+        workspace.filterPorts("")
+    }
     readonly property bool terminalExpanded: terminalDialog.visible
     function openContainerTerminal(followsInspector) {
         terminalDialog.ownerSession = workspace.currentSession
@@ -45,6 +50,17 @@ ApplicationWindow {
     readonly property bool sidebarDocked: wideLayout || compactLandscape
     readonly property bool hasInspector: workspace.inspectorPath !== "" || !!workspace.sourceInspection.snapshotId
     readonly property bool compactInspector: (compactLandscape || width < 600) && hasInspector && !(workspace.workspacePage === "map" && workspace.mapOverview)
+    FontMetrics { id: sessionTabFont; font.family: window.font.family; font.pixelSize: window.font.pixelSize; font.bold: true }
+    function sessionTabWidth(tab) {
+        return Math.min(Math.max(120, sessionTabFont.advanceWidth(tab.name)
+            + (workspace.windowActionsAvailable ? 26 : 0) + 26 + (tab.connectionCount > 0 ? 30 : 0) + 24),
+            window.wideLayout ? 240 : 160)
+    }
+    readonly property bool tabsInHeader: workspace.tabs.length > 1 && !inputPriority && !compactInspector
+        && sessionTabs.desiredWidth > 0
+        && headerLayout.width >= navigationRow.fullWidth + sessionTabs.desiredWidth + headerMetrics.fullWidth
+            + (sidebarControl.visible ? sidebarControl.implicitWidth : 0)
+            + (closeContextControl.visible ? closeContextControl.implicitWidth : 0) + 4 * headerLayout.spacing
     readonly property real keyboardTop: Qt.inputMethod.visible
         && Qt.inputMethod.keyboardRectangle.width >= width * 0.75
         && Qt.inputMethod.keyboardRectangle.height > 0
@@ -178,7 +194,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         modal: true
         closePolicy: Popup.CloseOnEscape
-        contentItem: SelectableText { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        contentItem: SelectableText { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         footer: DialogButtonBox {
             FlatButton {
                 id: discardStayButton
@@ -231,7 +247,7 @@ ApplicationWindow {
             }
             SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
             FlatButton { id: forwardCancel; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
@@ -315,7 +331,7 @@ ApplicationWindow {
             SelectableText { Layout.fillWidth: true; text: "Choose a GKE context and a Google service-account JSON key. A validated copy is kept in private app storage; the original file remains where you selected it."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ComboBox { id: gkeImportContext; objectName: "gkeImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "GKE context for service-account key" }
             FlatButton { objectName: "chooseGkeKey"; text: workspace.busy ? "Importing..." : "Choose service-account JSON key"; enabled: gkeImportContext.currentIndex >= 0 && !workspace.busy; onClicked: gkeKeyChooser.open() }
-            SelectableText { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            SelectableText { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         }
         onClosed: importing = false
         Connections { target: workspace; function onSourceImportFinished(success) { if (gkeImportDialog.importing) { gkeImportDialog.importing = false; if (success) gkeImportDialog.close() } } }
@@ -359,7 +375,106 @@ ApplicationWindow {
                 required property var modelData
                 width: ListView.view.width
                 text: modelData.sourcePath + "\n" + modelData.message
-                contentItem: SelectableText { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+                contentItem: SelectableText { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            }
+        }
+    }
+    ModalDialog {
+        id: sourceConflictDialog
+        objectName: "sourceConflictDialog"
+        title: workspace.uiText["sources.matches"]
+        width: Math.min(760, window.width - 24)
+        height: Math.min(window.height - 24, Math.min(560,
+            150 + workspace.sourceImportChoices.length * (window.width < 600 ? 200 : 135)))
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        property int chosenCount: 0
+        contentItem: ScrollView {
+            clip: true
+            ColumnLayout {
+                width: sourceConflictDialog.availableWidth
+                spacing: 12
+                Repeater {
+                    id: sourceConflictRows
+                    model: workspace.sourceImportChoices
+                    delegate: ColumnLayout {
+                        id: conflictRow
+                        required property var modelData
+                        required property int index
+                        property int selectedIndex: -1
+                        property alias targetChoice: sourceChoice
+                        Layout.fillWidth: true
+                        spacing: 3
+                        SelectableText {
+                            Layout.fillWidth: true
+                            text: modelData.name + (modelData.cluster && modelData.cluster !== modelData.name ? " · " + modelData.cluster : "")
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                        }
+                        SelectableText {
+                            Layout.fillWidth: true
+                            text: modelData.sourcePath + (modelData.server ? "\n" + modelData.server : "")
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: workspace.appearanceColors.muted
+                        }
+                        ComboBox {
+                            id: sourceChoice
+                            objectName: "sourceConflictChoice_" + index
+                            Layout.fillWidth: true
+                            model: [{id: "", shortLabel: workspace.uiText["action.add"], label: workspace.uiText["action.add"]}].concat(
+                                modelData.targets.map(target => ({id: target.id,
+                                    shortLabel: workspace.uiText["sources.update"] + " · " + target.name,
+                                    label: workspace.uiText["sources.update"] + " · " + target.name + "\n" + target.sourcePath + "\n" + target.server})))
+                            textRole: "shortLabel"
+                            valueRole: "id"
+                            currentIndex: -1
+                            displayText: currentIndex < 0 ? "…" : model[currentIndex].shortLabel
+                            Accessible.name: workspace.uiText["sources.matches"] + ": " + modelData.name
+                            delegate: ItemDelegate {
+                                required property var modelData
+                                width: sourceChoice.width
+                                text: modelData.label
+                                contentItem: Label {
+                                    text: parent.text
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.WrapAnywhere
+                                    color: workspace.appearanceColors.text
+                                }
+                            }
+                            onActivated: {
+                                if (conflictRow.selectedIndex < 0) sourceConflictDialog.chosenCount++
+                                conflictRow.selectedIndex = currentIndex
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        footer: DialogButtonBox {
+            FlatButton {
+                objectName: "confirmSourceConflicts"
+                text: workspace.uiText["action.import"]
+                enabled: sourceConflictDialog.chosenCount === workspace.sourceImportChoices.length
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+        }
+        onOpened: chosenCount = 0
+        onAccepted: {
+            let decisions = []
+            for (let i = 0; i < sourceConflictRows.count; i++) {
+                const row = sourceConflictRows.itemAt(i)
+                decisions.push({candidateId: row.modelData.candidateId, targetId: row.targetChoice.currentValue})
+            }
+            workspace.resolveSourceImport(decisions)
+        }
+        onRejected: workspace.cancelSourceImport()
+        Connections {
+            target: workspace
+            function onChanged() {
+                if (workspace.sourceImportChoices.length > 0 && !sourceConflictDialog.visible) sourceConflictDialog.open()
+                else if (workspace.sourceImportChoices.length === 0 && sourceConflictDialog.visible) sourceConflictDialog.close()
             }
         }
     }
@@ -373,7 +488,7 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            SelectableText { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             SelectableText { Layout.fillWidth: true; text: "Only this UID will be authorized. Kubernetes grace periods and finalizers remain in effect. This cannot be undone."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
@@ -395,7 +510,7 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ScrollView {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 TextArea { objectName: "yamlApplyDiff"; readOnly: true; selectByMouse: true; text: workspace.yamlApplyDiff; textFormat: TextEdit.PlainText; font.family: workspace.monospaceFamily; Accessible.name: "Field changes, Secret values hidden" }
@@ -513,7 +628,7 @@ ApplicationWindow {
             spacing: 6
             Item {
                 id: navigationSlot
-                Layout.fillWidth: true; Layout.minimumWidth: 0
+                Layout.fillWidth: !window.tabsInHeader; Layout.minimumWidth: 0
                 Layout.preferredWidth: navigationRow.fullWidth
                 Layout.preferredHeight: navigationRow.implicitHeight
                 Row {
@@ -564,10 +679,21 @@ ApplicationWindow {
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
                 }
             }
+            Item {
+                id: headerTabSlot
+                visible: window.tabsInHeader
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: sessionTabs.desiredWidth
+                Layout.preferredHeight: sessionTabs.implicitHeight
+            }
             PulseStrip {
                 id: headerMetrics
                 objectName: "headerMetrics"
-                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing - (sidebarControl.visible ? sidebarControl.implicitWidth + headerLayout.spacing : 0) - (closeContextControl.visible ? closeContextControl.implicitWidth + headerLayout.spacing : 0))
+                availableWidth: Math.max(0, headerLayout.width - navigationRow.fullWidth - headerLayout.spacing
+                    - (window.tabsInHeader ? sessionTabs.desiredWidth + headerLayout.spacing : 0)
+                    - (sidebarControl.visible ? sidebarControl.implicitWidth + headerLayout.spacing : 0)
+                    - (closeContextControl.visible ? closeContextControl.implicitWidth + headerLayout.spacing : 0))
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredHeight: implicitHeight
                 onDetailsRequested: workspace.setWorkspacePage("dashboard")
@@ -643,19 +769,25 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent; anchors.margins: 6
         spacing: 4
-        RowLayout {
+        Item {
+            id: lowerTabSlot
             Layout.fillWidth: true
             Layout.minimumWidth: 0
             Layout.preferredHeight: sessionTabs.implicitHeight
-            spacing: 2
-            visible: !window.inputPriority && !window.compactInspector && workspace.tabs.length > 1
+            visible: !window.inputPriority && !window.compactInspector && workspace.tabs.length > 1 && !window.tabsInHeader
             TabBar {
                 id: sessionTabs
                 objectName: "sessionTabs"
                 visible: workspace.tabs.length > 1
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
+                readonly property real desiredWidth: workspace.tabs.reduce((total, tab) => total + window.sessionTabWidth(tab), 0)
+                parent: window.tabsInHeader ? headerTabSlot : lowerTabSlot
+                width: window.tabsInHeader ? Math.min(parent.width, desiredWidth) : parent.width
+                x: window.tabsInHeader ? Math.max(0, (parent.width - width) / 2) : 0
+                y: (parent.height - height) / 2
                 clip: true
+                padding: 0
+                implicitHeight: window.controlHeight
+                background: Item {}
                     spacing: 0
                     function indexForCurrentSession() {
                         for (var i = 0; i < workspace.tabs.length; ++i) {
@@ -682,7 +814,7 @@ ApplicationWindow {
                             required property var modelData
                             objectName: "activateSession_" + modelData.id
                             implicitHeight: window.controlHeight
-                            implicitWidth: Math.min(Math.max(120, sessionName.implicitWidth + tabActions.implicitWidth + (connectionBadge.visible ? connectionBadge.implicitWidth : 0) + 24), window.wideLayout ? 240 : 160)
+                            implicitWidth: window.sessionTabWidth(modelData)
                             width: implicitWidth
                             leftPadding: 8
                             rightPadding: 8
@@ -724,6 +856,7 @@ ApplicationWindow {
                                     IconButton {
                                         objectName: "detachSession_" + modelData.id
                                         glyph: "External"
+                                        quiet: true
                                         text: "Open " + modelData.name + " in a separate window"
                                         visible: workspace.windowActionsAvailable
                                         enabled: workspace.sessionWindowActionsReady
@@ -734,6 +867,7 @@ ApplicationWindow {
                                     IconButton {
                                         objectName: "closeSession_" + modelData.id
                                         glyph: "Close"
+                                        quiet: true
                                         text: workspace.uiText["action.close"]
                                         Accessible.name: "Close " + modelData.name
                                         enabled: !workspace.busy
@@ -745,6 +879,7 @@ ApplicationWindow {
                             }
                             TapHandler { acceptedButtons: Qt.RightButton; onTapped: tabMenu.popup(sessionTab, 0, sessionTab.height) }
                             TapHandler { acceptedDevices: PointerDevice.TouchScreen; onLongPressed: tabMenu.popup(sessionTab, 0, sessionTab.height) }
+                            HoverHandler { id: tabHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
                             Keys.priority: Keys.BeforeItem
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) {
@@ -761,8 +896,9 @@ ApplicationWindow {
                                 MenuItem { objectName: "renameTab_" + modelData.id; text: workspace.uiText["context.rename"] + "..."; enabled: !workspace.busy; onTriggered: window.editTabContextAlias(modelData.id) }
                                 MenuItem { objectName: "detachTab_" + modelData.id; text: "Open in separate window"; visible: workspace.windowActionsAvailable; enabled: workspace.sessionWindowActionsReady; onTriggered: workspace.detachSession(modelData.id) }
                             }
-                            ToolTip.visible: hovered || activeFocus
-                            ToolTip.text: modelData.name + (modelData.connectionCount > 0 ? " / " + modelData.connectionCount + " open connections" : "")
+                            ToolTip.visible: (tabHover.hovered || activeFocus) && sessionName.implicitWidth > sessionName.width
+                            ToolTip.delay: activeFocus ? 0 : 700
+                            ToolTip.text: modelData.name
                         }
                     }
             }
@@ -787,7 +923,6 @@ ApplicationWindow {
                 placeholderText: "Search resources"
                 Accessible.name: "Filter resources"
                 Accessible.description: "Space-separated alternatives; quoted exact values; ~prefix; suffix~; /regular expression/; integer comparisons such as >=2."
-                ToolTip.visible: hovered; ToolTip.text: Accessible.description
                 visible: window.searchOpen && (["resources", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
                 onTextEdited: if (workspace.filter(text) && workspace.workspacePage !== "map") Qt.callLater(resourceGrid.navigateRows, 0)
                 Keys.onPressed: event => {
@@ -814,10 +949,15 @@ ApplicationWindow {
             IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
             IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
             SelectableText { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
-            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
+            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
             FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
-        SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== "" && !workspace.authenticationChallenge.id; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: workspace.authenticationInstruction !== "" && !workspace.authenticationChallenge.id
+            SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            IconButton { objectName: "openAuthenticationBrowser"; glyph: "External"; text: "Open sign-in page"; visible: workspace.authenticationBrowserAvailable; onClicked: workspace.openAuthenticationBrowser() }
+        }
         Loader {
             id: mfaForm
             Layout.fillWidth: true
@@ -833,7 +973,6 @@ ApplicationWindow {
                     textFormat: Text.PlainText
                     wrapMode: TextEdit.NoWrap
                     clip: true
-                    Accessible.name: text
                 }
                 RowLayout {
                     Layout.fillWidth: true
@@ -863,10 +1002,10 @@ ApplicationWindow {
                     FlatButton { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
                     FlatButton { objectName: "cancelAuthenticationMfa"; text: workspace.uiText["action.cancel"]; onClicked: workspace.cancelAuthentication() }
                 }
-                SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
             }
         }
-        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap }
         RowLayout {
             Layout.fillWidth: true; Layout.rightMargin: window.contentRightMargin
             visible: workspace.error !== "" || !!workspace.uiText[workspace.music.error]
@@ -875,7 +1014,7 @@ ApplicationWindow {
                 text: workspace.error && workspace.error === workspace.incidentAiDiagnostic.original
                     ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
                     : (workspace.error || workspace.uiText[workspace.music.error] || "")
-                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text
+                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap
             }
             IconButton {
                 objectName: "errorAiInfo"; glyph: "Info"
@@ -889,9 +1028,11 @@ ApplicationWindow {
             Layout.fillWidth: true; Layout.minimumWidth: 0
             text: workspace.syncProblem; textFormat: Text.PlainText
             visible: text !== ""; wrapMode: TextEdit.NoWrap; clip: true
-            color: workspace.appearanceColors.danger; Accessible.name: text
-            ToolTip.visible: problemHover.hovered; ToolTip.text: text
-            HoverHandler { id: problemHover }
+            color: workspace.appearanceColors.danger
+            ToolTip.visible: problemHover.hovered && contentWidth > width
+            ToolTip.delay: 700
+            ToolTip.text: text
+            HoverHandler { id: problemHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
         }
         FlatButton { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
         SplitView {
@@ -929,6 +1070,9 @@ ApplicationWindow {
                     visible: workspace.workspacePage === "resources"
                     inlineTools: false
                     tableModel: workspace.visibleResourceTable
+                    pageIndex: workspace.resourcePage
+                    pageCount: workspace.resourcePageCount
+                    onPageRequested: function(page) { workspace.setResourcePage(page) }
                     sortColumn: workspace.sortColumnIndex; sortDirection: workspace.sortDirection
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }
@@ -957,8 +1101,8 @@ ApplicationWindow {
                             Layout.minimumWidth: 0
                             Layout.minimumHeight: workspace.mapOverview ? implicitHeight : window.touchLayout ? 44 : 24
                             verticalAlignment: Text.AlignVCenter
-                            text: workspace.mapOverview ? (workspace.mapCatalogWarning || "Contexts") : workspace.mapContextCaption
-                            color: workspace.mapCatalogWarning ? "#FFE866" : "#DDE7EC"
+                            text: workspace.mapOverview ? "Contexts" : workspace.mapContextCaption
+                            color: "#DDE7EC"
                             leftPadding: 4; rightPadding: 4
                             background: Rectangle {
                                 width: Math.min(mapCaption.width, mapCaption.contentWidth + 8)
@@ -970,10 +1114,6 @@ ApplicationWindow {
                             elide: Text.ElideRight
                             maximumLineCount: 1
                             wrapMode: Text.NoWrap
-                            Accessible.description: workspace.mapCatalogWarning
-                            ToolTip.visible: mapTitleHover.hovered && workspace.mapCatalogWarning !== ""
-                            ToolTip.text: workspace.mapCatalogWarning
-                            HoverHandler { id: mapTitleHover }
                             activeFocusOnTab: !workspace.mapOverview
                             Accessible.role: workspace.mapOverview ? Accessible.StaticText : Accessible.Button
                             Accessible.onPressAction: if (!workspace.mapOverview) mapIdentityMenu.popup(mapCaption, 0, mapCaption.height)
@@ -993,10 +1133,25 @@ ApplicationWindow {
                                 MenuItem { objectName: "copyMapClusterName"; text: workspace.uiText["context.copyCluster"]; onTriggered: workspace.copyMapIdentity("cluster") }
                             }
                         }
+                        IconButton {
+                            objectName: "mapSourceWarning"
+                            visible: workspace.mapOverview && workspace.mapCatalogWarning !== ""
+                            glyph: "Info"
+                            glyphColor: workspace.appearanceColors.accent
+                            text: workspace.mapCatalogWarning
+                            onClicked: sourcesCommand.trigger()
+                        }
                     }
                     Item {
                         anchors.fill: parent
-                        Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts } }
+                        Loader {
+                            anchors.left: parent.left; anchors.right: parent.right
+                            anchors.top: parent.top; anchors.topMargin: mapNavigationSlot.height
+                            anchors.bottom: parent.bottom
+                            active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview
+                            visible: active
+                            sourceComponent: MapOverview { contexts: window.mapContexts }
+                        }
                         Item { id: resourceMapHost; objectName: "resourceMapHost"; anchors.fill: parent; visible: !workspace.mapOverview }
                     }
                 }
@@ -1087,7 +1242,7 @@ ApplicationWindow {
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
             SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
         }
     }
     ResourceSidebar {

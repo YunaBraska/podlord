@@ -272,7 +272,7 @@ Alerts::Alerts(QString profile, ResourceClient* client, QObject* parent, std::fu
     connect(client_, &ResourceClient::rowsChanged, this, [this](const QString& session) { queue(session); });
     connect(client_, &ResourceClient::changed, this, [this](const QString& session) {
         if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return;
-        const bool loading = !client_->initialSyncComplete(session);
+        const bool loading = !client_->initialSyncComplete(session) || client_->syncLoading(session);
         if (states_[session].loading != loading) { states_[session].loading = loading; queue(session); }
     });
     const QList<QPair<QString, QString>> columns{{"enabled", "Enabled"}, {"active", "Triggered"}, {"name", "Name"}, {"when", "Conditions"}, {"actions", "Actions"}, {"soundLabel", "Sound"}};
@@ -481,8 +481,12 @@ bool Alerts::setVisibleResources(const QString& session, const QStringList& path
         for (auto it = state.triggered.cbegin(); it != state.triggered.cend(); ++it)
             if (visible.contains(it.key().section('\n', 1, 1))) state.visibleMatches.insert(it.key());
     }
-    if (state.initialized && owns_(session)) {
-        ++state.generation; pending_.insert(session); dispatch();
+    if (owns_(session)) {
+        ++state.generation;
+        if (client_->initialSyncComplete(session) && !client_->syncLoading(session)) {
+            pending_.insert(session);
+            dispatch();
+        }
     }
     return true;
 }
@@ -514,6 +518,8 @@ QVariantMap Alerts::effect(const QString& path) const { const auto state=states_
 bool Alerts::queue(const QString& session) {
     if (session.isEmpty() || closed_.contains(session) || !owns_(session)) return false;
     auto& state = states_[session];
+    if (!client_->initialSyncComplete(session) || client_->syncLoading(session)) { ++state.generation; return false; }
+    state.loading = false;
     state.evaluatedAt = {}; state.evaluateBefore = {};
     // Publish resource changes before a busy worker can defer them. Visibility changes reuse this snapshot.
     if (client_->initialSyncComplete(session)) {
@@ -547,19 +553,55 @@ bool Alerts::dispatch() {
         && (!state.evaluateBefore.isValid() || now < state.evaluateBefore) && state.evaluationError.isEmpty();
     const auto triggered = reuse ? state.triggered : QMap<QString, Fingerprint>{};
     const auto evaluateBefore = state.evaluateBefore;
-    evaluating_=true; auto* watcher=new QFutureWatcher<Evaluated>(this);
-    connect(watcher, &QFutureWatcher<Evaluated>::finished, this, [this, watcher, session, generation, catalog, baseline, evaluatedAt = now, reuse] {
-        const auto result=watcher->result(); watcher->deleteLater(); evaluating_=false;
+    struct Presentation final {
+        State state;
+        QDateTime next;
+        QList<QPair<QString, QString>> sounds;
+        QList<QPair<QString, int>> focuses;
+    };
+    evaluating_=true; auto* watcher=new QFutureWatcher<Presentation>(this);
+    connect(watcher, &QFutureWatcher<Presentation>::finished, this, [this, watcher, session, generation] {
+        auto presentation=watcher->result(); watcher->deleteLater(); evaluating_=false;
         auto found=states_.find(session);
         if (found==states_.end() || found->generation!=generation || closed_.contains(session) || !owns_(session)) { dispatch(); return; }
-        auto& state=found.value(); const auto now=now_(); QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> triggered; QSet<QString> alive, visibleMatches;
+        const bool changed=found->matches!=presentation.state.matches || found->effects!=presentation.state.effects
+            || found->evaluationError!=presentation.state.evaluationError;
+        found.value()=std::move(presentation.state);
+        for (const auto& [rule, sound] : presentation.sounds) { emit soundRequested(session, rule, sound); play(sound); }
+        for (const auto& [path, percent] : presentation.focuses) emit focusRequested(session, path, percent);
+        if (session==shown_ && changed) { ++revision_; emit presentationChanged(); }
+        const auto now=now_();
+        if (presentation.next.isValid()) { const auto remaining=std::clamp<qint64>(now.msecsTo(presentation.next), 1, std::numeric_limits<int>::max()); if (!expiry_.isActive() || expiry_.remainingTime()>remaining) expiry_.start(static_cast<int>(remaining)); }
+        dispatch();
+    });
+    const auto initialState=state;
+    watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now, reuse, triggered, evaluateBefore, baseline, initialState] {
+        Evaluated result;
+        if (reuse) {
+            result.rows = previous; result.next = evaluateBefore;
+            // Reconstruct only transient rule projections from the existing match identities.
+            for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool()) {
+                const auto id = rule.value["id"].toString();
+                auto& matching = result.matches[id];
+                for (auto it = previous.cbegin(); it != previous.cend(); ++it)
+                    if (triggered.contains(id + '\n' + it.key() + '\n' + it.value()["uid"].toString()))
+                        matching.append(it.value());
+            }
+        } else {
+            QJsonArray snapshot;
+            for (const auto& row : previous) snapshot.append(row);
+            result = evaluate(snapshot, catalog, changes, now);
+        }
+        Presentation presentation;
+        auto& state=presentation.state; state=initialState;
+        QVariantList matches; QMap<QString,QVariantMap> effects; QMap<QString,Fingerprint> nextTriggered; QSet<QString> alive, visibleMatches;
         state.initialized = true;
         if (!reuse) {
-            state.evaluatedAt = evaluatedAt; state.evaluateBefore = result.next;
+            state.evaluatedAt = now; state.evaluateBefore = result.next;
             // Age changes continuously, including percentile/outlier populations.
             for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool())
                 for (const auto& group : rule.groups) for (const auto& criterion : group)
-                    if (criterion.field == "age") state.evaluateBefore = evaluatedAt;
+                    if (criterion.field == "age") state.evaluateBefore = now;
         }
         QDateTime next=result.next;
         const auto deadline=[&](QDateTime at) { if (at>now && (!next.isValid() || at<next)) next=at; };
@@ -575,8 +617,8 @@ bool Alerts::dispatch() {
             for (const auto& row : result.matches.value(id)) {
                 const auto path=row[QStringLiteral("path")].toString(), key=id+'\n'+path+'\n'+row[QStringLiteral("uid")].toString(); alive.insert(key); ++count; if (first.isEmpty()) first=path;
                 const Fingerprint fingerprint{row[QStringLiteral("status")],row[QStringLiteral("ready")],row[QStringLiteral("restarts")],row[QStringLiteral("issue")]};
-                const auto previous=state.triggered.constFind(key);
-                const bool entered=previous==state.triggered.cend() || previous.value()!=fingerprint; changed=changed || entered; triggered[key]=fingerprint;
+                const auto priorFingerprint=state.triggered.constFind(key);
+                const bool entered=priorFingerprint==state.triggered.cend() || priorFingerprint.value()!=fingerprint; changed=changed || entered; nextTriggered[key]=fingerprint;
                 const auto changedAt=state.changedAt.value(path);
                 const int severity=row["problemSeverity"].toInt();
                 if (entered && (focusPath.isEmpty() || changedAt>latestChange
@@ -598,8 +640,8 @@ bool Alerts::dispatch() {
                 if (animation != "none") startHold(animationMode, animationSeconds, baseline, state.animationUntil);
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
-            if (changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
-            if (!baseline && !focusPath.isEmpty() && rule.value["zoom"].toInt()>0) emit focusRequested(session, focusPath, rule.value["zoom"].toInt());
+            if (changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") presentation.sounds.append({id, rule.value["sound"].toString()});
+            if (!baseline && !focusPath.isEmpty() && rule.value["zoom"].toInt()>0) presentation.focuses.append({focusPath, rule.value["zoom"].toInt()});
             if (!rule.value["enabled"].toBool()) continue;
             const bool hasColor=color!="none" && (colorMode=="no-match" ? count>0 : !state.colorUntil.isEmpty());
             const bool hasAnimation=animation!="none" && (animationMode=="no-match" ? count>0 : !state.animationUntil.isEmpty());
@@ -621,33 +663,14 @@ bool Alerts::dispatch() {
             if (usesHolds) { for (const auto& row : result.rows) applyEffect(row); }
             else { for (const auto& row : result.matches.value(id)) applyEffect(row); }
         }
-        state.triggered=triggered;
+        state.triggered=nextTriggered;
         state.visibleMatches=visibleMatches;
         const auto prune=[&](QMap<QString,QDateTime>& holds) { for (auto it=holds.begin(); it!=holds.end();) { const auto parts=it.key().split('\n'); const bool exists=parts.size()==3 && result.rows.contains(parts[1]) && result.rows[parts[1]]["uid"]==parts[2]; if (!exists || it.value()<=now) it=holds.erase(it); else ++it; } };
         prune(state.colorUntil); prune(state.animationUntil);
         const auto failure=result.errors.join('\n');
-        const bool changed=state.matches!=matches || state.effects!=effects || state.evaluationError!=failure; state.matches=matches; state.effects=effects; state.evaluationError=failure;
-        if (session==shown_ && changed) { ++revision_; emit presentationChanged(); }
-        if (next.isValid()) { const auto remaining=std::clamp<qint64>(now.msecsTo(next), 1, std::numeric_limits<int>::max()); if (!expiry_.isActive() || expiry_.remainingTime()>remaining) expiry_.start(static_cast<int>(remaining)); }
-        dispatch();
-    });
-    watcher->setFuture(QtConcurrent::run([previous, catalog, changes, now, reuse, triggered, evaluateBefore] {
-        if (reuse) {
-            Evaluated result; result.rows = previous; result.next = evaluateBefore;
-            if (triggered.isEmpty()) return result;
-            // Reconstruct only transient rule projections from the existing match identities.
-            for (const auto& rule : catalog.rules) if (rule.value["enabled"].toBool()) {
-                const auto id = rule.value["id"].toString();
-                auto& matching = result.matches[id];
-                for (auto it = previous.cbegin(); it != previous.cend(); ++it)
-                    if (triggered.contains(id + '\n' + it.key() + '\n' + it.value()["uid"].toString()))
-                        matching.append(it.value());
-            }
-            return result;
-        }
-        QJsonArray snapshot;
-        for (const auto& row : previous) snapshot.append(row);
-        return evaluate(snapshot, catalog, changes, now);
+        state.matches=matches; state.effects=effects; state.evaluationError=failure;
+        presentation.next=next;
+        return presentation;
     })); return true;
 }
 bool Alerts::play(const QString& id, int previewPercent) {

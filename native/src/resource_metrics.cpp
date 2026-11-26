@@ -176,11 +176,13 @@ QVariantList ResourceMetricSummary::presentation() const {
         QString display = measured ? formatMetricQuantity(total.used, metric == 0, true) : "Unavailable";
         if (referenced) display += " / " + formatMetricQuantity(total.reference, metric == 0, true);
         if (measured && (total.observed < total.eligible || total.incomplete)) display += " [partial]";
-        const auto maximum=std::max(measured ? total.used : 0,referenced ? total.reference : 0);
+        const bool comparable=measured && referenced && total.reference>0
+            && total.observed==total.eligible && total.referenced==total.eligible
+            && !total.incomplete;
         const QString label=metric==0 ? "CPU" : metric==1 ? "Memory" : "Storage";
         const auto description = label + ": " + usage + " (" + scope + ")";
-        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",true},{"available",measured},
-            {"fraction",measured && maximum>0 ? total.used/maximum : 0},{"description",description}});
+        result.append(QVariantMap{{"id",ids[metric]},{"label",label},{"usage",usage},{"display",display},{"bar",comparable},{"available",measured},
+            {"fraction",comparable ? total.used/total.reference : 0},{"description",description}});
     }
     result.append(QVariantMap{{"id","pods"},{"label","Pods"},{"usage",QString::number(counts[1])},{"bar",false},{"fraction",0},{"description","Matching Pods"}});
     result.append(QVariantMap{{"id","nodes"},{"label","Nodes"},{"usage",QString::number(counts[0])},{"bar",false},{"fraction",0},{"description","Matching Nodes"}});
@@ -197,7 +199,7 @@ QVariantList resourceMetricPresentation(const QJsonObject& resource) {
     for (const auto& id : {"cpu", "memory", "storage"}) {
         const auto reference=references[id].toObject(); if (reference.isEmpty()) continue;
         const auto usage=resource[id]; const auto complete=resource["metricComplete"].toObject()[id].toBool();
-        double maximum=usage.toDouble(); QStringList labels, presentLabels; QVariantList markers;
+        double maximum=usage.toDouble(); QStringList labels, presentLabels, markerLabels; QVariantList markers;
         for (const auto& key : {"request", "limit", "capacity"}) {
             if (QString(key)=="capacity" && !reference.contains(key) && reference.contains("requestComplete")) continue;
             const auto value=reference[key]; if (value.isDouble()) maximum=std::max(maximum, value.toDouble());
@@ -206,11 +208,20 @@ QVariantList resourceMetricPresentation(const QJsonObject& resource) {
             labels.append(label);
             if (value.isDouble() || reference[QString(key)+"Invalid"].toBool()) presentLabels.append(label);
         }
-        for (const auto& key : {"request", "limit", "capacity"}) if (reference[key].isDouble()) markers.append(QVariantMap{{"label", key}, {"position", maximum>0 ? reference[key].toDouble()/maximum : 0}});
+        for (const auto& key : {"request", "limit", "capacity"}) {
+            const auto value=reference[key];
+            if (value.isDouble()) {
+                markers.append(QVariantMap{{"label", key}, {"value", formatMetricQuantity(value.toDouble(), QString(id)=="cpu")},
+                    {"position", maximum>0 ? value.toDouble()/maximum : 0}});
+                markerLabels.append(QString(key)+" "+formatMetricQuantity(value.toDouble(), QString(id)=="cpu")
+                    +(reference.contains(QString(key)+"Complete") && !reference[QString(key)+"Complete"].toBool() ? " (incomplete)" : ""));
+            } else if (reference[QString(key)+"Invalid"].toBool()) markerLabels.append(QString(key)+" invalid");
+        }
         QString measured=usage.isDouble() ? formatMetricQuantity(usage.toDouble(), QString(id)=="cpu")+(complete ? "" : " (incomplete)") : "Unavailable";
+        const bool scaled=usage.isDouble() && maximum>0 && !markers.isEmpty();
         result.append(QVariantMap{{"id", id}, {"label", QString(id)=="cpu" ? "CPU" : QString(id)=="memory" ? "Memory" : "Storage"}, {"usage", measured}, {"available", usage.isDouble()},
             {"references", labels.join("\n")}, {"presentReferences", presentLabels.join(", ")},
-            {"fraction", maximum>0 && usage.isDouble() ? usage.toDouble()/maximum : 0}, {"markers", markers}, {"source", reference["source"].toString()},
+            {"fraction", maximum>0 && usage.isDouble() ? usage.toDouble()/maximum : 0}, {"barAvailable", scaled}, {"markers", markers}, {"markerLabels", markerLabels.join(" · ")}, {"source", reference["source"].toString()},
             {"timestamp", usage.isDouble() ? resource["metricAt"].toString() : QString{}}, {"window", usage.isDouble() ? resource["metricWindow"].toString() : QString{}}});
     }
     return result;

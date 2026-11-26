@@ -32,7 +32,13 @@ struct SourceCatalog final {
     QList<SourceSnapshot> sources;
     QList<SourceIssue> errors;
     ContextUsageMap usage;
+    QMap<QString, QString> replacements;
+    QSet<QString> pinned;
 };
+/** Source-path/context-name pairs replaced by a context from another file. */
+QSet<QString> replacedSourceNames(const SourceCatalog& catalog);
+/** Context identities and historical versions removed with one selected context. */
+QStringList removalContextIds(const SourceCatalog& catalog, const QString& contextId);
 struct SourceImportIssue final { QString sourcePath; Failure failure; };
 struct SourceImportReport final {
     QList<SourceSnapshot> sources;
@@ -114,10 +120,13 @@ class KubeconfigStore final {
 public:
     explicit KubeconfigStore(QString profile);
     /** Imports a real UTF-8 YAML file, retaining prior snapshots and session bindings.
-     * Identical path/content refreshes import recency without adding another snapshot.
+     * Identical path/content refreshes do not change import recency.
      */
-    Result<SourceSnapshot> importFile(QString sourcePath) const;
+    Result<SourceSnapshot> importFile(QString sourcePath, const QString& expectedContentHash = {}) const;
     Result<SourceSnapshot> importText(QString originPath, const QString& yaml) const;
+    /** Imports an embedded Cluster API kubeconfig into the existing private snapshot store. */
+    Result<SourceSnapshot> importManagedKubeconfig(const QString& managementSource, const QString& managementContext,
+                                                   const QString& clusterUid, const QString& endpoint, const QByteArray& yaml) const;
     /** Imports an OCI CLI config profile and its separately selected unencrypted PEM key
      * for one owned OKE context. The key stays in the protected profile, not source metadata.
      */
@@ -135,6 +144,12 @@ public:
      * are unchanged; lock contention and invalid input fail without a partial write.
      */
     Result<SourceSnapshot> renameContext(const QString& contextId, QString displayName) const;
+    /** Keeps existing tabs and context preferences attached to a selected replacement. */
+    Result<SourceSnapshot> replaceContext(const QString& oldContextId, const QString& newContextId) const;
+    /** Rebinds an existing context to a managed context only when their server endpoints match. */
+    Result<SourceSnapshot> replaceManagedContext(const QString& oldContextId, const QString& newContextId) const;
+    /** Retains an older version as a distinct selectable context when adding from the same file. */
+    Result<bool> keepContext(const QString& contextId) const;
     /** Removes the context from the available catalog and deletes its saved sessions
      * in one atomic session-catalog commit. The caller must explicitly confirm the
      * exact affected session identifiers; stale confirmation returns Conflict.
@@ -143,12 +158,16 @@ public:
      * CleanupFailed means the catalog removal committed but private credential deletion failed.
      */
     Result<SessionCatalog> removeContext(const QString& contextId, QStringList expectedSessions) const;
+    /** Retires only app-imported versions of one managed WLC and restores replaced manual contexts. */
+    Result<SessionCatalog> retireManagedContext(const QString& contextId, QStringList expectedSessions) const;
     /** Imports a file or recursively scans a directory, expanding ~ and ~/ paths.
      * Reports every failed regular file without discarding successful imports.
      * Directory symlinks and the private profile subtree are not traversed.
      * Empty directories return an explicit empty report. No plugin or network runs.
      */
     Result<SourceImportReport> importPath(QString sourcePath) const;
+    /** Parses file or folder inputs without saving credentials or changing import recency. */
+    Result<SourceImportReport> inspectPath(QString sourcePath) const;
     /** Lists owned snapshots newest first, reporting individual file errors separately.
      * Directory failures reject the scan; malformed records never suppress healthy sources.
      * Listing never changes persisted data.
@@ -159,6 +178,8 @@ public:
      * Never falls back to the original file or executes credential providers.
      */
     Result<QString> ownedYaml(const QString& snapshotId, const QString& contextId) const;
+    /** Saves only the selected owned context and its cluster/user entries to a private file. */
+    Result<bool> exportContext(const QString& contextId, const QUrl& destination) const;
     /** Imports an edited owned snapshot under its validated original origin, including document URIs.
      * Requires an existing, intact snapshot and a non-removed context belonging to it.
      * Retains prior YAML and sessions, using the ordinary 16 MiB UTF-8 import and recency policy.
@@ -174,9 +195,17 @@ public:
      */
     Result<ClusterConnection> connection(const QString& contextId) const;
 private:
+    Result<SessionCatalog> removeContext(const QString& contextId, QStringList expectedSessions, bool managedRetirement) const;
     Result<SourceSnapshot> importContent(QString canonicalPath, const QByteArray& bytes) const;
+    Result<SourceSnapshot> rebindContext(const QString& oldContextId, const QString& newContextId, bool managed) const;
+    Result<SourceImportReport> scanPath(QString sourcePath, bool preview) const;
     const QString profile_;
 };
+/** Stable origin for one Cluster API workload discovered through a management context. */
+Result<QString> managedKubeconfigOrigin(const QString& managementSource, const QString& managementContext,
+                                        const QString& clusterUid);
+/** Managed versions replaced by one managed context, excluding manual imports. */
+QStringList managedRetirementContextIds(const SourceCatalog& catalog, const QString& contextId);
 /** Serializes only display metadata; no tokens, private keys, or original YAML. */
 QJsonObject sourceJson(const SourceSnapshot& source);
 /** Serializes import outcomes without credentials or original YAML. */

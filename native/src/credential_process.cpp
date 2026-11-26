@@ -53,6 +53,14 @@ QString CredentialProcess::instruction(const QString& credential) const {
     const auto* job = nativeJobs_.value(credential, nullptr);
     return job ? job->instruction() : QString{};
 }
+bool CredentialProcess::browserAvailable(const QString& credential) const {
+    const auto* job = nativeJobs_.value(credential, nullptr);
+    return job && job->browserAvailable();
+}
+bool CredentialProcess::openBrowser(const QString& credential) const {
+    const auto* job = nativeJobs_.value(credential, nullptr);
+    return job && job->openBrowser();
+}
 std::optional<AwsMfaChallenge> CredentialProcess::challenge(const QString& credential) const {
     const auto* login = awsJobs_.value(credential, nullptr);
     return login ? login->challenge() : std::optional<AwsMfaChallenge>{};
@@ -114,7 +122,7 @@ bool CredentialProcess::cancel(const QString& credential) {
     job->process->kill(); return true;
 #endif
 }
-bool CredentialProcess::start(ClusterConnection connection, const QString& session) {
+bool CredentialProcess::start(ClusterConnection connection, const QString& session, const QString& language) {
     if (!connection.exec) return false;
     const auto id = connection.credentialId;
     if (connection.exec->gke) {
@@ -158,11 +166,12 @@ bool CredentialProcess::start(ClusterConnection connection, const QString& sessi
         if (nativeJobs_.contains(id)) return true;
         results_.remove(id);
 #if defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        const auto flow = connection.exec->oidc->deviceCodeGrant ? NativeOidcLogin::Flow::Device : NativeOidcLogin::Flow::Browser;
-        auto* login = new NativeOidcLogin(std::move(connection), flow, this);
+        const bool browser = !connection.exec->oidc->deviceCodeGrant;
 #else
-        auto* login = new NativeOidcLogin(std::move(connection), NativeOidcLogin::Flow::Device, this);
+        const bool browser = !connection.exec->oidc->deviceCodeGrant
+            && connection.exec->oidc->redirectUri.scheme() == "http";
 #endif
+        auto* login = new NativeOidcLogin(std::move(connection), browser ? NativeOidcLogin::Flow::Browser : NativeOidcLogin::Flow::Device, this, language);
         nativeJobs_.insert(id, login);
         connect(login, &NativeOidcLogin::instructionChanged, this, &CredentialProcess::changed);
         connect(login, &NativeOidcLogin::completed, this, [this, id, session, guard = QPointer<NativeOidcLogin>(login)](Result<ClusterConnection> result) {

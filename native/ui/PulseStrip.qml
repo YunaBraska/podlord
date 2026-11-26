@@ -15,19 +15,31 @@ Row {
         font.weight: Font.Normal
     }
     readonly property int glyphSize: Math.max(16, Math.ceil(workspace.textSizes.caption))
-    readonly property int cardWidth: {
-        const iconWidth = Math.max(16, valueFont.font.pixelSize)
-        let widest = 0
-        for (const metric of availableMetrics)
-            widest = Math.max(widest, valueFont.advanceWidth(String(metric.display || metric.usage)))
-        return Math.ceil(Math.max(112 * workspace.textScale, 14 + iconWidth + 4 + widest + 2))
+    function widthFor(metric) {
+        const value = valueFont.advanceWidth(String(metric.display || metric.usage))
+        const content = 18 + glyphSize + 4 + value
+        return Math.ceil(Math.max((metric.bar ? 112 : 68) * workspace.textScale, content))
     }
     readonly property real cardHeight: Math.max(strip.Window.window && strip.Window.window.touchLayout ? 44 : 32, Math.ceil(workspace.textSizes.caption * 1.3) + 10)
-    readonly property var availableMetrics: workspace.pulseMetrics.filter(metric => metric.bar ? metric.available === true : Number(metric.usage) > 0)
-    readonly property int visibleCount: Math.min(availableMetrics.length, Math.max(0, Math.floor((availableWidth + spacing) / (cardWidth + spacing))))
+    readonly property var availableMetrics: workspace.pulseMetrics.filter(metric =>
+        metric.id === "pods" || metric.id === "nodes" ? Number(metric.usage) > 0 : metric.available === true)
+    readonly property int visibleCount: {
+        let used = 0
+        let count = 0
+        for (const metric of availableMetrics) {
+            const next = widthFor(metric) + (count ? spacing : 0)
+            if (used + next > availableWidth) break
+            used += next
+            count++
+        }
+        return count
+    }
     readonly property var overflowMetrics: availableMetrics.slice(visibleCount)
     spacing: 6
-    Layout.preferredWidth: visibleCount * cardWidth + spacing * Math.max(0, visibleCount - 1)
+    readonly property real fullWidth: availableMetrics.reduce((total, metric) => total + widthFor(metric), 0)
+        + spacing * Math.max(0, availableMetrics.length - 1)
+    Layout.preferredWidth: availableMetrics.slice(0, visibleCount).reduce((total, metric) => total + widthFor(metric), 0)
+        + spacing * Math.max(0, visibleCount - 1)
     Layout.preferredHeight: cardHeight
         Repeater {
             model: strip.availableMetrics.length
@@ -37,7 +49,7 @@ Row {
                 readonly property var modelData: strip.availableMetrics[index]
                 objectName: "pulse_" + modelData.id
                 visible: index < strip.visibleCount
-                width: strip.cardWidth
+                width: strip.widthFor(modelData)
                 height: strip.cardHeight
                 leftPadding: 7; rightPadding: 7; topPadding: 3; bottomPadding: 3
                 Accessible.name: modelData.label + ": " + modelData.usage

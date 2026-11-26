@@ -66,6 +66,8 @@ int main(int argc, char** argv) {
         require(podlord::test::selectSettingsSection(window, yaml ? "diagnostics" : "sync"), "Draft settings section is not reachable.");
         if (yaml) fill("inlineYamlLimit", scenario == "yaml_invalid" ? "0" : "6");
         else {
+            require(item("inlineInactiveMinutes")->property("from").toInt() == 1
+                && workspace.inactiveSyncMinutes() > 0, "Background refresh can still be disabled.");
             fill("inlineInactiveMinutes", "12");
             fill("inlineRequestLimit", "60");
             fill("inlineLogLimit", "9");
@@ -92,7 +94,8 @@ int main(int argc, char** argv) {
             if (scenario.endsWith("_lock")) require(QDir().mkpath(directory.filePath("profile")) && lock.tryLock(0), "Could not acquire the external profile lock.");
             if (scenario.endsWith("_conflict")) {
                 podlord::Workspace other(directory.filePath("profile"));
-                require(QTest::qWaitFor([&] { return !other.busy(); }, 5000) && other.saveReadSettings(121, 0, "5", other.collectionCacheHours()), "Could not save settings through the other workspace.");
+                require(QTest::qWaitFor([&] { return !other.busy(); }, 5000)
+                    && other.saveReadSettings(121, other.inactiveSyncMinutes(), "5", other.collectionCacheHours()), "Could not save settings through the other workspace.");
                 require(QTest::qWaitFor([&] { return !other.busy() && other.requestLimit() == 121; }, 5000), "The other workspace did not complete its save.");
             }
             if (yaml) click("inlineSaveYamlLimit");

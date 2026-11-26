@@ -389,7 +389,7 @@ bool realCluster(const QString& source) {
     if (!waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() > 1000 &&
         !measuredIdentities("cpu").isEmpty() && !measuredIdentities("memory").isEmpty(); }, 120000)) return fail("real resource and metric cache");
     if (!workspace.setWorkspacePage("resources")) return fail("resource tab");
-    if (!workspace.setResourceLimit("5000") || !waitFor([&] {
+    if (!waitFor([&] {
         return workspace.resourceCount() == workspace.totalResourceCount();
     })) return fail("complete fixture inventory within the display limit");
     QStringList expectedConfigMaps, expectedClusterScoped;

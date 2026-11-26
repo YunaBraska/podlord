@@ -32,9 +32,10 @@ ColumnLayout {
             elide: Text.ElideMiddle
             textFormat: Text.PlainText
             Accessible.name: root.terminal ? root.terminal.target : text
-            ToolTip.visible: targetHover.hovered
+            ToolTip.visible: targetHover.hovered && contentWidth > width
+            ToolTip.delay: 700
             ToolTip.text: Accessible.name
-            HoverHandler { id: targetHover }
+            HoverHandler { id: targetHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
         }
         ComboBox {
             id: container
@@ -230,7 +231,7 @@ ColumnLayout {
         onOpened: { const content = surface.clipboardForPaste(); payload = content.text; pasteError = content.error; reviewedTerminal = root.terminal }
         contentItem: ColumnLayout {
             SelectableText { Layout.fillWidth: true; text: "This text may execute commands. Confirm only trusted content."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            SelectableText { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { objectName: "terminalPasteError"; Layout.fillWidth: true; visible: text !== ""; text: pasteReview.pasteError; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ScrollView {
                 Layout.fillWidth: true; Layout.preferredHeight: 140
                 TextArea { text: pasteReview.payload; readOnly: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; font.family: workspace.monospaceFamily }

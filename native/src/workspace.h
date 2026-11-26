@@ -22,12 +22,14 @@
 #include <QVariantList>
 #include <QUrl>
 #include <QPointer>
+#include <QTimer>
 #include <memory>
 #include <optional>
 
 namespace podlord {
 class WorkspaceRuntime;
 class WindowHost;
+class ResourceGraph;
 /** The inspector's sole metadata projection, retaining unchanged field delegates. */
 class InspectorFields final : public QAbstractListModel {
 public:
@@ -62,8 +64,8 @@ public:
         QString identity;
         QList<Row> rows;
         QList<QVariant> sortValues;
+        std::shared_ptr<const ResourceGraph> graph;
         int sortColumn = -1;
-        QVariantMap health;
     };
     explicit ResourceTable(QObject* parent = nullptr,
                            QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
@@ -96,6 +98,15 @@ private:
     Appearance appearance_;
     QString cluster_;
 };
+class InspectorLinkSortModel final : public QSortFilterProxyModel {
+protected:
+    bool lessThan(const QModelIndex& left, const QModelIndex& right) const override {
+        if (left.row() == right.row()) return false;
+        if (left.row() == 0 || right.row() == 0)
+            return sortOrder() == Qt::AscendingOrder ? left.row() == 0 : right.row() == 0;
+        return QSortFilterProxyModel::lessThan(left, right);
+    }
+};
 class ResourceFilter : public QSortFilterProxyModel {
     Q_OBJECT
     Q_PROPERTY(QString error READ error NOTIFY filterStateChanged)
@@ -106,6 +117,7 @@ public:
     static QStringList exactValues(const QString& expression);
     static Result<QString> selectValue(const QString& expression, const QString& value, bool selected);
     QString error() const { return error_; }
+    QString mode() const { return mode_; }
 signals:
     void filterStateChanged();
 protected:
@@ -147,6 +159,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantMap appearanceColors READ appearanceColors NOTIFY appearanceChanged)
     Q_PROPERTY(QString sourceImportNotice READ sourceImportNotice NOTIFY changed)
     Q_PROPERTY(QVariantList sourceImportIssues READ sourceImportIssues NOTIFY changed)
+    Q_PROPERTY(QVariantList sourceImportChoices READ sourceImportChoices NOTIFY changed)
     Q_PROPERTY(QVariantList tabs READ tabs NOTIFY catalogsChanged)
     Q_PROPERTY(bool windowActionsAvailable READ windowActionsAvailable CONSTANT)
     Q_PROPERTY(bool sessionWindowActionsReady READ sessionWindowActionsReady NOTIFY sessionWindowActionsReadyChanged)
@@ -155,6 +168,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool loading READ loading NOTIFY changed)
     Q_PROPERTY(bool syncLoading READ syncLoading NOTIFY changed)
     Q_PROPERTY(double loadingProgress READ loadingProgress NOTIFY changed)
+    Q_PROPERTY(bool initialSyncComplete READ initialSyncComplete NOTIFY changed)
     Q_PROPERTY(bool problemsOnly READ problemsOnly NOTIFY fieldFiltersChanged)
     Q_PROPERTY(bool activityOnly READ activityOnly NOTIFY fieldFiltersChanged)
     Q_PROPERTY(QStringList filterPresets READ filterPresets NOTIFY filterPresetsChanged)
@@ -165,6 +179,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool authenticationRunning READ authenticationRunning NOTIFY changed)
     Q_PROPERTY(QString authenticationPrompt READ authenticationPrompt NOTIFY changed)
     Q_PROPERTY(QString authenticationInstruction READ authenticationInstruction NOTIFY changed)
+    Q_PROPERTY(bool authenticationBrowserAvailable READ authenticationBrowserAvailable NOTIFY changed)
     Q_PROPERTY(QVariantMap authenticationChallenge READ authenticationChallenge NOTIFY changed)
     Q_PROPERTY(QString error READ error NOTIFY changed)
     Q_PROPERTY(bool viewStateFailed READ viewStateFailed NOTIFY changed)
@@ -199,9 +214,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
-    Q_PROPERTY(int resourceLimit READ resourceLimit NOTIFY fieldFiltersChanged)
-    Q_PROPERTY(int defaultResourceLimit READ defaultResourceLimit CONSTANT)
     Q_PROPERTY(int displayedResourceCount READ displayedResourceCount NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int resourcePage READ resourcePage NOTIFY resourcePresentationChanged)
+    Q_PROPERTY(int resourcePageCount READ resourcePageCount NOTIFY resourcePresentationChanged)
     Q_PROPERTY(QAbstractItemModel* visibleResourceTable READ visibleResourceTable CONSTANT)
     Q_PROPERTY(QString filterPickerField READ filterPickerField NOTIFY filterPickerChanged)
     Q_PROPERTY(QStringList filterPickerValues READ filterPickerValues NOTIFY filterPickerChanged)
@@ -392,6 +407,7 @@ public:
     Q_INVOKABLE bool previewAlertZoom(const QVariantMap& draft);
     QString sourceImportNotice() const { return sourceImportNotice_; }
     QVariantList sourceImportIssues() const { return sourceImportIssues_; }
+    QVariantList sourceImportChoices() const { return sourceImportChoices_; }
     QStringList themeNames() const { return podlord::themeNames(); }
     QString themeName() const { return settings_.themeName; }
     QString themeVariant() const { return settings_.themeVariant; }
@@ -411,22 +427,22 @@ public:
     bool workspaceRestoreEnabled() const { return settings_.workspaceRestore; }
     Q_INVOKABLE bool saveWorkspaceRestore(bool enabled);
     bool loading() const;
-    bool syncLoading() const { return authenticationRunning() || client_.syncLoading(active_); }
-    double loadingProgress() const { return authenticationRunning() && !client_.initialSyncComplete(active_) ? 0 : client_.loadingProgress(active_); }
+    bool syncLoading() const;
+    double loadingProgress() const;
+    bool initialSyncComplete() const { return client_.initialSyncComplete(active_); }
     bool problemsOnly() const { return currentNavigation().mode == "problems"; }
     bool activityOnly() const { return currentNavigation().mode == "activity"; }
     Q_INVOKABLE bool setFilterMode(const QString& mode);
     QStringList filterPresets() const;
     QString selectedFilterPreset() const;
-    int resourceLimit() const { return currentNavigation().limit; }
-    int defaultResourceLimit() const { return DefaultResourceDisplayLimit; }
     int displayedResourceCount() const { return visibleTable_.rowCount(); }
+    int resourcePage() const { return visibleTable_.page(); }
+    int resourcePageCount() const { return visibleTable_.pageCount(); }
+    Q_INVOKABLE bool setResourcePage(int page);
     QAbstractItemModel* visibleResourceTable() { return &visibleTable_; }
-    Q_INVOKABLE bool setResourceLimit(const QString& text);
     bool filterPresetsBusy() const { return presetsBusy_; }
     QString filterPresetsError() const { return presetsError_; }
     Q_INVOKABLE bool reloadFilterPresets();
-    Q_INVOKABLE bool importFilterPresets(const QUrl& source);
     Q_INVOKABLE bool loadFilterPreset(const QString& name);
     Q_INVOKABLE bool saveFilterPreset(const QString& name);
     Q_INVOKABLE bool renameFilterPreset(const QString& name, const QString& replacement);
@@ -435,6 +451,7 @@ public:
     bool authenticationRunning() const;
     QString authenticationPrompt() const;
     QString authenticationInstruction() const;
+    bool authenticationBrowserAvailable() const;
     QVariantMap authenticationChallenge() const;
     Q_INVOKABLE bool submitAuthenticationCode(const QString& challengeId, const QString& code);
     QString error() const;
@@ -482,6 +499,8 @@ public:
     Q_INVOKABLE bool importHome();
     Q_INVOKABLE bool refreshSources();
     Q_INVOKABLE bool renameSourceContext(const QString& contextId, const QString& displayName);
+    Q_INVOKABLE QUrl suggestedKubeconfigExportUrl(const QString& contextId) const;
+    Q_INVOKABLE bool exportKubeconfig(const QString& contextId, const QUrl& destination);
     QVariantMap sourceRemoval() const { return sourceRemoval_; }
     Q_INVOKABLE bool requestSourceRemoval(const QString& contextId);
     Q_INVOKABLE bool confirmSourceRemoval();
@@ -529,7 +548,7 @@ public:
     QAbstractItemModel* dashboardTable() { return &dashboardRows_; }
     QString dashboardSummary() const { return dashboardSummary_; }
     QVariantList pulseMetrics() const { return pulseMetrics_; }
-    QVariantMap healthSummary() const { return healthSummary_; }
+    QVariantMap healthSummary() const { return client_.healthSummary(active_); }
     QVariantMap radarView() const { return currentNavigation().radarView; }
     bool mapOverview() const;
     QVariantList mapContexts() const { return mapContexts_; }
@@ -743,11 +762,16 @@ public:
     /** Import a single file by content, without activation/authentication; invalid inputs leave the workspace unchanged. */
     Q_INVOKABLE bool quickImportFile(const QString& path);
     Q_INVOKABLE bool importFiles(const QStringList& paths);
+    /** Imports command-line or operating-system document inputs as immutable snapshots without an interactive context-replacement decision. */
+    bool importStartupFiles(QStringList paths);
+    Q_INVOKABLE bool resolveSourceImport(const QVariantList& decisions);
+    Q_INVOKABLE bool cancelSourceImport();
     Q_INVOKABLE bool openContext(const QString& context, bool inWindow = false, bool duplicate = false);
     Q_INVOKABLE bool activate(const QString& id);
     Q_INVOKABLE bool close(const QString& id);
     Q_INVOKABLE bool refresh(bool confirmedAuthentication = false);
     Q_INVOKABLE bool cancelAuthentication();
+    Q_INVOKABLE bool openAuthenticationBrowser();
     Q_INVOKABLE bool filter(const QString& text);
     Q_INVOKABLE bool sortColumn(int column);
     Q_INVOKABLE bool inspectRow(int row);
@@ -835,14 +859,13 @@ private:
         QString filter, mode;
         QMap<QString, QString> fields;
         int column = -1;
-        int limit = DefaultResourceDisplayLimit;
         Qt::SortOrder order = Qt::AscendingOrder;
         QString inspected, terminalError, page = "overview", workspace = "map";
         QVariantMap radarView;
         QString eventFilter, portFilter;
-        int eventColumn = -1, portColumn = -1, inspectorEventColumn = -1, inspectorLinkColumn = -1, valueColumn = -1;
-        Qt::SortOrder eventOrder = Qt::AscendingOrder, portOrder = Qt::AscendingOrder,
-            inspectorEventOrder = Qt::AscendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
+        int eventColumn = 0, portColumn = -1, inspectorEventColumn = 0, inspectorLinkColumn = -1, valueColumn = -1;
+        Qt::SortOrder eventOrder = Qt::DescendingOrder, portOrder = Qt::AscendingOrder,
+            inspectorEventOrder = Qt::DescendingOrder, inspectorLinkOrder = Qt::AscendingOrder, valueOrder = Qt::AscendingOrder;
         QStringList history;
         int historyIndex = -1;
     };
@@ -856,6 +879,10 @@ private:
     bool mapOverview_ = true;
     QVariantList mapContexts_;
     void refreshMapContexts(bool reorder);
+    struct ManagedImport final { QString session, uid, endpoint; QByteArray yaml; };
+    QList<ManagedImport> managedImports_;
+    bool managedImportInFlight_ = false;
+    void importNextManagedKubeconfig();
     bool restoringMap_ = false;
     QString pendingMapPreview_;
     qint64 cachePayloadBytes_ = 0;
@@ -886,6 +913,8 @@ private:
     QVariantList tableColumns(const QString& table, const QAbstractItemModel& model, bool defaults = false) const;
     void publishResourceColumns();
     SourceCatalog sources_;
+    QMap<QString, quint64> resolvedContextRevision_;
+    bool pendingCatalogReload_ = false, pendingCatalogReconnect_ = false;
     struct SourceInspection final {
         QVariantMap metadata;
         QString yaml, draft, error;
@@ -904,11 +933,14 @@ private:
     QFuture<Result<SourceImportReport>> sourceImportFuture_;
     QFuture<Result<SourceSnapshot>> sourceEditFuture_;
     QFuture<Result<SessionCatalog>> sessionMutationFuture_;
-    enum class SourceReload { Configuration, MetadataOnly };
+    enum class SourceReload { Configuration, MetadataOnly, IfChanged };
     bool importSource(const std::function<Result<SourceImportReport>(const KubeconfigStore&)>& operation, bool ignoreInvalid = false,
         const QString& credentialContext = {}, SourceReload reload = SourceReload::Configuration);
     bool contextUsable(const QString& id) const;
     QVariantList sourceImportIssues_;
+    QVariantList sourceImportChoices_;
+    QStringList pendingImportPaths_;
+    QStringList pendingImportIds_;
     SessionCatalog catalog_;
     ResourceClient& client_;
     ReleaseUpdates& releaseUpdates_;
@@ -930,7 +962,8 @@ private:
     ResourceTable portRows_;
     QSortFilterProxyModel ports_;
     ResourceTable inspectorEventRows_, inspectorLinkRows_;
-    QSortFilterProxyModel inspectorEventsTable_, inspectorLinksTable_;
+    QSortFilterProxyModel inspectorEventsTable_;
+    InspectorLinkSortModel inspectorLinksTable_;
     ResourceTable valueRows_;
     QSortFilterProxyModel valuesTable_;
     ResourceTable sourceRows_{nullptr, {"name", "cluster", "user", "context", "auth", "source", "imported", "status", "rename", "remove"},
@@ -952,7 +985,8 @@ private:
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;
     QVariantList pulseMetrics_;
-    QVariantMap healthSummary_;
+    QTimer rowUpdateTimer_;
+    QStringList pendingRows_;
     bool dashboardDirty_ = true;
     bool publishDashboard();
     QSet<QString> revealedValues_;
@@ -973,6 +1007,7 @@ private:
     QString activeCluster(const QString& session = {}) const;
     bool publishLogs();
     bool publishInspector(bool revealChanged = false, bool resourcesChanged = false);
+    void observeIncidentAi(const QString& session, const QJsonArray& rows, bool force = false);
     bool publishRelated();
     bool inspectResource(const QString& path);
     bool openInspector(const QString& path, int historyIndex = -1);

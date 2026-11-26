@@ -1,25 +1,19 @@
 #pragma once
 #include "resource_metrics.h"
-#include "view_state.h"
 #include <QSortFilterProxyModel>
+#include <algorithm>
 
 namespace podlord {
-/** Display-only cap over the complete, already filtered and sorted cache. */
+/** One page of the complete, already filtered and sorted cache. */
 class ResourceDisplayModel final : public QSortFilterProxyModel {
 public:
+    static constexpr int PageSize = 512;
     explicit ResourceDisplayModel(QAbstractItemModel* source) {
         setSourceModel(source);
-        // Eligibility depends on row position after sorting and removals.
-        connect(source, &QAbstractItemModel::layoutChanged, this, [this, source] {
-            if (source->rowCount() > limit_) refreshRows();
-        });
-        // Only shifts inside the capped prefix can change existing eligibility.
-        connect(source, &QAbstractItemModel::rowsInserted, this, [this, source](const QModelIndex&, int first, int) {
-            if (first < limit_ && source->rowCount() > limit_) refreshRows();
-        });
-        connect(source, &QAbstractItemModel::rowsRemoved, this, [this, source](const QModelIndex&, int first, int last) {
-            if (first < limit_ && qint64(source->rowCount()) + last - first + 1 > limit_) refreshRows();
-        });
+        connect(source, &QAbstractItemModel::layoutChanged, this, [this] { synchronizePage(); });
+        connect(source, &QAbstractItemModel::modelReset, this, [this] { synchronizePage(); });
+        connect(source, &QAbstractItemModel::rowsInserted, this, [this] { synchronizePage(); });
+        connect(source, &QAbstractItemModel::rowsRemoved, this, [this] { synchronizePage(); });
     }
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override {
         const auto value = QSortFilterProxyModel::data(index, role);
@@ -34,14 +28,22 @@ public:
         // Only compact the visible quantity. Keep qualifiers and the source's full-value copy/filter/tooltip contract.
         return formatMetricQuantity(quantity.toDouble(), field == "cpu", true) + text.mid(full.size());
     }
-    bool setLimit(int value) {
-        if (value < 1 || value > 5000) return false;
-        if (limit_ == value) return true;
-        limit_ = value; refreshRows(); return true;
+    int page() const { return page_; }
+    int pageCount() const { return std::max(1, (sourceModel()->rowCount() + PageSize - 1) / PageSize); }
+    bool setPage(int value) {
+        if (value < 0 || value >= pageCount()) return false;
+        if (page_ == value) return true;
+        page_ = value; refreshRows(); return true;
     }
 protected:
-    bool filterAcceptsRow(int row, const QModelIndex& parent) const override { return !parent.isValid() && row < limit_; }
+    bool filterAcceptsRow(int row, const QModelIndex& parent) const override {
+        return !parent.isValid() && row >= page_ * PageSize && row < (page_ + 1) * PageSize;
+    }
 private:
+    void synchronizePage() {
+        page_ = std::min(page_, pageCount() - 1);
+        refreshRows();
+    }
     void refreshRows() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
         beginFilterChange(); endFilterChange(QSortFilterProxyModel::Direction::Rows);
@@ -49,6 +51,6 @@ private:
         invalidateFilter();
 #endif
     }
-    int limit_ = DefaultResourceDisplayLimit;
+    int page_ = 0;
 };
 }

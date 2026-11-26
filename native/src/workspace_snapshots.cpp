@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "workspace_runtime.h"
+#include "resource_graph.h"
 #include <QtConcurrent/QtConcurrentRun>
 #include <utility>
 
@@ -11,7 +12,6 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
     PreparedSnapshot result;
     result.source = std::move(source); result.cluster = std::move(cluster);
     result.fields = table.fields_; result.identity = table.identityField_;
-    int healthy = 0, warning = 0, critical = 0;
     for (int row = 0; row < table.rowCount(); ++row) {
         if (promise.isCanceled()) return;
         auto& entry = table.rows_[row];
@@ -26,16 +26,14 @@ void ResourceTable::prepare(QPromise<PreparedSnapshot>& promise, QJsonArray sour
         entry.populated = table.populatedColumns(row);
         entry.prepared = true;
         if (document["kubernetesEvent"].toBool()) result.events.append(document);
-        const int severity = document["problemSeverity"].toInt();
-        if (severity == 2) ++critical;
-        else if (severity == 1) ++warning;
-        else ++healthy;
     }
     if (promise.isCanceled()) return;
     table.prepareSort(sortColumn);
+    if (promise.isCanceled()) return;
+    result.graph = std::make_shared<const ResourceGraph>(result.source);
+    if (promise.isCanceled()) return;
     result.rows = std::move(table.rows_); result.sortValues = std::move(table.sortValues_);
     result.sortColumn = table.sortValueColumn_;
-    result.health = {{"total", result.source.size()}, {"healthy", healthy}, {"warning", warning}, {"critical", critical}};
     promise.addResult(std::move(result));
 }
 
@@ -46,6 +44,12 @@ bool ResourceTable::publishPrepared(const PreparedSnapshot& snapshot, bool repla
     if (!replace && !unchanged) return false;
     const int previous = rowCount(), next = int(snapshot.rows.size());
     const int retained = std::min(previous, next);
+    QList<QPair<int, int>> changedRanges;
+    if (replace && !unchanged) for (int row = 0; row < retained; ++row) {
+        if (rows_[row] == snapshot.rows[row]) continue;
+        if (!changedRanges.isEmpty() && changedRanges.last().second == row - 1) changedRanges.last().second = row;
+        else changedRanges.append({row, row});
+    }
     if (replace && next != previous) {
         // Structural observers must see the incoming retained values, while Qt's
         // before/after checks require them not to change inside begin/end.
@@ -65,7 +69,9 @@ bool ResourceTable::publishPrepared(const PreparedSnapshot& snapshot, bool repla
     // Every retained display field is complete and immutable. Age is always evaluated live.
     rows_ = snapshot.rows; cluster_ = snapshot.cluster;
     sortValues_ = snapshot.sortValues; sortValueColumn_ = snapshot.sortColumn;
-    if (replace && !unchanged && retained > 0) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
+    if (changedRanges.size() > 32) emit dataChanged(index(0, 0), index(retained - 1, columnCount() - 1));
+    else for (const auto& [first, last] : changedRanges)
+        emit dataChanged(index(first, 0), index(last, columnCount() - 1));
     return true;
 }
 
@@ -92,28 +98,32 @@ void Workspace::prepareSnapshot() {
     const auto prepared = preparedSnapshots_.constFind(active_);
     const bool ready = prepared != preparedSnapshots_.cend() && prepared->source == source && prepared->cluster == cluster;
     if (snapshotPreparation_) {
-        if (snapshotPreparation_->session == active_ && (snapshotPreparation_->source != source || snapshotPreparation_->cluster != cluster))
-            snapshotPreparation_->watcher->cancel();
-        return;
+        if (!snapshotPreparation_->watcher->isCanceled() && snapshotPreparation_->session == active_
+            && snapshotPreparation_->source == source
+            && snapshotPreparation_->cluster == cluster) return;
+        snapshotPreparation_->watcher->cancel();
+        snapshotPreparation_.reset();
     }
     if (ready || source.isEmpty()) return;
     const auto session = active_;
     auto* watcher = new QFutureWatcher<ResourceTable::PreparedSnapshot>(this);
     snapshotPreparation_ = SnapshotPreparation{session, cluster, source, watcher};
     connect(watcher, &QFutureWatcher<ResourceTable::PreparedSnapshot>::finished, this, [this, watcher, session] {
-        snapshotPreparation_.reset();
+        if (snapshotPreparation_ && snapshotPreparation_->watcher == watcher) snapshotPreparation_.reset();
         if (!watcher->isCanceled() && watcher->future().resultCount() == 1 && !windowClosed_ && windowVisible_
             && runtime_->owners.value(session) == this) {
             auto result = watcher->result();
             if (result.source == client_.rows(session) && result.cluster == activeCluster(session)) {
                 if (active_ == session) rows_.retainPreparedSort(result);
                 preparedSnapshots_.insert(session, result);
-                if (active_ == session) rows_.publishPrepared(result);
+                if (active_ == session) publish();
             }
         }
         watcher->deleteLater();
         prepareSnapshot();
+        emit changed();
     });
     watcher->setFuture(QtConcurrent::run(&ResourceTable::prepare, source, cluster, currentNavigation().column));
+    emit changed();
 }
 }

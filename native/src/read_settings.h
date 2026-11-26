@@ -4,7 +4,7 @@
 namespace podlord {
 struct ReadSettings final {
     int requestHardLimitPerMinute = 0;
-    int inactiveSyncMinutes = 0;
+    int inactiveSyncMinutes = 15;
     int logLimitMb = 5;
     int yamlLimitMiB = 3;
     QString themeName = "Sirocco Command";

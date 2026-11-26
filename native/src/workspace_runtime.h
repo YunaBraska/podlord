@@ -8,6 +8,7 @@
 #include "incident_ai.h"
 #include "view_state.h"
 #include <QFuture>
+#include <QSet>
 
 namespace podlord {
 class Workspace;
@@ -21,6 +22,8 @@ public:
     const std::function<QDateTime()> now;
     ResourceClient client;
     CredentialProcess credentials;
+    /** Prevents an automatic browser loop after a failed sign-in or a rejected Kubernetes token. */
+    QSet<QString> automaticOidcAttempts;
     ReleaseUpdates releases;
     MapPreviews previews{profile};
     IncidentAi incidentAi{profile};

@@ -37,7 +37,6 @@ Pane {
             wrapMode: Text.Wrap
             color: editor.controller.appearanceColors.danger
             visible: text !== ""
-            Accessible.name: text
         }
         TextField {
             id: optionSearch
@@ -77,6 +76,7 @@ Pane {
                     SelectableText { anchors.centerIn: parent; text: valueControl.checked ? "✓" : ""; color: editor.controller.appearanceColors.inset }
                 }
                 contentItem: Label {
+                    id: valueLabel
                     text: valueControl.displayValue
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
@@ -86,8 +86,10 @@ Pane {
                 }
                 onClicked: editor.controller.selectFilterValue(modelData, checked)
                 onPressAndHold: copyMenu.popup(valueControl, 0, valueControl.height)
+                HoverHandler { id: optionHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
                 ToolTip {
-                    visible: valueControl.hovered || valueControl.activeFocus
+                    visible: (optionHover.hovered || valueControl.activeFocus) && valueLabel.implicitWidth > valueLabel.width
+                    delay: valueControl.activeFocus ? 0 : 700
                     contentItem: SelectableText {
                         text: valueControl.displayValue
                         textFormat: Text.PlainText

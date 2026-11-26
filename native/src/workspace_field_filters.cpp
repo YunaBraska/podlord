@@ -7,7 +7,7 @@
 namespace podlord {
 QVariantList Workspace::filterFields() const {
     QVariantList result;
-    static const QStringList supported{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
+    static const QStringList supported{"cluster", "namespace", "kind", "name", "status", "issue", "createdAt", "ready", "restarts", "cpu", "memory", "storage", "node", "image", "owner", "uid"};
     for (const auto& field : supported)
         for (int column = 0; column < rows_.columnCount(); ++column)
             if (rows_.headerData(column, Qt::Horizontal, Qt::UserRole).toString() == field)
@@ -22,7 +22,7 @@ QVariantMap Workspace::resourceFieldFilters() const {
 }
 bool Workspace::applyResourceFilters() {
     const auto& nav = navigation_[active_];
-    visibleTable_.setLimit(nav.limit);
+    visibleTable_.setPage(0);
     table_.filter(nav.filter, nav.fields, nav.mode);
     dashboardDirty_ = true;
     publishDashboard();
@@ -43,8 +43,8 @@ bool Workspace::filterField(const QString& field, const QString& expression) {
 bool Workspace::resetResourceFilters() {
     if (active_.isEmpty() || busy_) return false;
     auto& nav = navigation_[active_];
-    if (nav.filter.isEmpty() && nav.fields.isEmpty() && nav.mode.isEmpty() && nav.limit == DefaultResourceDisplayLimit) return true;
-    nav.filter.clear(); nav.fields.clear(); nav.mode.clear(); nav.limit = DefaultResourceDisplayLimit;
+    if (nav.filter.isEmpty() && nav.fields.isEmpty() && nav.mode.isEmpty()) return true;
+    nav.filter.clear(); nav.fields.clear(); nav.mode.clear();
     return applyResourceFilters();
 }
 bool Workspace::filterInspectorField(const QString& field) {
@@ -63,14 +63,9 @@ QColor Workspace::inspectorFieldColor(const QString& field) const {
     if (value.isEmpty()) return appearance_.colors.value("text").value<QColor>();
     return field == "status" ? appearanceStatus(appearance_,value) : appearanceIdentity(appearance_,value);
 }
-bool Workspace::setResourceLimit(const QString& text) {
-    if (active_.isEmpty() || busy_) return false;
-    const int value = resourceDisplayLimit(text);
-    auto& nav = navigation_[active_];
-    if (nav.limit == value) return true;
-    nav.limit = value; visibleTable_.setLimit(value);
-    queueViewSave("resource");
-    emit fieldFiltersChanged(); emit resourcePresentationChanged();
+bool Workspace::setResourcePage(int page) {
+    if (active_.isEmpty() || !visibleTable_.setPage(page)) return false;
+    emit resourcePresentationChanged();
     return true;
 }
 bool Workspace::prepareFilterPicker(const QString& field) {
@@ -132,7 +127,7 @@ QStringList Workspace::filterPresets() const {
 QString Workspace::selectedFilterPreset() const {
     const auto nav = navigation_.value(active_);
     for (auto preset = presets_.cbegin(); preset != presets_.cend(); ++preset)
-        if (preset->filter == nav.filter && preset->fields == nav.fields && preset->mode == nav.mode && preset->limit == nav.limit) return preset.key();
+        if (preset->filter == nav.filter && preset->fields == nav.fields && preset->mode == nav.mode) return preset.key();
     return {};
 }
 bool Workspace::updateFilterPresets(const std::function<Result<TableViewStates>(const ViewStateStore&)>& operation, bool reload) {
@@ -165,19 +160,10 @@ bool Workspace::reloadFilterPresets() {
 bool Workspace::persistFilterPresets(const TableViewStates& desired) {
     return updateFilterPresets([desired, expected = presets_](const ViewStateStore& store) { return store.savePresets(desired, expected); });
 }
-bool Workspace::importFilterPresets(const QUrl& source) {
-    if (!source.isValid() || !source.isLocalFile() || source.hasQuery() || source.hasFragment()) {
-        presetsError_ = "Choose a local saved-filter JSON file. No filters were changed.";
-        emit filterPresetsChanged(); return false;
-    }
-    return updateFilterPresets([path = source.toLocalFile(), expected = presets_](const ViewStateStore& store) {
-        return store.importPresets(path, expected);
-    });
-}
 bool Workspace::loadFilterPreset(const QString& name) {
     if (active_.isEmpty() || !presetsReady_ || !presets_.contains(name)) return false;
     const auto value = presets_.value(name); auto& nav = navigation_[active_];
-    nav.filter = value.filter; nav.fields = value.fields; nav.mode = value.mode; nav.limit = value.limit;
+    nav.filter = value.filter; nav.fields = value.fields; nav.mode = value.mode;
     return applyResourceFilters();
 }
 bool Workspace::saveFilterPreset(const QString& requested) {
@@ -189,7 +175,7 @@ bool Workspace::saveFilterPreset(const QString& requested) {
         presetsError_ = "A filter preset already uses that name."; emit filterPresetsChanged(); return false;
     }
     auto desired = presets_; const auto nav = navigation_.value(active_);
-    desired[name] = {nav.filter, {}, false, nav.fields, nav.mode, nav.limit};
+    desired[name] = {nav.filter, {}, false, nav.fields, nav.mode, DefaultResourceDisplayLimit};
     return persistFilterPresets(desired);
 }
 bool Workspace::renameFilterPreset(const QString& name, const QString& replacement) {

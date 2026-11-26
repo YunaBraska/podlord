@@ -60,10 +60,11 @@ bool scenario(const QString& name) {
         value.exec->gke->serviceAccountOnly = name == "gke_service_missing";
     } else if (name == "eks" || name == "revoke_ready") value.exec->eks = EksLogin{"podlord-test", "eu-central-1", "test-access", "test-secret", {}};
     else if (name == "oci_bad_key") value.exec->oci = OciLogin{"ocid1.cluster.test", "eu-central-1", "user", "tenancy", "fingerprint", "invalid"};
-    else if (name == "oidc_invalid" || name == "oidc_cancel" || name == "revoke_oidc") {
+    else if (name == "oidc_invalid" || name == "oidc_cancel" || name == "revoke_oidc" || name == "oidc_browser_selection") {
         value.exec->oidc.emplace();
-        value.exec->oidc->deviceCodeGrant = true;
+        value.exec->oidc->deviceCodeGrant = name != "oidc_browser_selection";
         value.exec->oidc->useAccessToken = true;
+        if (name == "oidc_browser_selection") value.exec->oidc->redirectUri = QUrl("http://localhost:8000/wrong");
         if (name != "oidc_invalid") value.exec->oidc->issuer = QUrl("http://127.0.0.1:1");
     } else if (name == "missing_program") value.exec->program = "/podlord-test/no-such-executable";
     else if (name == "cancel" || name == "repeat" || name == "revoke_running") value.exec->arguments = {"sleep"};
@@ -109,6 +110,7 @@ bool scenario(const QString& name) {
             && (name != "near_expiry" || expired);
     }
     const auto* failure = std::get_if<Failure>(&result);
+    if (name == "oidc_browser_selection") return failure && failure->code == StoreError::InvalidData;
     return failure && !process.cached(id) && (name != "oversized" || failure->message.contains("1 MiB"));
 }
 } // namespace

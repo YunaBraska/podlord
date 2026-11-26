@@ -116,47 +116,15 @@ bool run(const QString& scenario) {
             && fails(store.save(session, "resource", limited, value), StoreError::InvalidData)
             && input.open(QIODevice::ReadOnly) && input.readAll() == bytes;
     }
-    if (scenario.startsWith("preset_import_")) {
-        const auto source = temporary.filePath("saved filters %.json");
-        const TableViewStates empty{{"default", resourceDefault}};
-        QJsonObject legacy{{"name", "Imported"}, {"nameFilter", "~web"}, {"namespace", "team"}};
-        const auto bytes = QJsonDocument(QJsonArray{legacy}).toJson();
-        if (!write(source, scenario == "preset_import_malformed" ? QByteArray("{") : scenario == "preset_import_oversized" ? QByteArray(65537, ' ') : bytes)) return false;
-        if (scenario == "preset_import_missing") return fails(store.importPresets(temporary.filePath("missing"), empty), StoreError::ReadFailed);
-        if (scenario == "preset_import_relative") return fails(store.importPresets("relative.json", empty), StoreError::InvalidInput);
-        if (scenario == "preset_import_malformed") return fails(store.importPresets(source, empty), StoreError::InvalidData);
-        if (scenario == "preset_import_oversized") return fails(store.importPresets(source, empty), StoreError::ReadFailed);
-        auto expected = empty;
-        if (scenario == "preset_import_conflict" || scenario == "preset_import_case_conflict") {
-            expected[scenario == "preset_import_conflict" ? "Imported" : "imported"] = {"existing", {}, false};
-            if (!equals(store.savePresets(expected, empty), expected)) return false;
-            return fails(store.importPresets(source, expected), StoreError::Conflict) && equals(store.loadPresets(), expected);
-        }
-        if (scenario == "preset_import_stale") {
-            auto changed = empty; changed["Other"] = {};
-            if (!equals(store.savePresets(changed, empty), changed)) return false;
-            return fails(store.importPresets(source, empty), StoreError::Conflict) && equals(store.loadPresets(), changed);
-        }
-        const auto imported = store.importPresets(source, empty);
-        if (!std::holds_alternative<TableViewStates>(imported)) return false;
-        const auto actual = std::get<TableViewStates>(imported);
-        if (actual.value("Imported").fields != QMap<QString, QString>{{"name", "~web"}, {"namespace", "team"}}
-            || !equals(store.loadPresets(), actual)) return false;
-        QFile original(source);
-        if (!original.open(QIODevice::ReadOnly) || original.readAll() != bytes) return false;
-        if (scenario == "preset_import_repeat") return equals(store.importPresets(source, actual), actual);
-        return scenario == "preset_import_success";
-    }
     if (scenario == "legacy_preset_default" || scenario == "legacy_preset_default_invalid") {
         const TableViewStates empty{{"default", resourceDefault}};
         const bool invalid = scenario == "legacy_preset_default_invalid";
-        const auto source = temporary.filePath("reference-filters.json");
+        const auto source = profile + "/filter-presets.json";
         const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "default"}, {"limit", invalid ? "7" : "256"}}}).toJson();
-        if (!write(source, bytes)) return false;
-        const auto imported = store.importPresets(source, empty);
+        if (!QDir().mkpath(profile) || !write(source, bytes)) return false;
+        const auto loaded = store.loadPresets();
         QFile original(source);
-        return (invalid ? fails(imported, StoreError::InvalidData) && !QFile::exists(profile + "/filter-presets.json")
-            : equals(imported, empty) && equals(store.loadPresets(), empty))
+        return (invalid ? fails(loaded, StoreError::InvalidData) : equals(loaded, empty))
             && original.open(QIODevice::ReadOnly) && original.readAll() == bytes;
     }
     if (scenario.startsWith("legacy_preset_")) {

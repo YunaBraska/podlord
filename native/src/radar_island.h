@@ -4,6 +4,8 @@
 #include <QPersistentModelIndex>
 #include <QPointer>
 #include <QQuickPaintedItem>
+#include <QFutureWatcher>
+#include <QPromise>
 #include <QSortFilterProxyModel>
 #include <QSet>
 #include <QTimer>
@@ -57,6 +59,7 @@ class RadarIsland : public QQuickPaintedItem {
     Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor NOTIFY textColorChanged)
     Q_PROPERTY(qreal captionPixelSize READ captionPixelSize WRITE setCaptionPixelSize NOTIFY textSizesChanged)
     Q_PROPERTY(qreal headingPixelSize READ headingPixelSize WRITE setHeadingPixelSize NOTIFY textSizesChanged)
+    Q_PROPERTY(qreal labelTopInset READ labelTopInset WRITE setLabelTopInset NOTIFY labelTopInsetChanged)
     Q_PROPERTY(Alerts* alerts READ alerts WRITE setAlerts NOTIFY alertsChanged)
     Q_PROPERTY(bool effectsEnabled READ effectsEnabled WRITE setEffectsEnabled NOTIFY effectsEnabledChanged)
     Q_PROPERTY(QColor glyphFill READ glyphFill WRITE setGlyphFill NOTIFY glyphFillChanged)
@@ -74,8 +77,10 @@ public:
     QColor textColor() const { return textColor_; }
     qreal captionPixelSize() const { return captionPixelSize_; }
     qreal headingPixelSize() const { return headingPixelSize_; }
+    qreal labelTopInset() const { return labelTopInset_; }
     void setCaptionPixelSize(qreal size);
     void setHeadingPixelSize(qreal size);
+    void setLabelTopInset(qreal inset);
     Alerts* alerts() const { return alerts_; }
     bool effectsEnabled() const { return effectsEnabled_; }
     QColor glyphFill() const { return glyphFill_; }
@@ -112,6 +117,7 @@ signals:
     void currentResourceChanged();
     void textColorChanged();
     void textSizesChanged();
+    void labelTopInsetChanged();
     void alertsChanged();
     void effectsEnabledChanged();
     void glyphFillChanged();
@@ -122,6 +128,7 @@ signals:
 private:
     struct Row final {
         QString path, kind, name, scope, cluster, owner, identity;
+        bool kubernetesEvent = false;
         bool operator==(const Row&) const = default;
     };
     struct Marker final { QPointF world; QRectF labelBounds; QString kind, group, label; bool overview = false; QRectF area; };
@@ -134,6 +141,7 @@ private:
         QRectF bounds;
     };
     QCache<QString, Terrain> terrains_{3};
+    QFutureWatcher<Terrain>* terrainPreparation_ = nullptr;
     RadarTiles tiles_{this};
     QPointer<QAbstractItemModel> source_;
     QList<QMetaObject::Connection> connections_;
@@ -157,15 +165,16 @@ private:
     QPointF pan_;
     QColor textColor_{QStringLiteral("#DDE7EC")};
     qreal captionPixelSize_ = 11, headingPixelSize_ = 12;
+    qreal labelTopInset_ = 0;
     QString currentPath_;
     QString identityScope_;
     double zoom_ = 1;
-    bool pending_ = false, dirty_ = true, geometryDirty_ = true, filteredDirty_ = true;
+    bool pending_ = false, dirty_ = true, geometryDirty_ = true, filteredDirty_ = true, fitPending_ = false, sourceEmpty_ = true;
     void setIdentityScope(const QString& scope);
     void observeSource();
     void schedule();
     void synchronize();
-    void layout(const QList<Row>& rows);
+    static void layout(QPromise<Terrain>& promise, QList<Row> rows, QString scope);
     void project(bool refresh = false);
     void syncAnimationClock();
     QRectF worldViewport() const;

@@ -189,9 +189,9 @@ public:
     }
 };
 const QStringList fields{"name", "kind", "namespace", "status", "node", "image", "cluster", "owner", "issue", "cpu", "memory", "storage", "ready", "restarts", "createdAt", "uid"};
-bool run(const QString& scenario, const QString& referencePresets) {
+bool run(const QString& scenario) {
     QTemporaryDir temporary; KubernetesBoundary server;
-    server.extraConfigurations = scenario.startsWith("limit_") ? 1298 : 0;
+    server.extraConfigurations = scenario.startsWith("page_") ? 1298 : 0;
     server.delayed = scenario == "loading_alert" || scenario == "loading_parallel";
     server.events = scenario.startsWith("table_keyboard_event_");
     server.valueCopies = scenario.startsWith("value_copy_");
@@ -377,152 +377,68 @@ bool run(const QString& scenario, const QString& referencePresets) {
             }
             return reused;
         }
-        if (scenario.startsWith("limit_")) {
-            auto* displayed = workspace.property("visibleResourceTable").value<QAbstractItemModel*>();
-            if (!displayed || workspace.property("resourceLimit").toInt() != 1024 || displayed->rowCount() != 1024 || workspace.resourceCount() != 1301) return false;
+        if (scenario.startsWith("page_")) {
+            auto* displayed = workspace.visibleResourceTable();
+            if (!displayed || displayed->rowCount() != 512 || workspace.resourcePage() != 0
+                || workspace.resourcePageCount() != 3 || workspace.resourceCount() != 1301
+                || item(window, "resourceLimit") || workspace.property("resourceLimit").isValid()) return false;
             QAbstractItemModelTester consistency(displayed, QAbstractItemModelTester::FailureReportingMode::Fatal);
-            const auto setLimit = [&](const QString& text) {
-                bool accepted = false;
-                return QMetaObject::invokeMethod(&workspace, "setResourceLimit", Q_RETURN_ARG(bool, accepted), Q_ARG(QString, text)) && accepted;
-            };
-            if (scenario == "limit_default") return server.requests == requests;
-            if (scenario.startsWith("limit_normalize_")) {
-                const auto value = scenario.mid(QString("limit_normalize_").size());
-                const QMap<QString, QString> inputs{{"empty", ""}, {"zero", "0"}, {"negative", "-1"}, {"invalid", "abc"},
-                    {"overflow", "2147483648"}, {"upper", "2147483647"}, {"spaces", " 7 "}, {"one", "1"}, {"max", "5000"}};
-                const int expected = value == "upper" || value == "max" ? 5000 : value == "spaces" ? 7 : value == "one" ? 1 : 1024;
-                return inputs.contains(value) && setLimit(inputs[value]) && workspace.property("resourceLimit").toInt() == expected
-                    && displayed->rowCount() == std::min(expected, 1301) && workspace.resourceCount() == 1301 && server.requests == requests;
-            }
-            if (scenario == "limit_ui" || scenario == "limit_narrow") {
-                if (scenario == "limit_narrow") {
-                    window->resize(844, 390);
-                    if (!waitFor([&] { return item(window, "workspaceToolbar")->isVisible() && !item(window, "sidebarFilterScroll")->isVisible(); })) return false;
+            if (scenario == "page_default") return server.requests == requests;
+            if (scenario == "page_ui" || scenario == "page_narrow") {
+                if (scenario == "page_narrow") window->resize(520, 720);
+                if (!workspace.setWorkspacePage("resources")) return false;
+                auto* next = item(window, "resourceNextPage");
+                auto* previous = item(window, "resourcePreviousPage");
+                auto* range = item(window, "resourcePageRange");
+                if (!next || !previous || !next->isVisible() || previous->isEnabled()
+                    || !range || range->property("text") != "1-512 / 1301"
+                    || range->mapToScene(QPointF(range->width(), 0)).x() > window->width()) {
+                    qWarning() << "Page controls" << bool(next) << bool(previous) << (next && next->isVisible())
+                        << (previous && previous->isEnabled()) << (range ? range->property("text") : QVariant{}); return false;
                 }
-                auto* control = item(window, "resourceLimit");
-                if (!control) return false;
-                if (!control->isVisible()) {
-                    const auto* expander = item(window, "toggleLandscapeFilters");
-                    if (!click(window, expander && expander->isVisible() ? "toggleLandscapeFilters" : "toggleSidebar")) return false;
+                if (!click(window, "resourceNextPage") || !waitFor([&] { return workspace.resourcePage() == 1
+                    && displayed->rowCount() == 512 && range->property("text") == "513-1024 / 1301"; })) {
+                    qWarning() << "First page action" << workspace.resourcePage() << displayed->rowCount() << range->property("text"); return false;
                 }
-                if (!waitFor([&] {
-                    const auto* activity = item(window, "activityOnly");
-                    const auto* firstFilter = item(window, "sidebarField_cluster");
-                    if (!activity || !firstFilter || !control->isVisible()) return false;
-                    const auto origin = control->mapToItem(window->contentItem(), QPointF{});
-                    const auto activityOrigin = activity->mapToItem(window->contentItem(), QPointF{});
-                    if (origin.y() >= firstFilter->mapToItem(window->contentItem(), QPointF{}).y()) return false;
-                    return scenario == "limit_narrow" || (origin.x() >= activityOrigin.x() + activity->width()
-                        && qAbs(origin.y() + control->height()/2 - activityOrigin.y() - activity->height()/2) < 8);
-                }) || !podlord::test::scrollIntoView(window, control)) return false;
-                control->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Up);
-                return waitFor([&] { return workspace.property("resourceLimit").toInt() == 1025 && displayed->rowCount() == 1025
-                    && item(window, "resourceTable")->property("rows").toInt() == 1025; }) && server.requests == requests;
+                if (!click(window, "resourceNextPage") || !waitFor([&] { return workspace.resourcePage() == 2
+                    && displayed->rowCount() == 277 && range->property("text") == "1025-1301 / 1301"; })) {
+                    qWarning() << "Last page action" << workspace.resourcePage() << displayed->rowCount() << range->property("text"); return false;
+                }
+                const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
+                if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
+                if (!workspace.copyCell(0, 0) || QGuiApplication::clipboard()->text() != workspace.table()->index(1024, 0).data().toString()) return false;
+                return !next->isEnabled() && click(window, "resourcePreviousPage")
+                    && waitFor([&] { return workspace.resourcePage() == 1 && displayed->rowCount() == 512; })
+                    && server.requests == requests;
             }
-            if (!setLimit("7") || displayed->rowCount() != 7 || workspace.resourceCount() != 1301) return false;
-            if (scenario == "limit_sort") {
-                if (!workspace.sortColumn(0) || !workspace.sortColumn(0) || workspace.sortDirection() != "DESC") return false;
-                for (int row = 0; row < 7; ++row)
-                    if (displayed->data(displayed->index(row, 0), Qt::UserRole) != workspace.table()->data(workspace.table()->index(row, 0), Qt::UserRole)) return false;
-                return displayed->data(displayed->index(0, 0)).toString() == "team-a" && server.requests == requests;
+            if (!workspace.setResourcePage(2) || displayed->rowCount() != 277) return false;
+            if (scenario == "page_filter") {
+                const bool passed = workspace.filterField("name", "\"limit-297\"")
+                && workspace.resourcePage() == 0 && workspace.resourcePageCount() == 1
+                && displayed->rowCount() == 1 && displayed->index(0, 0).data() == "limit-297"
+                && workspace.resetResourceFilters() && displayed->rowCount() == 512 && server.requests == requests;
+                if (!passed) qWarning() << "Page filter" << workspace.resourcePage() << workspace.resourcePageCount()
+                    << displayed->rowCount() << displayed->index(0, 0).data() << workspace.resourceCount() << server.requests - requests;
+                return passed;
             }
-            if (scenario == "limit_filter") return workspace.filterField("name", "\"limit-297\"") && displayed->rowCount() == 1 && workspace.resourceCount() == 1
-                && displayed->data(displayed->index(0, 0)).toString() == "limit-297" && server.requests == requests;
-            if (scenario == "limit_picker") return workspace.prepareFilterPicker("name") && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
-            if (scenario == "limit_reset") return workspace.filterField("name", "limit-") && workspace.resetResourceFilters()
-                && workspace.property("resourceLimit").toInt() == 1024 && displayed->rowCount() == 1024 && workspace.resourceCount() == 1301 && server.requests == requests;
-            if (scenario == "limit_preset") {
-                if (!workspace.saveFilterPreset("Seven rows") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
-                    || !workspace.resetResourceFilters() || workspace.selectedFilterPreset() != "default" || !workspace.loadFilterPreset("Seven rows")) return false;
-                return workspace.selectedFilterPreset() == "Seven rows" && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == requests;
-            }
-            if (scenario == "limit_session") {
-                const auto other = workspace.contexts().last().toMap().value("id").toString();
-                if (!workspace.openContext(other) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && workspace.totalResourceCount() == 1301; })
-                    || workspace.property("resourceLimit").toInt() != 1024) return false;
-                const int afterOpen = server.requests;
-                return workspace.activate(session) && waitFor([&] { return !workspace.busy(); })
-                    && workspace.property("resourceLimit").toInt() == 7 && displayed->rowCount() == 7 && server.requests == afterOpen;
-            }
-            if (scenario == "limit_refresh") {
+            if (scenario == "page_sort") return workspace.sortColumn(0) && workspace.sortColumn(0)
+                && workspace.resourcePage() == 0 && displayed->rowCount() == 512
+                && displayed->index(0, 0).data() == workspace.table()->index(0, 0).data()
+                && server.requests == requests;
+            if (scenario == "page_picker") return workspace.prepareFilterPicker("name")
+                && workspace.filterPickerValues().contains("limit-297") && server.requests == requests;
+            if (scenario == "page_refresh") {
                 server.extraConfigurations = 5;
                 if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() == 8; })) return false;
-                return displayed->rowCount() == 7 && workspace.resourceCount() == 8 && workspace.table()->rowCount() == 8 && server.requests > requests;
+                return workspace.resourcePage() == 0 && displayed->rowCount() == 8
+                    && workspace.resourceCount() == 8 && server.requests > requests;
             }
-            if (scenario == "limit_radar") {
+            if (scenario == "page_radar") {
                 auto* radar = window->findChild<podlord::RadarIsland*>();
-                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 1301 && server.requests == requests;
-            }
-            if (scenario == "limit_restart") {
-                if (!waitFor([&] { return workspace.requestWindowClose(); })) {
-                    qWarning() << "Limit save did not settle" << workspace.property("viewStateError") << workspace.error(); return false;
-                }
-                podlord::Workspace restored(profile);
-            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
-                || restored.totalResourceCount()!=0 || !restored.activate(session)) {
-                qWarning() << "Field restart restoration failed" << restored.currentSession() << session << restored.totalResourceCount() << restored.resourceFieldFilters() << restored.error(); return false;
-            }
-                const bool loaded = waitFor([&] { return !restored.busy() && !restored.loading() && restored.currentSession() == session && restored.resourceCount() == 1301; });
-                if (!loaded) qWarning() << "Reopened rows" << restored.busy() << restored.loading() << restored.currentSession()
-                    << restored.resourceCount() << restored.totalResourceCount() << restored.property("resourceLimit") << restored.error();
-                return loaded && restored.property("resourceLimit").toInt() == 7 && restored.property("visibleResourceTable").value<QAbstractItemModel*>()->rowCount() == 7;
+                return radar && radar->source() == workspace.table() && radar->source()->rowCount() == 1301
+                    && server.requests == requests;
             }
             return false;
-        }
-        if (scenario.startsWith("reference_presets_")) {
-            QFile original(referencePresets);
-            if (!original.open(QIODevice::ReadOnly)) return false;
-            const auto exported = original.readAll();
-            original.close();
-            if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-            if (scenario == "reference_presets_conflict") {
-                if (!workspace.filterField("name", "bravo") || !click(window,"saveFilterPreset") || !type(window, "filterPresetName", "Pod alpha")
-                    || !click(window, "saveFilterPreset") || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-            }
-            const auto beforeImport = workspace.filterPresets();
-            if (!workspace.importFilterPresets(QUrl::fromLocalFile(referencePresets))
-                || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-            if (!original.open(QIODevice::ReadOnly) || original.readAll() != exported) return false;
-            if (scenario == "reference_presets_conflict")
-                return workspace.filterPresetsError().contains("already in use") && workspace.filterPresets() == beforeImport
-                    && workspace.resourceCount() == 1 && workspace.resourceFieldFilters().value("name") == "bravo" && server.requests == requests;
-            if (!workspace.filterPresetsError().isEmpty() || workspace.filterPresets().size() != 5) return false;
-            if (scenario == "reference_presets_repeat") {
-                const auto imported = workspace.filterPresets();
-                if (!workspace.importFilterPresets(QUrl::fromLocalFile(referencePresets))
-                    || !waitFor([&] { return !workspace.filterPresetsBusy(); }) || !workspace.filterPresetsError().isEmpty()
-                    || workspace.filterPresets() != imported) return false;
-            }
-            const QString name = scenario == "reference_presets_problems" ? "Problem pods"
-                : scenario == "reference_presets_activity" ? "Recently active"
-                : scenario == "reference_presets_missing_metrics" ? "Measured workloads" : "Pod alpha";
-            const int selected = workspace.filterPresets().indexOf(name);
-            if (selected < 0 || !click(window, "filterPreset")) return false;
-            QTest::keyClick(window, Qt::Key_Home);
-            for (int index = 0; index < selected; ++index) QTest::keyClick(window, Qt::Key_Down);
-            QTest::keyClick(window, Qt::Key_Return);
-            const int expected = scenario == "reference_presets_activity" ? 2 : scenario == "reference_presets_missing_metrics" ? 0 : 1;
-            if (!waitFor([&] { return workspace.resourceCount() == expected && workspace.selectedFilterPreset() == name; })
-                || !workspace.filterError().isEmpty() || server.requests != requests) return false;
-            if (name == "Pod alpha") {
-                const QVariantMap fields{{"name", "alpha"}, {"namespace", "team-a"}, {"kind", "Pod"}, {"cluster", "local"},
-                    {"status", "Running"}, {"createdAt", ">=1m <2m"}, {"node", "node-a"}, {"image", "busybox:1"},
-                    {"ready", "1/1"}, {"restarts", "=0"}, {"owner", "owner-a"}};
-                if (workspace.resourceFieldFilters() != fields || workspace.filterText() != "Pod" || workspace.resourceLimit() != 7) return false;
-            }
-            const auto screenshot = qEnvironmentVariable("PODLORD_FIELD_FILTER_SCREENSHOT");
-            if (!screenshot.isEmpty() && !window->grabWindow().save(screenshot)) return false;
-            if (scenario != "reference_presets_restart") return true;
-            const auto expectedFields = workspace.resourceFieldFilters();
-            const auto expectedPresets = workspace.filterPresets();
-            if (!waitFor([&] { return workspace.requestWindowClose(); })) return false;
-            podlord::Workspace restored(profile);
-            if (!waitFor([&] { return !restored.busy() && restored.currentSession()==session; })
-                || restored.totalResourceCount()!=0 || !restored.activate(session)) return false;
-            return waitFor([&] { return !restored.busy() && !restored.loading() && !restored.filterPresetsBusy()
-                && restored.currentSession() == session && restored.resourceCount() == 1; })
-                && restored.selectedFilterPreset() == name && restored.resourceFieldFilters() == expectedFields
-                && restored.filterPresets() == expectedPresets && restored.resourceLimit() == 7 && restored.filterError().isEmpty();
         }
         if (scenario == "filter_render_frame") {
             window->requestActivate();
@@ -705,10 +621,30 @@ bool run(const QString& scenario, const QString& referencePresets) {
             return false;
         }
         if (scenario.startsWith("value_copy_")) {
+            if (scenario.endsWith("_narrow_overview")) window->resize(402, 778);
             const auto path = server.secretValues ? QStringLiteral("/api/v1/namespaces/team-b/secrets/team-a") : QStringLiteral("/api/v1/namespaces/team-b/configmaps/team-a");
-            if (!workspace.inspectPath(path) || !waitFor([&] { return workspace.canEditYaml() && workspace.resourceValues().size() >= 3; })
-                || !click(window, "valuesButton")) return false;
+            if (!workspace.inspectPath(path) || !waitFor([&] { return workspace.canEditYaml() && workspace.resourceValues().size() >= 3; })) return false;
             const int calls = server.requests;
+            if (scenario.endsWith("_overview")) {
+                const auto id = server.secretValues ? QStringLiteral("data/text") : QStringLiteral("data/message");
+                const auto visibleValue = server.secretValues ? QStringLiteral("[hidden]") : QStringLiteral("ordinary configuration");
+                const auto copiedValue = server.secretValues ? QStringLiteral("decoded-value") : visibleValue;
+                const auto valueVisible = [&] {
+                    const auto* value = item(window, "value_" + id);
+                    return value && value->isVisible() && value->property("text").toString() == visibleValue;
+                };
+                QGuiApplication::clipboard()->clear();
+                const auto copyVisible = [&] {
+                    auto* copy = item(window, "copy_" + id);
+                    return copy && !podlord::test::visibleBounds(window, copy).isEmpty();
+                };
+                const auto frame = qEnvironmentVariable("PODLORD_VALUES_FRAME");
+                if (!waitFor(valueVisible) || (frame.size() && !window->grabWindow().save(frame))) return false;
+                return workspace.inspectorPage() == "overview" && waitFor(valueVisible) && waitFor(copyVisible) && click(window, "copy_" + id)
+                    && waitFor([&] { return QGuiApplication::clipboard()->text() == copiedValue; }) && valueVisible()
+                    && workspace.inspectorPage() == "overview" && server.requests == calls;
+            }
+            if (!click(window, "valuesButton")) return false;
             const auto key = scenario.contains("_binary_") ? QStringLiteral("binary") : scenario.contains("_empty_") ? QStringLiteral("empty") : QStringLiteral("text");
             const auto id = (server.secretValues ? QStringLiteral("data/") : QStringLiteral("binaryData/")) + key;
             if (!waitFor([&] { return item(window, "value_" + id) && item(window, "value_" + id)->isVisible(); })) return false;
@@ -807,12 +743,35 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     || sounds.first().at(1).toString() != "default-problem-color" || !focus.isEmpty()
                     || progress.isEmpty() || workspace.property("loadingProgress").toDouble() != 1) return false;
                 bool partial = false; double previous = 0;
-                for (const double value : progress) { if (value < previous || value >= 1) return false; partial = partial || value > 0; previous = value; }
+                for (const double value : progress) { if (value < previous || value > 1) return false; partial = partial || (value > 0 && value < 1); previous = value; }
                 const auto effect = workspace.alerts()->effect("/api/v1/namespaces/team-a/pods/alpha");
                 return partial && effect.value("color").toString() != "fresh" && !effect.contains("animation");
             }
             if (!click(window, "problemsOnly") || !waitFor([&] { return workspace.resourceCount() == 1; })) return false;
-            if (scenario == "mode_problems") return workspace.property("problemsOnly").toBool() && server.requests == requests;
+            if (scenario == "mode_problems") {
+                auto* water = item(window, "radarWater");
+                auto* radar = qobject_cast<podlord::RadarIsland*>(item(window, "resourceRadar"));
+                const auto path = workspace.table()->index(0, 0).data(Qt::UserRole).toString();
+                if (!water || !workspace.radarWaterEnabled() || workspace.radarWaterSpeedPercent() <= 0
+                    || water->property("speedPercent").toInt() != 0 || !radar || path.isEmpty()
+                    || !waitFor([&] { return !radar->resourceInfo(path, false).isEmpty(); })) return false;
+                const bool contextVisible = waitFor([&] {
+                    const auto frame = window->grabWindow();
+                    if (frame.isNull()) return false;
+                    const double scale = double(frame.width()) / window->width();
+                    const auto area = QRectF(radar->mapToScene(QPointF{}) * scale, radar->size() * scale)
+                        .toAlignedRect().intersected(frame.rect());
+                    const auto dimmed = QColor("#50575B").rgba();
+                    for (int y = area.top(); y <= area.bottom(); ++y)
+                        for (int x = area.left(); x <= area.right(); ++x)
+                            if (frame.pixel(x, y) == dimmed) return true;
+                    return false;
+                });
+                if (!contextVisible) return false;
+                if (!click(window, "problemsOnly") || workspace.problemsOnly()) return false;
+                return waitFor([&] { return water->property("speedPercent").toInt() == workspace.radarWaterSpeedPercent(); })
+                    && server.requests == requests;
+            }
             if (scenario == "mode_activity") return click(window, "activityOnly") && waitFor([&] { return workspace.resourceCount() == 2; })
                 && !workspace.property("problemsOnly").toBool() && workspace.property("activityOnly").toBool() && server.requests == requests;
             if (scenario == "mode_reset") return click(window, "resetResourceFilters") && workspace.resourceCount() == 3
@@ -826,6 +785,8 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 return workspace.activate(session) && waitFor([&] { return !workspace.busy() && workspace.resourceCount() == 1; })
                     && workspace.property("problemsOnly").toBool();
             }
+            if (scenario == "preset_controls" && workspace.filterPresets() == QStringList{"default"}
+                && (item(window,"filterPreset")->isVisible() || item(window,"filterPresetName")->isVisible())) return false;
             if (!click(window,"saveFilterPreset") || !type(window, "filterPresetName", "Broken pods") || !click(window, "saveFilterPreset")
                 || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })
                 || !workspace.property("filterPresetsError").toString().isEmpty()) return false;
@@ -847,7 +808,13 @@ bool run(const QString& scenario, const QString& referencePresets) {
                             } else if (!click(window,"toggleSidebar")) return failed("open filter drawer");
                         }
                         if (!click(window,"filterPreset") || !waitFor([&] { return item(window,"savedFilterPanel")->isVisible(); })) return failed("disclose presets");
-                        for (const auto* name : {"reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset"}) {
+                        auto* options=item(window,"savedFilterOptions");
+                        if (!options || options->property("count").toInt()!=1
+                            || !item(window,"filterPresetOption_0")
+                            || item(window,"filterPresetOption_1")) return failed("one saved choice without default");
+                        if (item(window,"reloadFilterPresets") || item(window,"importFilterPresets")
+                            || item(window,"allResourceFilters")) return failed("obsolete actions absent");
+                        for (const auto* name : {"renameFilterPreset","deleteFilterPreset"}) {
                             auto* action=item(window,name);
                             if (!action || !action->isVisible() || !action->isEnabled()
                                 || action->width()<(size.width()<900?44:32) || action->height()<(size.width()<900?44:32)
@@ -856,7 +823,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                         }
                         const auto evidence=qEnvironmentVariable("PODLORD_FILTER_MENU_EVIDENCE");
                         if (!evidence.isEmpty() && !window->grabWindow().save(evidence+"/presets-"+mode+"-"+QString::number(size.width())+"x"+QString::number(size.height())+"-"+qEnvironmentVariable("QT_QUICK_CONTROLS_STYLE")+".png")) return failed("capture");
-                        auto* options=item(window,"savedFilterOptions"); options->forceActiveFocus();
+                        options->forceActiveFocus();
                         QTest::keyClick(window,Qt::Key_Escape);
                         if (!waitFor([&] { return !item(window,"savedFilterPanel")->isVisible() && item(window,"filterPreset")->hasActiveFocus(); })) return failed("escape returns focus");
                         if (!click(window,"filterPreset") || !click(window,"filterPreset")
@@ -869,6 +836,7 @@ bool run(const QString& scenario, const QString& referencePresets) {
                     }
                 }
                 if (!click(window,"filterPreset")) return false;
+                if (!click(window,"saveFilterPreset")) return failed("open save input");
                 auto* presetInput=item(window,"filterPresetName"); presetInput->forceActiveFocus();
                 if (!item(window,"workspaceSidebar")->hasActiveFocus()) return failed("sidebar owns input focus");
                 window->setMinimumHeight(80); window->resize(640,150);
@@ -885,15 +853,11 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 QTest::mouseClick(window,Qt::LeftButton,Qt::NoModifier,confirm->mapToScene(QPointF(confirm->width()/2,confirm->height()/2)).toPoint());
                 if (!waitFor([&] { return !workspace.filterPresetsBusy() && workspace.filterPresets().contains("Renamed pods")
                     && !workspace.filterPresets().contains("Broken pods"); })) return failed("rename persists");
-                if (!click(window,"reloadFilterPresets") || !waitFor([&] { return !workspace.filterPresetsBusy(); })
-                    || !workspace.filterPresets().contains("Renamed pods")) return failed("reload retains preset");
-                if (!click(window,"importFilterPresets")) return failed("open import");
-                auto* dialog=window->findChild<QObject*>("importFilterPresetsDialog");
-                if (!dialog || !waitFor([&] { return dialog->property("visible").toBool(); })
-                    || !QMetaObject::invokeMethod(dialog,"close") || !waitFor([&] { return !dialog->property("visible").toBool(); })) return failed("cancel external file picker");
                 if (!click(window,"deleteFilterPreset") || !waitFor([&] { return !workspace.filterPresetsBusy()
                     && workspace.filterPresets()==QStringList{"default"}; })) return failed("delete preserves default");
-                return !item(window,"deleteFilterPreset")->isEnabled() && !item(window,"renameFilterPreset")->isEnabled()
+                const auto* deleteAction=item(window,"deleteFilterPreset");
+                const auto* renameAction=item(window,"renameFilterPreset");
+                return (!deleteAction || !deleteAction->isVisible()) && (!renameAction || !renameAction->isVisible())
                     && workspace.resourceCount()==1 && server.requests==requests;
             }
             if (scenario == "preset_restart") {
@@ -909,15 +873,20 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 && waitFor([&] { return !workspace.property("filterPresetsBusy").toBool() && workspace.property("filterPresets").toStringList() == QStringList{"default"}; })
                 && workspace.resourceCount() == 1 && server.requests == requests;
             if (scenario == "preset_overwrite") {
-                if (!click(window,"filterPreset") || !click(window, "activityOnly") || !click(window, "saveFilterPreset")
-                    || !waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })) return false;
+                const auto failed=[&](const char* stage) { qWarning() << "Saved-filter overwrite:" << stage << workspace.filterPresetsError(); return false; };
+                if (!click(window,"filterPreset")) return failed("open saved filters");
+                if (!click(window, "activityOnly")) return failed("change filter");
+                if (!click(window, "saveFilterPreset")) return failed("show name input");
+                if (!type(window, "filterPresetName", "Broken pods")) return failed("name existing filter");
+                if (!click(window, "saveFilterPreset")) return failed("save changed filter");
+                if (!waitFor([&] { return !workspace.property("filterPresetsBusy").toBool(); })) return failed("persist changed filter");
             }
             if (item(window,"savedFilterPanel")->isVisible() && !click(window,"filterPreset")) return false;
             if (!click(window, "resetResourceFilters") || workspace.resourceCount() != 3 || !click(window, "filterPreset")) return false;
             const auto* options = item(window, "savedFilterOptions");
             if (!options || !waitFor([&] { return options->isVisible() && options->width() > 0; })) return false;
             if (scenario == "preset_load") {
-                auto* choice=item(window,"filterPresetOption_1");
+                auto* choice=item(window,"filterPresetOption_0");
                 if (!choice || !podlord::test::scrollIntoView(window,choice)) return false;
                 auto* accessible=QAccessible::queryAccessibleInterface(choice);
                 if (!accessible || accessible->role()!=QAccessible::Button || !accessible->actionInterface()
@@ -928,9 +897,12 @@ bool run(const QString& scenario, const QString& referencePresets) {
                 QTest::touchEvent(window,touch.get()).release(0,point,window);
                 return waitFor([&] { return workspace.resourceCount()==1 && !item(window,"savedFilterPanel")->isVisible(); }) && server.requests==requests;
             }
-            QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Down); QTest::keyClick(window, Qt::Key_Return);
+            QTest::keyClick(window, Qt::Key_Home); QTest::keyClick(window, Qt::Key_Return);
             const auto expected = scenario == "preset_overwrite" ? 2 : 1;
-            return waitFor([&] { return workspace.resourceCount() == expected; }) && server.requests == requests;
+            const bool loaded = waitFor([&] { return workspace.resourceCount() == expected; });
+            if (!loaded) qWarning() << "Saved-filter selection:" << scenario << workspace.resourceCount() << expected
+                << workspace.selectedFilterPreset() << workspace.filterPresets() << workspace.filterPresetsError();
+            return loaded && server.requests == requests;
         }
         if (scenario == "narrow") { window->setWidth(680); window->setHeight(480); }
         if (!click(window, "sidebarField_name") || !waitFor([&] { return item(window, "fieldFilterExpression") && item(window, "fieldFilterExpression")->isVisible(); })) return false;
@@ -1076,10 +1048,9 @@ bool run(const QString& scenario, const QString& referencePresets) {
 }
 }
 int main(int argc, char** argv) {
-    QGuiApplication application(argc, argv); if (argc != 2 && argc != 3) return 2;
+    QGuiApplication application(argc, argv); if (argc != 2) return 2;
     const auto scenario = QString::fromLocal8Bit(argv[1]);
-    if (scenario.startsWith("reference_presets_") != (argc == 3)) return 2;
-    const bool passed = run(scenario, argc == 3 ? QString::fromLocal8Bit(argv[2]) : QString{});
+    const bool passed = run(scenario);
     if (!passed) std::fprintf(stderr, "Field filter UI scenario failed: %s\n", argv[1]);
     return passed ? 0 : 1;
 }

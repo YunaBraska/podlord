@@ -64,7 +64,6 @@ Pane {
             Layout.fillWidth: true
             visible: workspace.sourceInspectionLoading && !root.inputPriority
             text: "Loading owned kubeconfig..."
-            Accessible.name: text
         }
         SelectableText {
             objectName: "sourceInspectorError"

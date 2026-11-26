@@ -14,13 +14,15 @@ public:
     explicit CredentialProcess(QObject* parent = nullptr);
     ~CredentialProcess() override;
     /** Starts one explicitly confirmed command per credential context, without a shell or stdin. */
-    bool start(ClusterConnection connection, const QString& session);
+    bool start(ClusterConnection connection, const QString& session, const QString& language = {});
     bool cancel(const QString& credential);
     bool invalidate(const QString& credential);
     /** Cancels owned authentication and forgets its result, including late completions. */
     bool revoke(const QString& credential);
     bool running(const QString& credential) const;
     QString instruction(const QString& credential) const;
+    bool browserAvailable(const QString& credential) const;
+    bool openBrowser(const QString& credential) const;
     std::optional<AwsMfaChallenge> challenge(const QString& credential) const;
     bool submitMfa(const QString& credential, const QString& challengeId, const QString& code);
     std::optional<ClusterConnection> cached(const QString& credential) const;

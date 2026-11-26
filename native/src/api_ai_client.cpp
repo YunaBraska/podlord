@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLockFile>
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <QtConcurrent>
 
 namespace podlord {
 namespace {
@@ -22,6 +24,15 @@ void limitReply(QNetworkReply* reply, qint64 maxBytes) {
     QObject::connect(reply, &QNetworkReply::downloadProgress, reply, [reply, maxBytes](qint64 received, qint64) {
         if (received > maxBytes) reply->abort();
     });
+}
+CredentialStore::ReadResult loadProvider(CredentialStore& credentials, const QString& profile, ApiAiClient::Provider provider) {
+    const auto name = provider == ApiAiClient::Provider::Claude ? "claude" : "openrouter";
+    return credentials.readMigrating(profile, name, name + QStringLiteral("-auth.json"), 8192,
+        [](const QByteArray& legacy) {
+            const auto document = QJsonDocument::fromJson(legacy);
+            return document.isObject() && document.object().value("version") == 1
+                && document.object().value("key").isString() ? legacy : QByteArray{};
+        });
 }
 }
 QString ApiAiClient::identity() const {
@@ -37,13 +48,25 @@ ApiAiClient::ApiAiClient(QString profile, Provider provider, QUrl base, QObject*
         || base_.host().isEmpty() || !base_.userInfo().isEmpty() || !base_.path().isEmpty() || base_.hasQuery() || base_.hasFragment()) {
         writable_ = false; status_ = "Invalid AI provider endpoint."; return;
     }
-    const auto name = provider_ == Provider::Claude ? "claude" : "openrouter";
-    const auto loaded = credentials_->readMigrating(profile_, name, name + QStringLiteral("-auth.json"), 8192,
-        [](const QByteArray& legacy) {
-            const auto document = QJsonDocument::fromJson(legacy);
-            return document.isObject() && document.object().value("version") == 1
-                && document.object().value("key").isString() ? legacy : QByteArray{};
+    if (!credentials) {
+        writable_ = false;
+        auto* watcher = new QFutureWatcher<CredentialStore::ReadResult>(this);
+        connect(watcher, &QFutureWatcherBase::finished, this, [this, watcher] {
+            writable_ = true;
+            restore(watcher->result());
+            watcher->deleteLater();
+            emit changed();
+            if (configured()) refreshModels();
         });
+        watcher->setFuture(QtConcurrent::run([profile = profile_, provider = provider_] {
+            ProfileCredentialStore store;
+            return loadProvider(store, profile, provider);
+        }));
+        return;
+    }
+    restore(loadProvider(*credentials_, profile_, provider_));
+}
+void ApiAiClient::restore(const CredentialStore::ReadResult& loaded) {
     if (!loaded.ok) { writable_ = false; status_ = loaded.error; return; }
     if (!loaded.found) return;
     savedBytes_ = loaded.data;

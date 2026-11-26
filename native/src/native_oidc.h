@@ -3,6 +3,7 @@
 #include "background_http.h"
 #include <QJsonObject>
 #include <QPointer>
+#include <QTcpServer>
 #include <QTimer>
 #include <functional>
 
@@ -20,10 +21,13 @@ class NativeOidcLogin final : public QObject {
     Q_OBJECT
 public:
     enum class Flow { Device, Browser };
-    explicit NativeOidcLogin(ClusterConnection connection, Flow flow = Flow::Device, QObject* parent = nullptr);
+    explicit NativeOidcLogin(ClusterConnection connection, Flow flow = Flow::Device, QObject* parent = nullptr,
+        QString language = {});
     void start();
     void cancel();
     QString instruction() const;
+    bool browserAvailable() const;
+    bool openBrowser() const;
 signals:
     void instructionChanged();
     void completed(Result<ClusterConnection> result);
@@ -40,9 +44,12 @@ private:
     PlatformNetworkAccessManager network_;
     QPointer<QNetworkReply> pending_;
     QTimer timer_;
+    QTcpServer callbackServer_;
     QUrl tokenEndpoint_;
     QUrl jwksEndpoint_;
-    QString deviceCode_, instruction_, state_, nonce_, codeVerifier_;
+    QUrl browserUrl_;
+    QUrl redirectUri_;
+    QString deviceCode_, instruction_, state_, nonce_, codeVerifier_, language_;
     QDateTime deadline_;
     int interval_ = 5;
     bool done_ = false;

@@ -302,8 +302,8 @@ bool run(const QString& scenario) {
     } else if (scenario == "refresh_changed") {
         require(config.open(QIODevice::WriteOnly|QIODevice::Truncate) && config.write(bytes+"# changed\n")==bytes.size()+10, "Cannot change external kubeconfig.");
         config.close(); click("refreshSourceFilesButton");
-        require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==4
-            && model->rowCount()==4 && control("settingsSourceList")->property("count").toInt()==4; }), "Pinned Sources table did not grow after reimport.");
+        require(QTest::qWaitFor([&] { return !workspace.busy() && workspace.contexts().size()==2
+            && model->rowCount()==2 && control("settingsSourceList")->property("count").toInt()==2; }), "Refresh duplicated current contexts.");
     } else if (scenario == "remove_cancel" || scenario == "remove" || scenario == "remove_all") {
         click("removeSource_"+identity);
         click(scenario == "remove_cancel" ? "cancelSourceRemoval" : "confirmSourceRemoval");

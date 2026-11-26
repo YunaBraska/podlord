@@ -12,6 +12,7 @@
 #include <QVariantMap>
 #include <QUrl>
 #include <optional>
+#include <memory>
 #include "chatgpt_client.h"
 #include "api_ai_client.h"
 
@@ -28,10 +29,11 @@ public:
     };
     explicit IncidentAi(QString profile, QUrl endpoint = QUrl("http://127.0.0.1:11434"), QObject* parent = nullptr,
         RemoteEndpoints remote = {QUrl("https://auth.openai.com"), QUrl("https://api.openai.com"),
-            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")}, CredentialStore* credentials = nullptr);
+            QUrl("https://api.anthropic.com"), QUrl("https://openrouter.ai")}, CredentialStore* credentials = nullptr,
+        int analysisTimeoutMs = 180000);
     bool supported() const;
-    bool enabled(const QString& context) const;
-    bool setEnabled(const QString& context, bool enabled);
+    bool enabled() const;
+    bool setEnabled(bool enabled);
     QStringList models() const;
     QVariantList modelChoices() const;
     QVariantList allModelChoices() const;
@@ -44,8 +46,10 @@ public:
     QStringList reasoningOptions() const { return provider_ == "ollama" ? reasoningOptions_ : QStringList{}; }
     QString reasoning() const { return provider_ == "ollama" ? reasoning_ : QString{}; }
     bool setReasoning(const QString& reasoning);
-    QString status(const QString& context = {}) const {
-        return !status_.isEmpty() ? status_ : !contextStatus_.value(context).isEmpty() ? contextStatus_.value(context) :
+    QString status(const QString& context = {}, const QString& path = {}) const {
+        const auto contextMessage = contextStatus_.value(context);
+        return !status_.isEmpty() ? status_ : (!contextMessage.text.isEmpty()
+            && (path.isEmpty() || contextMessage.path == path)) ? contextMessage.text :
             provider_ == "chatgpt" ? (!chatgpt_.status().isEmpty() ? chatgpt_.status()
                 : !chatgpt_.connected() ? "Connect a ChatGPT account with plan permission first."
                 : chatgptModel_.isEmpty() ? "Choose a ChatGPT model in AI settings." : QString{})
@@ -70,7 +74,9 @@ public:
     void refreshUsage() { emit changed(); }
     void refreshModels();
     void ensureModelsFresh();
-    void observe(const QString& context, const QJsonArray& rows, const QString& language);
+    void observe(const QString& context, const QJsonArray& rows, const QString& language, bool force = false,
+                 const QString& cluster = {});
+    bool preparing(const QString& context) const { return pendingObservations_.contains(context); }
     void prepareManual(const QString& context, const QString& path);
     void observeDiagnostic(const QString& error, const QString& language);
     void setDraftError(const QString& context, const QString& path, const QString& error);
@@ -83,6 +89,7 @@ signals:
     void changed();
     void analysisCompleted(const QString& context, const QString& path);
 private:
+    struct Preparation;
     struct Incident final {
         QString key, context, code, kind, path, language, provider, model, reasoning, thinkSignature;
         QStringList related;
@@ -90,6 +97,7 @@ private:
         QJsonArray evidence;
     };
     struct Record final { QJsonObject answer; QDateTime created; };
+    struct ContextStatus final { QString path, text; };
     bool save();
     qsizetype evidenceBudgetBytes(const QString& language, const QString& kind, const QString& code, const QStringList& related) const;
     void dispatch();
@@ -98,19 +106,23 @@ private:
     void refreshReasoning();
     void recordRequest(const QString& provider, const QString& identity);
     void stopObserving(const QString& context);
+    void observePrepared(const QString& context, const QString& language, bool force,
+                         bool changedCluster, bool expired, bool retryElapsed,
+                         std::shared_ptr<const Preparation> prepared);
     std::optional<Incident> manualIncident(const QString& context, const QString& path) const;
     const QString profile_;
     const QUrl endpoint_;
+    const int analysisTimeoutMs_;
     ChatGptClient chatgpt_;
     ApiAiClient claude_, openrouter_;
     QNetworkAccessManager network_;
     QTimer dispatchTimer_;
-    QMap<QString, QSet<QString>> enabledByProvider_;
+    bool autoEnabled_ = false;
     QStringList models_;
     qint64 ollamaContextTokens_ = 0;
     QStringList reasoningOptions_{"auto"};
     QString provider_ = "ollama", model_, chatgptModel_, claudeModel_, openrouterModel_, reasoning_ = "auto", status_;
-    QMap<QString, QString> contextStatus_;
+    QMap<QString, ContextStatus> contextStatus_;
     QJsonValue thinkValue_{QJsonValue::Undefined};
     bool modelReady_ = false;
     QMap<QString, Record> records_;
@@ -119,13 +131,18 @@ private:
     QMap<QString, Incident> manualVisible_;
     QMap<QString, QSet<QString>> activeKeys_;
     QMap<QString, QPair<QJsonArray, QString>> snapshots_;
+    QMap<QString, std::shared_ptr<const Preparation>> preparations_;
+    QMap<QString, QString> clusters_;
+    QMap<QString, QJsonArray> rawSnapshots_;
+    struct PendingObservation final { QString language, refreshPath; quint64 revision = 0; };
+    QMap<QString, PendingObservation> pendingObservations_;
+    quint64 nextObservationRevision_ = 0;
     std::optional<Incident> diagnostic_;
     struct DraftError final { QString context, path, message; };
     std::optional<DraftError> draftError_;
     QMap<QString, QDateTime> retryAfter_;
     QQueue<Incident> queue_;
     QSet<QString> queued_;
-    QMap<QString, QList<QDateTime>> recent_;
     QString inFlight_;
     QString inFlightContext_;
     QNetworkReply* activeReply_ = nullptr;

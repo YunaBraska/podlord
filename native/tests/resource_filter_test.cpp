@@ -12,6 +12,30 @@
 namespace {
 bool tableScenario(const QString& scenario) {
     using podlord::ResourceTable;
+    if (scenario == "table_pages") {
+        ResourceTable rows(nullptr, {"name"}, {"Name"});
+        QJsonArray snapshot;
+        for (int index = 0; index < 1301; ++index)
+            snapshot.append(QJsonObject{{"path", QString::number(index)}, {"name", QString("item-%1").arg(index, 4, 10, QChar('0'))}});
+        rows.publish(snapshot);
+        podlord::ResourceDisplayModel display(&rows);
+        if (display.rowCount() != 512 || display.pageCount() != 3 || display.page() != 0
+            || display.mapToSource(display.index(511, 0)) != rows.index(511, 0)) {
+            qWarning() << "first page" << display.rowCount() << display.pageCount() << display.page() << display.index(511, 0).data(); return false;
+        }
+        if (!display.setPage(1) || display.rowCount() != 512 || display.mapToSource(display.index(0, 0)) != rows.index(512, 0)
+            || display.mapToSource(display.index(511, 0)) != rows.index(1023, 0)) {
+            qWarning() << "second page" << display.rowCount() << display.pageCount() << display.page() << display.index(0, 0).data() << display.index(511, 0).data(); return false;
+        }
+        if (!display.setPage(2) || display.rowCount() != 277 || display.mapToSource(display.index(0, 0)) != rows.index(1024, 0)
+            || display.mapToSource(display.index(276, 0)) != rows.index(1300, 0) || display.setPage(3)) {
+            qWarning() << "last page" << display.rowCount() << display.pageCount() << display.page() << display.index(0, 0).data() << display.index(276, 0).data(); return false;
+        }
+        rows.publish({QJsonObject{{"path", "1"}, {"name", "item-0001"}}});
+        if (display.page() == 0 && display.pageCount() == 1 && display.rowCount() == 1
+            && display.index(0, 0).data() == "item-0001") return true;
+        qWarning() << "shrunk page" << display.rowCount() << display.pageCount() << display.page() << display.index(0, 0).data(); return false;
+    }
     if (scenario == "table_presence_retired_rows") {
         ResourceTable rows(nullptr, {"cpu", "memory", "storage", "image", "namespace"}, {"CPU", "Memory", "Storage", "Image", "Namespace"});
         if (rows.populatedColumns(-1) || rows.populatedColumns(0)) return false;

@@ -41,7 +41,6 @@
 #include <QQuickItem>
 #include <QQuickItemGrabResult>
 #include <QQuickWindow>
-#include <QPointer>
 #include <QSignalSpy>
 #include <QSslSocket>
 #include <QTcpServer>
@@ -115,6 +114,10 @@ public:
     bool delayedReadDelivered = false;
     bool prematureDisconnect = false;
     bool refuseCollections = false;
+    bool newApiKind = false;
+    int managedSecretVersion = 1;
+    bool managedClusterPresent = true;
+    QString managedClusterUid = "uid-workload";
     explicit KubernetesBoundary(QString value) : scenario(std::move(value)) {
         clock.start();
         connect(this, &QTcpServer::newConnection, this, [this] {
@@ -143,14 +146,39 @@ public:
                         if (scenario == "malformed") raw = "{bad JSON: secret-value-must-not-appear";
                         if (scenario == "invalid_discovery") document = {{"versions", QJsonArray{"../escape"}}};
                     } else if (path == "/apis") {
-                        document = {{"groups", QJsonArray{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "example.test/v1"}}}}}}};
+                        QJsonArray groups{QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "example.test/v1"}}}}};
+                        if (scenario.startsWith("map_auto_")) groups.append(QJsonObject{{"preferredVersion", QJsonObject{{"groupVersion", "cluster.x-k8s.io/v1beta1"}}}});
+                        document = {{"groups", groups}};
                     } else if (path == "/api/v1") {
                         document = {{"resources", QJsonArray{
                             QJsonObject{{"name", "pods"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get", "list"}}},
                             QJsonObject{{"name", "events"}, {"kind", "Event"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}},
                             QJsonObject{{"name", "pods/log"}, {"kind", "Pod"}, {"namespaced", true}, {"verbs", QJsonArray{"get"}}}}}};
                     } else if (path == "/apis/example.test/v1") {
-                        document = {{"resources", QJsonArray{QJsonObject{{"name", "widgets"}, {"kind", "Widget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                        QJsonArray resources{QJsonObject{{"name", "widgets"}, {"kind", "Widget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}};
+                        if (newApiKind) resources.append(QJsonObject{{"name", "gadgets"}, {"kind", "Gadget"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}});
+                        document = {{"resources", resources}};
+                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1") {
+                        document = {{"resources", QJsonArray{QJsonObject{{"name", "clusters"}, {"kind", "Cluster"}, {"namespaced", true}, {"verbs", QJsonArray{"list"}}}}}};
+                    } else if (path == "/apis/cluster.x-k8s.io/v1beta1/clusters"
+                        || (scenario == "map_auto_import_scoped_refresh" && path == "/apis/cluster.x-k8s.io/v1beta1/namespaces/default/clusters")) {
+                        if (scenario == "map_auto_import_scoped_refresh" && path == "/apis/cluster.x-k8s.io/v1beta1/clusters") status = 403;
+                        auto cluster = pod("workload", "Cluster", "cluster.x-k8s.io/v1beta1");
+                        auto metadata = cluster["metadata"].toObject(); metadata["uid"] = managedClusterUid; cluster["metadata"] = metadata;
+                        cluster["spec"] = QJsonObject{{"controlPlaneEndpoint", QJsonObject{{"host", "wlc.example"}, {"port", 6443}}}};
+                        document = {{"metadata", QJsonObject{}}, {"items", managedClusterPresent ? QJsonArray{cluster} : QJsonArray{}}};
+                    } else if (path == "/api/v1/namespaces/default/secrets/workload-kubeconfig"
+                        && (scenario.startsWith("map_auto_import") || scenario.startsWith("map_auto_retire") || scenario == "map_auto_uid_rotation")) {
+                        if (scenario == "map_auto_import_forbidden") status = 403;
+                        const QByteArray user = scenario == "map_auto_import_invalid"
+                            ? QByteArrayLiteral("exec: {command: /bin/echo, apiVersion: client.authentication.k8s.io/v1beta1}")
+                            : QByteArrayLiteral("token: managed-test-token-") + QByteArray::number(managedSecretVersion);
+                        const QByteArray url = scenario == "map_auto_import_mismatch" ? "https://other.example:6443" : "https://wlc.example:6443";
+                        const QByteArray yaml = "apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: " + url + "}\nusers:\n- name: managed\n  user: {"
+                            + user + "}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: managed}\n";
+                        document = {{"apiVersion", "v1"}, {"kind", "Secret"}, {"type", "cluster.x-k8s.io/secret"},
+                            {"metadata", QJsonObject{{"name", "workload-kubeconfig"}, {"namespace", "default"}, {"uid", "secret-workload"}}},
+                            {"data", QJsonObject{{"value", QString::fromLatin1(yaml.toBase64())}}}};
                     } else if (path == "/api/v1/events") {
                         status = scenario == "forbidden" ? 403 : 200;
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{}}};
@@ -164,14 +192,26 @@ public:
                         }
                     } else if (path == "/apis/example.test/v1/widgets") {
                         document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("custom-widget", "Widget", "example.test/v1")}}};
+                        if (scenario == "radar_loading_incremental" || scenario == "radar_loading_20k") {
+                            QJsonArray values;
+                            const int count = scenario == "radar_loading_20k" ? 10000 : 2500;
+                            for (int index = 0; index < count; ++index)
+                                values.append(pod(QString("widget-%1").arg(index, 4, 10, QChar('0')), "Widget", "example.test/v1"));
+                            document["items"] = values;
+                        }
+                    } else if (path == "/apis/example.test/v1/gadgets") {
+                        document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("new-gadget", "Gadget", "example.test/v1")}}};
                     } else if (path == "/api/v1/pods") {
                         ++refresh;
                         const bool second = !url.query().isEmpty() && url.query().contains("continue=");
                         const QString token = second && scenario != "repeated_page" ? "" : "next token";
                         document = {{"metadata", QJsonObject{{"continue", token}}}, {"items", QJsonArray{pod(second ? "bravo" : "alpha")}}};
+                        if (scenario.startsWith("shell_source_rebind") && authorization == "Bearer replacement-token")
+                            document = {{"metadata", QJsonObject{}}, {"items", QJsonArray{pod("replacement")}}};
                         if (scenario == "invalid_list") document["items"] = QJsonArray{QJsonObject{{"kind", "Pod"}, {"metadata", QJsonObject{{"name", "../escape"}}}}};
                         if (scenario == "rate_limit" && refresh == 1) status = 429;
                         if (scenario == "retain" && refresh >= 3) status = 500;
+                        if (scenario == "recover_sync" && refresh == 3) status = 400;
                         if (scenario == "cache_expiry" && refresh >= 3) status = 500;
                         if (scenario == "sync" && refresh >= 3) document["items"] = QJsonArray{pod(second ? "bravo" : "alpha-updated")};
                         if (scenario == "periodic_sync") {
@@ -325,11 +365,19 @@ public:
                             if (path == "/apis/example.test/v1/widgets") document["items"] = QJsonArray{pod("custom-widget", kind, "example.test/v1")};
                         }
                     }
-                    if ((scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
+                    if ((scenario == "radar_many" || scenario.startsWith("radar_loading_") || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all") && path == "/api/v1/pods") {
                         QJsonArray values;
                         const int start = url.query().contains("continue=") ? 500 : 0;
-                        for (int index = start; index < start + 500; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
+                        const int count = scenario == "radar_loading_20k" ? 10000 : scenario == "radar_loading_large" ? 5000
+                            : scenario == "radar_loading_incremental" ? 2500 : scenario == "radar_loading_responsive" ? 1904 : 500;
+                        for (int index = start; index < start + count; ++index) values.append(pod(QString("radar-%1").arg(index, 4, 10, QChar('0'))));
                         document["items"] = values;
+                        if (scenario.startsWith("radar_loading_")) document["metadata"] = QJsonObject{};
+                    }
+                    if ((scenario == "shell_health_tab_switch_large" || scenario == "shell_health_tab_switch_inflight_large") && path == "/api/v1/pods") {
+                        QJsonArray values;
+                        for (int index = 0; index < 300; ++index) values.append(pod(QString("health-%1").arg(index)));
+                        document = {{"metadata", QJsonObject{}}, {"items", values}};
                     }
                     if (scenario.startsWith("inspector_related_") || scenario.startsWith("filter_event_")) {
                         if (scenario.startsWith("inspector_related_alias_") && path == "/apis") {
@@ -360,9 +408,23 @@ public:
                             auto event = pod("related-event", "Event");
                             event["involvedObject"] = QJsonObject{{"uid", scenario == "inspector_related_wrong_uid" || scenario == "inspector_related_event_missing" ? "replaced-alpha" : "uid-alpha"}, {"kind", "Pod"}, {"name", "alpha"}, {"namespace", "default"}};
                             event["reason"] = "Scheduled"; event["message"] = "Local event message"; event["type"] = "Normal"; event["count"] = 3;
+                            if (scenario == "inspector_related_table_links_messages") {
+                                event["type"] = "Warning"; event["reason"] = "FailedPull";
+                                event["message"] = "Image registry was unreachable";
+                            }
                             if (scenario.contains("_color_")) event["type"] = scenario.endsWith("normal") ? "Normal" : scenario.endsWith("warning") ? "Warning" : scenario.endsWith("empty") ? "" : "Unrecognized";
                             event["lastTimestamp"] = "2026-10-03T10:00:00Z";
+                            if (scenario == "inspector_related_table_events_sort") event["lastTimestamp"] = "2026-10-03T10:15:00Z";
                             document["items"] = QJsonArray{event};
+                            if (scenario == "inspector_related_table_links_messages") {
+                                auto ownerEvent = event;
+                                auto metadata = ownerEvent["metadata"].toObject();
+                                metadata["name"] = "owner-warning"; metadata["uid"] = "uid-owner-warning";
+                                ownerEvent["metadata"] = metadata;
+                                ownerEvent["involvedObject"] = QJsonObject{{"uid", "uid-custom-widget"}, {"kind", "Widget"}, {"name", "custom-widget"}, {"namespace", "default"}};
+                                ownerEvent["reason"] = "OwnerFailed"; ownerEvent["message"] = "Owner controller could not update";
+                                document["items"] = QJsonArray{event, ownerEvent};
+                            }
                             if (scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_")) {
                                 auto second = event; auto metadata = second["metadata"].toObject(); metadata["name"] = "related-event-second"; metadata["uid"] = "uid-related-event-second";
                                 second["metadata"] = metadata; second["count"] = 12; second["reason"] = "Started"; second["message"] = "Second event message";
@@ -374,6 +436,14 @@ public:
                             auto metadata = object["metadata"].toObject();
                             if (metadata["name"] == "alpha") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-custom-widget"}, {"name", "custom-widget"}, {"kind", "Widget"}, {"apiVersion", "example.test/v1"}}};
                             if (metadata["name"] == "bravo") metadata["ownerReferences"] = QJsonArray{QJsonObject{{"uid", "uid-alpha"}, {"name", "alpha"}, {"kind", "Pod"}, {"apiVersion", "v1"}}};
+                            if (scenario == "inspector_related_table_links_messages" && metadata["name"] == "alpha") {
+                                const QJsonObject waiting{{"reason", "ImagePullBackOff"}, {"message", "Registry token missing"}};
+                                const QJsonObject container{{"name", "main"}, {"ready", false}, {"state", QJsonObject{{"waiting", waiting}}}};
+                                object["status"] = QJsonObject{{"phase", "Pending"}, {"containerStatuses", QJsonArray{container}}};
+                            }
+                            if (scenario == "inspector_related_table_links_messages" && metadata["name"] == "custom-widget")
+                                object["status"] = QJsonObject{{"conditions", QJsonArray{QJsonObject{{"type", "Ready"}, {"status", "False"},
+                                    {"reason", "OwnerError"}, {"message", "Controller rejected spec"}}}}};
                             if (scenario == "inspector_related_files" && metadata["name"] == "alpha")
                                 object["spec"] = QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "main"}}}}};
                             object["metadata"] = metadata; return object;
@@ -423,9 +493,12 @@ public:
                                     const auto containerName = "worker" + QString::number(container);
                                     if (metrics) containers.append(QJsonObject{{"name", containerName}, {"usage", QJsonObject{
                                         {"cpu", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2" : "500m"},
-                                        {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : index == 0 ? "2Gi" : "1024Mi"}}}});
-                                    else containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)},
-                                        {"resources", QJsonObject{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", "16Mi"}, {"ephemeral-storage", "1Gi"}}}}}});
+                                        {"memory", container > 0 || scenario == "table_zero" || scenario == "table_auto_zero" ? "0" : scenario == "table_overview_metric_rows" && index == 0 ? "91Mi" : index == 0 ? "2Gi" : "1024Mi"}}}});
+                                    else {
+                                        QJsonObject resources{{"requests", QJsonObject{{"cpu", "10m"}, {"memory", scenario == "table_overview_metric_rows" ? "7Mi" : "16Mi"}, {"ephemeral-storage", "1Gi"}}}};
+                                        if (scenario == "table_overview_metric_rows") resources["limits"] = QJsonObject{{"memory", "17Mi"}};
+                                        containers.append(QJsonObject{{"name", containerName}, {"image", scenario == "table_auto_image_literal" ? "-" : scenario == "table_overview_metric_rows" ? "registry.example/worker:v1" : "registry.example/" + QString(90, 'a') + ":" + QString::number(refresh)}, {"resources", resources}});
+                                    }
                                     states.append(QJsonObject{{"name", containerName}, {"ready", container < ready},
                                         {"restartCount", scenario == "table_auto_zero" ? 0 : container == 0 ? index == 0 ? 10 : 2 : 0}});
                                 }
@@ -519,6 +592,9 @@ public:
                         || ((scenario == "coalesce" || scenario == "detail_expiry") && path.startsWith("/api/v1/namespaces/default/pods/"))
                         || ((scenario == "hidden_followup" || scenario == "shutdown_pending") && path == "/api") ? 400 : 0;
                     if (scenario=="map_preview_deferred" && path=="/api/v1/pods" && url.query().contains("continue=") && authorization=="Bearer inactive-token") delay=1800;
+                    if (scenario=="shell_health_initial" && path=="/api/v1/pods") delay=1800;
+                    if (scenario=="shell_health_tab_switch_inflight_large" && path=="/api/v1/pods" && authorization=="Bearer local-test-token") delay=1800;
+                    if ((scenario=="initial_load_navigation" || scenario=="initial_map_resume") && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
                     QTimer::singleShot(delay, this, [this, live, response, delay] {
                         if (live && live->state() == QAbstractSocket::ConnectedState) {
                             const bool accepted = live->write(response) == response.size();
@@ -687,7 +763,7 @@ bool execute(const QString& requestedScenario) {
     bool mapRadar=requestedScenario.startsWith("radar_map_");
     const bool initialFit=requestedScenario=="radar_autofit" || requestedScenario=="radar_map_autofit";
     const QString scenario=initialFit ? QStringLiteral("radar_initial_population") : mapRadar ? "radar_"+requestedScenario.mid(10) : requestedScenario;
-    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
+    const bool twoContexts = scenario == "session_tabs_controls" || scenario == "context_alias_tab_menu" || scenario == "context_chooser_tabs" || (scenario.startsWith("map_") && scenario!="map_source_enter") || scenario == "shell_map_session" || scenario == "view_restore_scope" || scenario == "quick_open_open_context" || scenario == "table_cluster_switch" || scenario == "initial_load_navigation" || scenario.startsWith("shell_health_tab_switch") || scenario == "radar_session" || scenario == "radar_island_session" || scenario == "inactive_sync" || scenario == "inspector_secret_session" || scenario.startsWith("inspector_edit_session_") || scenario.startsWith("inspector_edit_open_context_") || scenario.startsWith("inspector_edit_map_history_");
     QTemporaryDir temporary;
     if (!temporary.isValid()) return false;
     KubernetesBoundary server(scenario == "shell_metric_zero" ? "radar_quick_info" : scenario == "radar_context_identity" ? "radar_initial_population" : scenario == "shell_search_events" || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario.startsWith("view_restore_event_") ? "filter_event_message" : scenario == "query_event" ? "find_event" : scenario);
@@ -696,7 +772,7 @@ bool execute(const QString& requestedScenario) {
     QFile file(source);
     if (!file.open(QIODevice::WriteOnly)) return false;
     QByteArray credentials = "token: local-test-token";
-    if (scenario == "relative_token") {
+    if (scenario == "relative_token" || scenario == "map_export_relative") {
         QFile token(temporary.filePath("token"));
         if (!token.open(QIODevice::WriteOnly) || token.write("local-test-token\n") < 0) return false;
         credentials = "tokenFile: token";
@@ -721,6 +797,22 @@ bool execute(const QString& requestedScenario) {
     file.close();
     const auto profile = temporary.filePath("profile");
     QDateTime reference = QDateTime::currentDateTimeUtc();
+    if (scenario == "map_managed_provenance" || scenario == "map_group_scroll_desktop") {
+        podlord::KubeconfigStore store(profile);
+        if (!std::holds_alternative<podlord::SourceSnapshot>(store.importFile(source))) return false;
+        const int workloadCount = scenario == "map_group_scroll_desktop" ? 12 : 1;
+        for (int index = 0; index < workloadCount; ++index) {
+            const auto suffix = index ? "-" + QByteArray::number(index) : QByteArray{};
+            const auto name = "workload" + suffix;
+            const auto host = "wlc" + suffix + ".example";
+            const QByteArray managed = "apiVersion: v1\nkind: Config\nclusters:\n- name: " + name
+                + "\n  cluster: {server: https://" + host + ":6443}\nusers:\n- name: " + name
+                + "\n  user: {token: managed-test-token}\ncontexts:\n- name: " + name
+                + "\n  context: {cluster: " + name + ", user: " + name + "}\n";
+            if (!std::holds_alternative<podlord::SourceSnapshot>(store.importManagedKubeconfig(
+                source, "local", "uid-" + name, QString::fromUtf8(host) + ":6443", managed))) return false;
+        }
+    }
     if (scenario == "settings_invalid") {
         if (!QDir().mkpath(profile)) return false;
         QFile invalid(QDir(profile).filePath("read-settings.json"));
@@ -749,6 +841,70 @@ bool execute(const QString& requestedScenario) {
         std::fprintf(stderr,"UI render surface unavailable: platform=%s window=%d visible=%d exposed=%d active=%d\n",
             qPrintable(QGuiApplication::platformName()),bool(window),window && window->isVisible(),window && window->isExposed(),window && window->isActive());
         return false;
+    }
+    if (scenario == "map_managed_provenance") {
+        const auto grouped = [&] {
+            if (workspace.contexts().size() != 4 || workspace.mapContexts().size() != 4) return false;
+            const auto rows = workspace.mapContexts();
+            const auto manager = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "local";
+            });
+            if (manager == rows.cend() || manager->toMap().value("groupRole") != "management") return false;
+            const auto group = manager->toMap().value("groupId").toString();
+            const auto workload = std::find_if(rows.cbegin(), rows.cend(), [&](const auto& value) {
+                const auto row = value.toMap();
+                return row.value("context") == "workload" && row.value("groupId") == group
+                    && row.value("groupRole") == "workload";
+            });
+            if (group.isEmpty() || workload == rows.cend()) return false;
+            auto* heading = item(window, "contextGroup_" + group);
+            auto* title = item(window, "mapTitle");
+            auto* managerCard = item(window, "contextMapCard_" + manager->toMap().value("id").toString());
+            auto* workloadCard = item(window, "contextMapCard_" + workload->toMap().value("id").toString());
+            return heading && title && heading->mapToScene({0, 0}).y()
+                    >= title->mapToScene({0, title->height()}).y()
+                && managerCard && workloadCard && managerCard->height() > 80 && workloadCard->height() > 80
+                && qAbs(managerCard->mapToScene({0, 0}).y() - workloadCard->mapToScene({0, 0}).y()) < 1
+                && workloadCard->mapToScene({0, 0}).x() > managerCard->mapToScene({0, 0}).x()
+                && displayedWithin(window->contentItem(), managerCard);
+        };
+        if (!waitFor(grouped) || !saveShellFrame(window, scenario, item(window, "contextMapCards"))) return false;
+        const auto rows = workspace.mapContexts();
+        const auto workload = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "workload";
+        });
+        if (workload == rows.cend()) return false;
+        const auto destination = temporary.filePath("managed.kubeconfig");
+        if (!workspace.exportKubeconfig(workload->toMap().value("id").toString(), QUrl::fromLocalFile(destination))
+            || !waitFor([&] { return QFileInfo::exists(destination) || !workspace.sourceImportError().isEmpty(); })) return false;
+        QFile exported(destination);
+        if (!workspace.sourceImportError().isEmpty() || !exported.open(QIODevice::ReadOnly)) return false;
+        const auto content = exported.readAll();
+        return content.contains("current-context: workload") && content.contains("managed-test-token")
+            && !content.contains("local-test-token") && !content.contains("inactive-token");
+    }
+    if (scenario == "map_group_scroll_desktop") {
+        QString groupId;
+        const auto grouped = [&] {
+            if (workspace.contexts().size() != 15 || workspace.mapContexts().size() != 15) return false;
+            const auto rows = workspace.mapContexts();
+            const auto manager = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "local";
+            });
+            if (manager == rows.cend()) return false;
+            groupId = manager->toMap().value("groupId").toString();
+            auto* strip = item(window, "contextGroupCards_" + groupId);
+            return strip && strip->property("count").toInt() == 15
+                && strip->property("contentWidth").toReal() > strip->width();
+        };
+        if (!waitFor(grouped)) return false;
+        auto* strip = item(window, "contextGroupCards_" + groupId);
+        const auto center = strip->mapToScene({strip->width() / 2, strip->height() / 2});
+        QWheelEvent wheel(center, window->mapToGlobal(center.toPoint()), QPoint(-1200, 0), QPoint(-2400, 0),
+            Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(window, &wheel);
+        return waitFor([&] { return strip->property("contentX").toReal() > 0; })
+            && saveShellFrame(window, scenario, item(window, "contextMapCards"));
     }
     QString renameStage = "source import/open";
     bool renamePassed = false;
@@ -793,6 +949,16 @@ bool execute(const QString& requestedScenario) {
             file.close(); urls.append(QUrl::fromLocalFile(second));
         }
         if (scenario == "drop_config_repeat") urls.append(urls.first());
+        if (scenario == "drop_config_folder") {
+            const auto folder = temporary.filePath("dropped-folder");
+            if (!QDir().mkpath(folder + "/nested")) return false;
+            QFile configFile(folder + "/nested/config");
+            QFile notes(folder + "/notes.txt");
+            if (!configFile.open(QIODevice::WriteOnly) || configFile.write(yaml) != yaml.size()
+                || !notes.open(QIODevice::WriteOnly) || notes.write("Unrelated notes.\n") < 0) return false;
+            configFile.close(); notes.close();
+            urls = {QUrl::fromLocalFile(folder)};
+        }
         if (scenario == "drop_config_missing") urls={QUrl::fromLocalFile(temporary.filePath("missing.yaml"))};
         if (scenario.startsWith("drop_config_locked_")) {
             const auto invalidPath=temporary.filePath("invalid.yaml");
@@ -811,11 +977,14 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("drop_config_locked_")) return enter.isAccepted() && drop.isAccepted()
             && waitFor([&] { return !workspace.busy() && workspace.error().contains("lock"); })
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty();
-        const int expected = scenario == "drop_config_invalid" || scenario == "drop_config_missing" ? 0 : scenario == "drop_config_multiple" ? 2 : 1;
+        const bool invalidDrop = scenario == "drop_config_invalid" || scenario == "drop_config_missing";
+        const int expected = invalidDrop ? 0 : scenario == "drop_config_multiple" ? 2 : 1;
         return enter.isAccepted() && drop.isAccepted()
             && waitFor([&] { return !workspace.busy() && workspace.contexts().size() == expected; })
             && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty()
-            && workspace.sourceImportNotice().isEmpty() && workspace.error().isEmpty()
+            && workspace.sourceImportNotice().isEmpty()
+            && (invalidDrop ? !workspace.sourceImportError().isEmpty() && workspace.error() == workspace.sourceImportError()
+                            : workspace.error().isEmpty())
             && (!item(window,"mapBack") || !item(window,"mapBack")->isVisible())
             && (!item(window,"mapForward") || !item(window,"mapForward")->isVisible());
     }
@@ -934,9 +1103,15 @@ bool execute(const QString& requestedScenario) {
         bool admitted = false;
         if (!QMetaObject::invokeMethod(&workspace, "quickImportFile", Q_RETURN_ARG(bool, admitted), Q_ARG(QString, input))
             || !admitted || !waitFor([&] { return !workspace.busy(); })) return false;
-        if (scenario == "quick_file_invalid" || scenario == "quick_file_missing")
-            return workspace.contexts().isEmpty() && workspace.tabs().isEmpty() && workspace.error().isEmpty()
-                && workspace.sourceImportNotice().isEmpty() && server.requests.isEmpty();
+        if (scenario == "quick_file_invalid" || scenario == "quick_file_missing") {
+            if (!workspace.contexts().isEmpty() || !workspace.tabs().isEmpty()
+                || workspace.error().isEmpty() || workspace.sourceImportError() != workspace.error()
+                || !workspace.sourceImportNotice().isEmpty() || !server.requests.isEmpty()) return false;
+            if (scenario == "quick_file_missing") return true;
+            if (!QFile::remove(path) || !QFile::copy(source, path) || !workspace.quickImportFile(path)) return false;
+            return waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 1; })
+                && workspace.error().isEmpty() && workspace.sourceImportError().isEmpty();
+        }
         return workspace.contexts().size() == 1 && workspace.tabs().isEmpty() && workspace.currentSession().isEmpty()
             && server.requests.isEmpty();
     }
@@ -1193,6 +1368,292 @@ bool execute(const QString& requestedScenario) {
         std::fprintf(stderr,"Imported context unavailable: %s\n",qPrintable(workspace.error())); return false;
     }
     if (scenario.startsWith("map_") && !click(window,item(window,"mapWorkspaceButton"))) return false;
+    if (scenario == "map_auto_group" || scenario == "map_auto_group_phone") {
+        if (scenario == "map_auto_group_phone") window->resize(320, 640);
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        const auto origin = temporary.filePath("workload.config");
+        const auto importWorkload = [&](const QByteArray& serverUrl) {
+            const auto content = QByteArray("apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: ")
+                + serverUrl + "}\nusers:\n- name: workload\n  user: {token: local-workload-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: workload}\n";
+            return workspace.importText(origin, QString::fromUtf8(content))
+                && waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; });
+        };
+        if (!importWorkload("https://wlc.example:6443") || !workspace.mapContexts().last().toMap().value("groupId").toString().isEmpty()) return false;
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() >= 4; }, 15000)
+            || !workspace.showMapOverview()) return false;
+        const auto grouped = [&] {
+            const auto rows = workspace.mapContexts();
+            const auto group = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "management";
+            });
+            if (group == rows.cend()) return false;
+            const auto groupId = group->toMap().value("groupId").toString();
+            return std::count_if(rows.cbegin(), rows.cend(), [&](const auto& value) {
+                return value.toMap().value("groupId").toString() == groupId;
+            }) == 4;
+        };
+        const auto groupId = [&] { for (const auto& value : workspace.mapContexts())
+            if (value.toMap().value("groupRole") == "management") return value.toMap().value("groupId").toString();
+            return QString{};
+        };
+        if (!waitFor([&] { return grouped() && item(window, "contextGroup_" + groupId())
+            && item(window, "contextMapCards")->property("count").toInt() >= 2; })) return false;
+        if (!importWorkload("https://other.example:6443")
+            || !waitFor([&] { const auto rows = workspace.mapContexts(); return std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return !value.toMap().value("groupId").toString().isEmpty();
+            }); })) return false;
+        const bool ready = importWorkload("https://wlc.example:6443") && waitFor([&] {
+            auto* group = item(window, "contextGroup_" + groupId());
+            auto* grid = item(window, "contextMapCards");
+            auto* strip = item(window, "contextGroupCards_" + groupId());
+            return grouped() && group && group->isVisible() && grid && grid->property("count").toInt() >= 2
+                && strip && strip->property("count").toInt() == 4
+                && (scenario != "map_auto_group_phone" || (grid->width() <= 320
+                    && strip->property("contentWidth").toReal() > strip->width()
+                    && displayedWithin(window->contentItem(), group)));
+        });
+        if (!ready) {
+            auto* grid = item(window, "contextMapCards");
+            auto* group = item(window, "contextGroup_" + groupId());
+            std::fprintf(stderr, "Group layout: width=%g height=%g content=%g y=%g groupY=%g\n",
+                grid ? grid->width() : -1, grid ? grid->height() : -1,
+                grid ? grid->property("contentHeight").toReal() : -1, grid ? grid->property("contentY").toReal() : -1,
+                group ? group->mapToScene(QPointF{}).y() : -1);
+        }
+        if (!ready) return false;
+        if (scenario == "map_auto_group_phone") {
+            auto* strip = item(window, "contextGroupCards_" + groupId());
+            const auto center = strip->mapToScene({strip->width() / 2, strip->height() / 2});
+            QWheelEvent wheel(center, window->mapToGlobal(center.toPoint()), QPoint(-240, 0), QPoint(-480, 0),
+                Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(window, &wheel);
+            if (!waitFor([&] { return strip->property("contentX").toReal() > 0; })) return false;
+        }
+        return saveShellFrame(window,scenario,item(window,"contextMapCards"));
+    }
+    if (scenario == "map_auto_import_scoped_refresh") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; }, 15000)) {
+            std::fprintf(stderr, "Scoped management import failed: contexts=%lld, error=%s\n", static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        const auto workload = [&] {
+            for (const auto& value : workspace.contexts()) if (value.toMap().value("context") == "workload") return value.toMap().value("id").toString();
+            return QString{};
+        }();
+        if (workload.isEmpty() || std::none_of(server.requests.cbegin(), server.requests.cend(), [](const auto& request) {
+                return request.startsWith("/apis/cluster.x-k8s.io/v1beta1/namespaces/default/clusters");
+            })) {
+            std::fprintf(stderr, "Scoped CAPI list missing: workload=%s, requests=%s\n", qPrintable(workload), qPrintable(server.requests.join(',')));
+            return false;
+        }
+        server.managedSecretVersion = 2;
+        reference = reference.addSecs(901);
+        if (!workspace.refresh()) return false;
+        const bool updated = waitFor([&] {
+            const auto result = podlord::KubeconfigStore(profile).connection(workload);
+            return std::holds_alternative<podlord::ClusterConnection>(result)
+                && std::get<podlord::ClusterConnection>(result).authorization == "Bearer managed-test-token-2";
+        }, 15000);
+        if (!updated) std::fprintf(stderr, "Scoped WLC credentials stayed old: requests=%s\n", qPrintable(server.requests.join(',')));
+        return updated;
+    }
+    if (scenario == "map_auto_import_new" || scenario == "map_auto_retire_new") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; }, 15000)) return false;
+        const auto rows = workspace.contexts();
+        const auto workload = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "workload";
+        });
+        if (workload == rows.cend() || workload->toMap().value("source") != "Cluster API") return false;
+        const auto connected = podlord::KubeconfigStore(profile).connection(workload->toMap().value("id").toString());
+        const bool imported = std::holds_alternative<podlord::ClusterConnection>(connected)
+            && std::get<podlord::ClusterConnection>(connected).authorization == "Bearer managed-test-token-1"
+            && workspace.showMapOverview() && waitFor([&] { const auto rows = workspace.mapContexts(); return std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            }); });
+        if (!imported || scenario == "map_auto_import_new") return imported;
+        const auto catalog = podlord::KubeconfigStore(profile).list();
+        if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
+        QStringList owned;
+        for (const auto& source : std::get<podlord::SourceCatalog>(catalog).sources)
+            if (source.sourcePath.startsWith("managed://capi/")) owned.append(source.ownedPath);
+        if (owned.isEmpty()) return false;
+        server.managedClusterPresent = false;
+        reference = reference.addSecs(901);
+        return workspace.activate(workspace.currentSession()) && workspace.refresh() && waitFor([&] { const auto rows = workspace.contexts(); return !workspace.busy() && rows.size() == 3
+            && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("source") == "Cluster API";
+            }); }, 15000) && std::all_of(owned.cbegin(), owned.cend(), [](const auto& path) { return !QFileInfo::exists(path); });
+    }
+    if (scenario == "map_auto_import" || scenario == "map_auto_retire" || scenario == "map_auto_uid_rotation" || scenario == "map_auto_import_invalid"
+        || scenario == "map_auto_import_forbidden" || scenario == "map_auto_import_mismatch") {
+        const auto management = workspace.contexts().first().toMap().value("id").toString();
+        const auto manual = QByteArray("apiVersion: v1\nkind: Config\nclusters:\n- name: workload\n  cluster: {server: https://wlc.example:6443}\nusers:\n- name: manual\n  user: {token: local-workload-token}\ncontexts:\n- name: workload\n  context: {cluster: workload, user: manual}\n");
+        if (!workspace.importText(temporary.filePath("workload.config"), QString::fromUtf8(manual))
+            || !waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4; })) return false;
+        const auto manualContext = [&] {
+            const auto rows = workspace.contexts();
+            const auto found = std::find_if(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("context") == "workload";
+            });
+            return found == rows.cend() ? QVariantMap{} : found->toMap();
+        };
+        const auto original = manualContext().value("id").toString();
+        if (original.isEmpty()) return false;
+        if (!workspace.renameSourceContext(original, "My workload")
+            || !waitFor([&] { return !workspace.busy() && manualContext().value("name") == "My workload"; })) return false;
+        if (!workspace.openContext(management) || !waitFor([&] { return !workspace.loading() && workspace.totalResourceCount() >= 4; }, 15000)) return false;
+        const auto secretPath = QString("/api/v1/namespaces/default/secrets/workload-kubeconfig");
+        if (!waitFor([&] { return std::any_of(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+            return path.startsWith(secretPath);
+        }); }, 15000)) return false;
+        if (scenario != "map_auto_import" && scenario != "map_auto_retire" && scenario != "map_auto_uid_rotation") {
+            if (!waitFor([&] { return !workspace.sourceImportError().isEmpty(); })) return false;
+            return workspace.contexts().size() == 4 && manualContext().value("id") == original
+                && !workspace.sourceImportError().contains("/bin/echo") && !server.requests.join('\n').contains("managed-test-token");
+        }
+        if (!waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4
+            && manualContext().value("id") != original
+            && manualContext().value("name") == "My workload"; }, 15000)) {
+            std::fprintf(stderr, "Managed import state: busy=%d count=%lld error=%s sourceError=%s idChanged=%d alias=%s\n",
+                workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                qPrintable(workspace.sourceImportError()), manualContext().value("id") != original,
+                qPrintable(manualContext().value("name").toString()));
+            for (const auto& value : workspace.contexts()) {
+                const auto row = value.toMap();
+                std::fprintf(stderr, "Context: %s %s %s current=%d\n", qPrintable(row.value("id").toString()),
+                    qPrintable(row.value("name").toString()), qPrintable(row.value("source").toString()), row.value("current").toBool());
+            }
+            return false;
+        }
+        const auto connected = podlord::KubeconfigStore(profile).connection(original);
+        if (const auto* failure = std::get_if<podlord::Failure>(&connected)) {
+            std::fprintf(stderr, "Managed context did not replace the previous credentials: %s\n", qPrintable(failure->message)); return false;
+        }
+        if (std::get<podlord::ClusterConnection>(connected).authorization != "Bearer managed-test-token-1"
+            || server.requests.join('\n').contains("managed-test-token")) return false;
+        if (scenario == "map_auto_uid_rotation") {
+            server.managedClusterUid = "uid-workload-rotated";
+            server.managedSecretVersion = 2;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto current = podlord::KubeconfigStore(profile).connection(original);
+                return !workspace.busy() && workspace.contexts().size() == 4
+                    && manualContext().value("name") == "My workload"
+                    && std::holds_alternative<podlord::ClusterConnection>(current)
+                    && std::get<podlord::ClusterConnection>(current).authorization == "Bearer managed-test-token-2";
+            }, 15000)) {
+                std::fprintf(stderr, "Managed UID rotation failed: busy=%d count=%lld error=%s sourceError=%s reads=%lld\n",
+                    workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                    qPrintable(workspace.sourceImportError()), static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) { return path.startsWith(secretPath); })));
+                return false;
+            }
+            const auto catalog = podlord::KubeconfigStore(profile).list();
+            if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
+            QStringList owned;
+            for (const auto& source : std::get<podlord::SourceCatalog>(catalog).sources)
+                if (source.sourcePath.startsWith("managed://capi/")) owned.append(source.ownedPath);
+            if (owned.size() != 1) return false;
+            server.managedClusterPresent = false;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto rows = workspace.contexts();
+                return !workspace.busy() && rows.size() == 4 && manualContext().value("id") == original
+                    && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                        return value.toMap().value("source") == "Cluster API";
+                    });
+            }, 15000)) {
+                std::fprintf(stderr, "Managed UID retirement failed: busy=%d count=%lld error=%s sourceError=%s\n",
+                    workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(workspace.error()),
+                    qPrintable(workspace.sourceImportError()));
+                return false;
+            }
+            const auto restored = podlord::KubeconfigStore(profile).connection(original);
+            const bool passed = std::holds_alternative<podlord::ClusterConnection>(restored)
+                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token"
+                && std::all_of(owned.cbegin(), owned.cend(), [](const auto& path) { return !QFileInfo::exists(path); });
+            if (!passed) std::fprintf(stderr, "Managed UID retirement left generated snapshots or credentials: snapshots=%lld, restored=%d\n",
+                static_cast<long long>(owned.size()), std::holds_alternative<podlord::ClusterConnection>(restored));
+            return passed;
+        }
+        if (scenario == "map_auto_retire") {
+            server.managedClusterPresent = false;
+            reference = reference.addSecs(901);
+            if (!workspace.refresh() || !waitFor([&] {
+                const auto rows = workspace.contexts();
+                return !workspace.busy() && rows.size() == 4 && manualContext().value("id") == original
+                    && manualContext().value("name") == "My workload"
+                    && std::none_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                        return value.toMap().value("source") == "Cluster API";
+                    });
+            }, 15000)) return false;
+            const auto restored = podlord::KubeconfigStore(profile).connection(original);
+            return std::holds_alternative<podlord::ClusterConnection>(restored)
+                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token";
+        }
+        server.managedSecretVersion = 2;
+        reference = reference.addSecs(901);
+        if (!workspace.refresh() || !waitFor([&] {
+            const auto refreshed = podlord::KubeconfigStore(profile).connection(original);
+            return std::holds_alternative<podlord::ClusterConnection>(refreshed)
+                && std::get<podlord::ClusterConnection>(refreshed).authorization == "Bearer managed-test-token-2";
+        }, 15000)) {
+            std::fprintf(stderr, "Managed rotation unavailable: secretReads=%lld busy=%d error=%s sourceError=%s\n",
+                static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                    return path.startsWith(secretPath);
+                })), workspace.busy(), qPrintable(workspace.error()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        auto changedManagement = yaml;
+        changedManagement.replace("local-test-token", "rotated-management-token");
+        if (!waitFor([&] { return !workspace.busy(); }, 15000)
+            || !workspace.importText(source, QString::fromUtf8(changedManagement))
+            || !waitFor([&] {
+                return !workspace.busy() && workspace.contexts().size() == 4
+                    && std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                        return path.startsWith(secretPath);
+                    }) >= 3;
+            }, 15000)) {
+            std::fprintf(stderr, "Management credential refresh: secretReads=%lld count=%lld busy=%d error=%s\n",
+                static_cast<long long>(std::count_if(server.requests.cbegin(), server.requests.cend(), [&](const auto& path) {
+                    return path.startsWith(secretPath);
+                })), static_cast<long long>(workspace.contexts().size()), workspace.busy(), qPrintable(workspace.error()));
+            return false;
+        }
+        const bool stable = waitFor([&] { return !workspace.busy() && workspace.contexts().size() == 4
+            && manualContext().value("name") == "My workload"; }, 15000)
+            && workspace.showMapOverview() && waitFor([&] { const auto rows = workspace.mapContexts(); return std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            }); })
+            && saveShellFrame(window, scenario, item(window,"contextMapCards"));
+        const auto mapRows = workspace.mapContexts();
+        if (!stable) std::fprintf(stderr, "Managed final state: busy=%d count=%lld alias=%s grouped=%d map=%d\n",
+            workspace.busy(), static_cast<long long>(workspace.contexts().size()), qPrintable(manualContext().value("name").toString()),
+            int(std::any_of(mapRows.cbegin(), mapRows.cend(), [](const auto& value) {
+                return value.toMap().value("groupRole") == "workload";
+            })), workspace.mapOverview());
+        return stable;
+    }
+    if (scenario == "map_card_close") {
+        const auto context = workspace.contexts().first().toMap().value("id").toString();
+        if (!workspace.openContext(context) || !waitFor([&] { return !workspace.busy() && !workspace.loading() && !workspace.currentSession().isEmpty(); }, 15000)
+            || !workspace.showMapOverview()) { std::fprintf(stderr, "Card close setup: busy=%d loading=%d session=%s map=%d\n",
+                workspace.busy(), workspace.loading(), qPrintable(workspace.currentSession()), workspace.mapOverview()); return false; }
+        auto* card = item(window, "contextMapCard_" + context);
+        auto* close = item(window, "closeMapContext_" + context);
+        if (!card || !close || !close->isVisible() || card->property("openSessionId").toString().isEmpty()
+            || !saveShellFrame(window, scenario)) { std::fprintf(stderr, "Card close state: card=%p close=%p visible=%d tab=%s count=%lld\n",
+                static_cast<void*>(card), static_cast<void*>(close), close && close->isVisible(),
+                qPrintable(card ? card->property("openSessionId").toString() : QString{}), static_cast<long long>(workspace.tabs().size())); return false; }
+        const bool closed = click(window, close) && waitFor([&] {
+            auto* button = item(window, "closeMapContext_" + context);
+            return workspace.tabs().isEmpty() && button && !button->isVisible();
+        });
+        if (!closed) std::fprintf(stderr, "Card close action: busy=%d tabs=%lld error=%s\n", workspace.busy(),
+            static_cast<long long>(workspace.tabs().size()), qPrintable(workspace.error()));
+        return closed;
+    }
     if (scenario=="map_overview" || scenario=="map_alias" || scenario=="map_phone" || scenario=="map_landscape") {
         if (!waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })) return false;
         if (scenario=="map_phone") window->resize(320,640);
@@ -1203,14 +1664,15 @@ bool execute(const QString& requestedScenario) {
                 && card && displayedWithin(window->contentItem(),card); })) return false;
         if (scenario=="map_landscape") {
             if (!waitFor([&] { return window->contentItem()->width()==640 && window->contentItem()->height()==320; }) || window->grabWindow().isNull()) return false;
-            auto* cards=item(window,"contextMapCards"); auto* rename=item(window,"renameMapContext_"+first["id"].toString());
+            auto* cards=item(window,"contextMapCards"); auto* rename=item(window,"openMapContextOptions_"+first["id"].toString());
             const QRectF viewport(cards->mapToScene(QPointF{}),cards->size());
             if (!rename || !viewport.contains(rename->mapRectToScene(rename->boundingRect()))) {
                 saveShellFrame(window,scenario); std::fprintf(stderr,"Landscape context caption/action clipped: viewport=%gx%g\n",cards->width(),cards->height()); return false;
             }
         }
         if (scenario=="map_alias") {
-            if (!click(window,item(window,"renameMapContext_"+first["id"].toString()))
+            if (!click(window,item(window,"openMapContextOptions_"+first["id"].toString()))
+                || !click(window,item(window,"renameMapContext_"+first["id"].toString()))
                 || !waitFor([&] { return item(window,"sourceAliasName") && item(window,"sourceAliasName")->isVisible(); })
                 || !type(window,item(window,"sourceAliasName"),"My development")
                 || !click(window,item(window,"saveSourceAlias"))
@@ -1249,7 +1711,8 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] { return !workspace.busy() && !workspace.loading() && !workspace.currentSession().isEmpty()
                 && workspace.workspacePage() == "map" && !workspace.mapOverview() && workspace.totalResourceCount() == 3; });
         }
-        if (!click(window, item(window, "renameMapContext_" + context))
+        if (!click(window, item(window, "openMapContextOptions_" + context))
+            || !click(window, item(window, "renameMapContext_" + context))
             || !waitFor([&] { return item(window, "sourceAliasName")->isVisible(); })) return false;
         auto* card = item(window, "contextMapCard_" + context);
         const auto point = card->mapToScene(QPointF(12, 12)).toPoint();
@@ -1259,12 +1722,175 @@ bool execute(const QString& requestedScenario) {
             && waitFor([&] { return !item(window, "sourceAliasName")->isVisible(); })
             && workspace.currentSession().isEmpty() && server.requests.isEmpty();
     }
+    if (scenario == "map_export" || scenario == "map_export_relative") {
+        const auto choices = workspace.contexts();
+        const auto selected = std::find_if(choices.cbegin(), choices.cend(), [](const auto& value) {
+            return value.toMap().value("context") == "local";
+        });
+        if (selected == choices.cend()) return false;
+        const auto context = selected->toMap().value("id").toString();
+        if (!workspace.renameSourceContext(context, "My workload")
+            || !waitFor([&] { const auto rows = workspace.contexts(); return !workspace.busy() && std::any_of(rows.cbegin(), rows.cend(), [](const auto& value) {
+                return value.toMap().value("name") == "My workload";
+            }); })
+            || !workspace.showMapOverview()
+            || !waitFor([&] { return item(window, "openMapContextOptions_" + context) != nullptr; })
+            || !click(window, item(window, "openMapContextOptions_" + context))
+            || !click(window, item(window, "exportMapContext_" + context))) {
+            std::fprintf(stderr,"Export setup: name=%s busy=%d overview=%d options=%p export=%p error=%s\n",
+                qPrintable(workspace.contexts().first().toMap().value("name").toString()), workspace.busy(), workspace.mapOverview(),
+                static_cast<void*>(item(window, "openMapContextOptions_" + context)),
+                static_cast<void*>(item(window, "exportMapContext_" + context)), qPrintable(workspace.error()));
+            return false;
+        }
+        auto* dialog = window->findChild<QObject*>("exportKubeconfigDialog");
+        if (!dialog || !waitFor([&] { return dialog->property("visible").toBool(); })
+            || !dialog->property("selectedFile").toUrl().toLocalFile().endsWith("/My workload.kubeconfig")) {
+            std::fprintf(stderr,"Export dialog: dialog=%p visible=%d selected=%s\n", static_cast<void*>(dialog),
+                dialog && dialog->property("visible").toBool(), qPrintable(dialog ? dialog->property("selectedFile").toUrl().toString() : QString{}));
+            return false;
+        }
+        const auto destination = QUrl::fromLocalFile(temporary.filePath("exported.kubeconfig"));
+        if (!dialog->setProperty("selectedFile", destination)
+            || !QMetaObject::invokeMethod(dialog, "accepted", Qt::DirectConnection)
+            || !waitFor([&] { return QFileInfo::exists(destination.toLocalFile()) || !workspace.sourceImportError().isEmpty(); })) {
+            std::fprintf(stderr,"Export save: dialog=%p file=%d error=%s\n", static_cast<void*>(dialog),
+                QFileInfo::exists(destination.toLocalFile()), qPrintable(workspace.sourceImportError()));
+            return false;
+        }
+        QFile exported(destination.toLocalFile()), original(source);
+        if (!workspace.sourceImportError().isEmpty() || !exported.open(QIODevice::ReadOnly)
+            || !original.open(QIODevice::ReadOnly)) {
+            std::fprintf(stderr,"Export read: error=%s exported=%s original=%s\n",qPrintable(workspace.sourceImportError()),
+                qPrintable(exported.errorString()),qPrintable(original.errorString())); return false;
+        }
+        const auto content = exported.readAll();
+        const bool valid = content.contains("current-context: local") && content.contains("local-test-token")
+            && !content.contains("inactive-token") && !content.contains("staging:")
+            && !content.contains("tokenFile:")
+            && (QFileInfo(destination.toLocalFile()).permissions()
+                & (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther | QFileDevice::WriteOther)) == 0
+            && original.readAll() == yaml && server.requests.isEmpty();
+        if (!valid) std::fprintf(stderr,"Export validation: selected=%d token=%d extra=%d tokenFile=%d permission=%d\n",
+            content.contains("current-context: local"), content.contains("local-test-token"), content.contains("inactive-token"),
+            content.contains("tokenFile:"), QFileInfo(destination.toLocalFile()).permissions().toInt());
+        if (!valid) return false;
+        if (!workspace.exportKubeconfig(context, QUrl::fromLocalFile(source))
+            || !waitFor([&] { return !workspace.sourceImportError().isEmpty(); })) return false;
+        QFile unchanged(source);
+        if (!unchanged.open(QIODevice::ReadOnly) || unchanged.readAll() != yaml) return false;
+        const auto unavailable = QUrl::fromLocalFile(temporary.filePath("missing/export.kubeconfig"));
+        return workspace.exportKubeconfig(context, unavailable)
+            && waitFor([&] { return !workspace.sourceImportError().isEmpty(); })
+            && !QFileInfo::exists(unavailable.toLocalFile());
+    }
     if (scenario == "settings_invalid") return waitFor([&] { return !workspace.error().isEmpty() && !workspace.busy(); })
         && workspace.currentSession().isEmpty() && workspace.tabs().isEmpty() && server.requests.isEmpty();
     const auto openAction=scenario.startsWith("map_") || scenario=="gke_prompt" || workspace.appStore() ? "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString() : "contextMapCard_"+workspace.contexts().first().toMap()["id"].toString();
     if (!workspace.setWorkspacePage("map")) return false;
+    QElapsedTimer loadClock;
+    qint64 lastLoadTick = 0, longestLoadGap = 0;
+    bool prematureCompletion = false;
+    QTimer loadHeartbeat;
+    if (scenario.startsWith("radar_loading_")) {
+        loadClock.start();
+        loadHeartbeat.setInterval(10);
+        QObject::connect(&loadHeartbeat, &QTimer::timeout, &workspace, [&] {
+            const auto now = loadClock.elapsed();
+            longestLoadGap = std::max(longestLoadGap, now - lastLoadTick);
+            lastLoadTick = now;
+            prematureCompletion = prematureCompletion || (workspace.syncLoading() && workspace.loadingProgress() >= 1);
+        });
+        loadHeartbeat.start();
+    }
     if (!waitFor([&] { auto* action=item(window,openAction); return action && action->isVisible(); }) || !click(window,item(window,openAction))) { std::fputs("Open context action unavailable.\n",stderr); return false; }
     if (!waitFor([&] { return !workspace.busy() && !workspace.currentSession().isEmpty(); },10000)) return false;
+    if (scenario == "shell_health_initial") {
+        if (!workspace.setWorkspacePage("resources")) return false;
+        auto* health = item(window, "sessionHealthSegments");
+        if (!health || item(window, "sessionLoadProgress") || !waitFor([&] { return workspace.syncLoading() && workspace.loadingProgress() < 1
+            && health->isVisible() && health->height() < health->parentItem()->height(); })) {
+            std::fprintf(stderr, "Initial health: strip=%d sync=%d total=%d progress=%f\n", bool(health),
+                workspace.syncLoading(), workspace.totalResourceCount(), workspace.loadingProgress());
+            return false;
+        }
+        if (!waitFor([&] { auto* healthy = item(window, "sessionHealth_healthy");
+            return workspace.syncLoading() && workspace.healthSummary().value("total").toInt() > 0
+                && healthy && healthy->height() > 0 && healthy->height() < health->parentItem()->height(); }, 8000)) {
+            qWarning() << "Colored partial health" << workspace.syncLoading() << workspace.healthSummary() << health->height();
+            return false;
+        }
+        if (!saveShellFrame(window, "health-loading")) return false;
+        return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == 3; }, 15000)
+            && qAbs(health->height() - health->parentItem()->height()) < 1
+            && health->isVisible() && item(window, "sessionHealth_healthy")
+            && item(window, "sessionHealth_healthy")->height() > 0
+            && item(window, "sessionHealth_healthy")->property("color").value<QColor>() == QColor("#7DFFC3")
+            && saveShellFrame(window, "health-ready");
+    }
+    if (scenario.startsWith("shell_health_tab_switch")) {
+        if (!workspace.setWorkspacePage("resources")) return false;
+        auto* health = item(window, "sessionHealthSegments");
+        const bool inflight = scenario == "shell_health_tab_switch_inflight_large";
+        const int expected = scenario.endsWith("_large") ? 301 : 3;
+        if (!health || !waitFor([&] {
+            return inflight ? workspace.syncLoading() && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const QString& path) {
+                return path.startsWith("/api/v1/pods");
+            }) && workspace.totalResourceCount() < expected
+                : !workspace.syncLoading() && workspace.totalResourceCount() == expected;
+        }, 15000)) {
+            qWarning() << "First health load" << workspace.syncLoading() << workspace.totalResourceCount(); return false;
+        }
+        const auto first = workspace.currentSession();
+        const auto currentContext = workspace.sessionConfiguration(first).value("contextId").toString();
+        const auto contexts = workspace.contexts();
+        const auto other = std::find_if(contexts.cbegin(), contexts.cend(), [&](const auto& value) {
+            return value.toMap().value("id").toString() != currentContext;
+        });
+        if (other == contexts.cend() || !workspace.openContext(other->toMap().value("id").toString())) {
+            qWarning() << "Open second health context" << workspace.error(); return false;
+        }
+        if (!waitFor([&] { return !workspace.busy() && !workspace.syncLoading()
+                && workspace.currentSession() != first && workspace.totalResourceCount() == expected; }, 15000)) {
+            qWarning() << "Second health load" << workspace.busy() << workspace.syncLoading()
+                << workspace.currentSession() << first << workspace.totalResourceCount() << workspace.error(); return false;
+        }
+        if (!workspace.activate(first) || !waitFor([&] { return workspace.currentSession() == first; })) {
+            qWarning() << "Restore first health context" << workspace.busy() << workspace.currentSession() << first;
+            return false;
+        }
+        return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == expected; }, 15000)
+            && workspace.initialSyncComplete() && health->isVisible()
+            && qAbs(health->height() - health->parentItem()->height()) < 1
+            && item(window, "sessionHealth_healthy") && item(window, "sessionHealth_healthy")->height() > 0;
+    }
+    if (scenario == "initial_load_navigation") {
+        const auto first = workspace.currentSession();
+        if (!waitFor([&] { return workspace.loading() && server.requests.contains("/api"); })
+            || !click(window, item(window, "settingsWorkspaceButton"))
+            || workspace.workspacePage() != "settings") return false;
+        if (!workspace.openContext(workspace.contexts().last().toMap()["id"].toString())
+            || !waitFor([&] { return !workspace.busy() && workspace.currentSession() != first
+                && workspace.totalResourceCount() > 0 && server.authorizations.contains("Bearer inactive-token"); }, 15000)) return false;
+        if (!click(window, item(window, "activateSession_" + first))) return false;
+        return waitFor([&] { return !workspace.busy() && workspace.currentSession() == first
+            && workspace.workspacePage() == "settings" && workspace.totalResourceCount() > 0
+            && server.authorizations.contains("Bearer local-test-token"); }, 15000);
+    }
+    if (scenario == "initial_map_resume") {
+        const auto session = workspace.currentSession();
+        if (!waitFor([&] { return workspace.loading() && server.requests.contains("/api"); })
+            || !click(window, item(window, "mapOverview")) || !workspace.mapOverview()) return false;
+        if (!waitFor([&] { return server.delayedReadDelivered && !workspace.loading(); }, 5000)
+            || !workspace.activate(session)) return false;
+        reference = reference.addSecs(2);
+        const bool recovered = waitFor([&] { return !workspace.mapOverview() && workspace.totalResourceCount() == 3
+            && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const auto& path) { return path.startsWith("/api/v1/pods?"); })
+            && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const auto& path) { return path.startsWith("/apis/example.test/v1/widgets?"); }); }, 15000);
+        if (!recovered) std::fprintf(stderr, "Map resume: rows=%d loading=%d requests=%s\n", workspace.totalResourceCount(),
+            workspace.loading(), qPrintable(server.requests.join(',')));
+        return recovered;
+    }
     if (scenario == "hidden_followup") {
         if (!waitFor([&] { return server.requests.contains("/api"); })) return false;
         if (!click(window,item(window,"closeCurrentSession"))
@@ -1276,13 +1902,64 @@ bool execute(const QString& requestedScenario) {
         if (!waitFor([&] { return workspace.totalResourceCount() > 0 || !workspace.loading(); }, 15000)) return false;
         if (workspace.totalResourceCount() > 0 && !click(window,item(window,"resourcesWorkspaceButton"))) return false;
     }
-    if (scenario == "filters_all_resources") {
+    if (scenario == "shell_source_rebind" || scenario == "shell_source_rebind_invalid") {
+        const auto session = workspace.currentSession();
+        const auto importChanged = [&] {
+            if (!workspace.importFile(source) || !waitFor([&] {
+                return !workspace.busy() && workspace.sourceImportChoices().size() == 1;
+            }, 15000)) return false;
+            const auto choice = workspace.sourceImportChoices().first().toMap();
+            return workspace.resolveSourceImport({QVariantMap{{"candidateId", choice.value("candidateId")},
+                {"targetId", choice.value("targets").toList().first().toMap().value("id")}}});
+        };
+        if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
+        const auto oldCalls = server.authorizations.size();
+        QFile changed(source);
+        const bool invalid = scenario == "shell_source_rebind_invalid";
+        if (!changed.open(QIODevice::WriteOnly | QIODevice::Truncate)
+            || changed.write(invalid ? yaml.replace("user: local", "user: absent")
+                : yaml.replace("local-test-token", "replacement-token")) < 0) return false;
+        changed.close();
+        if (invalid) {
+            if (!importChanged() || !waitFor([&] { return !workspace.busy() && !workspace.error().isEmpty(); }, 15000)) return false;
+            QTest::qWait(100);
+            if (workspace.currentSession() != session || workspace.contexts().size() != 1
+                || server.authorizations.size() != oldCalls || workspace.refresh()) return false;
+            QFile repaired(source);
+            const auto replacement = QByteArray(yaml).replace("user: absent", "user: local")
+                .replace("local-test-token", "replacement-token");
+            if (!repaired.open(QIODevice::WriteOnly | QIODevice::Truncate)
+                || repaired.write(replacement) != replacement.size()) return false;
+            repaired.close();
+            const bool started = importChanged();
+            const bool restored = started && waitFor([&] {
+                return !workspace.busy() && !workspace.loading() && workspace.error().isEmpty()
+                    && server.authorizations.size() > oldCalls
+                    && server.authorizations.last() == "Bearer replacement-token"
+                    && workspace.totalResourceCount() == 2;
+            }, 15000);
+            if (!restored) qWarning() << "Recovery state:" << started << workspace.busy() << workspace.loading()
+                << workspace.error() << workspace.sourceImportError() << workspace.totalResourceCount()
+                << server.authorizations.size() << server.authorizations.last();
+            return restored;
+        }
+        if (!importChanged() || !waitFor([&] {
+            return !workspace.busy() && !workspace.loading() && server.authorizations.size() > oldCalls
+                && server.authorizations.contains("Bearer replacement-token") && workspace.totalResourceCount() == 2;
+        }, 15000)) return false;
+        const auto calls = server.requests.size();
+        return workspace.filter("alpha") && workspace.table()->rowCount() == 0 && server.requests.size() == calls
+            && workspace.currentSession() == session && workspace.tabs().size() == 1 && workspace.contexts().size() == 1
+            && std::all_of(server.authorizations.cbegin() + oldCalls, server.authorizations.cend(), [](const auto& value) {
+                return value == "Bearer replacement-token";
+            });
+    }
+    if (scenario == "filters_reset") {
         if (!waitFor([&] { return !workspace.loading() && !workspace.syncLoading() && workspace.totalResourceCount() == 3; })) return false;
         const auto calls = server.requests.size();
-        if (!click(window, item(window, "filterPreset")) || !item(window, "allResourceFilters")->property("highlighted").toBool()) return false;
+        if (item(window, "allResourceFilters") || item(window, "filterPreset")->isVisible()) return false;
         if (!workspace.filter("alpha") || !waitFor([&] { return workspace.table()->rowCount() == 1; })
-            || item(window, "allResourceFilters")->property("highlighted").toBool()
-            || !click(window, item(window, "allResourceFilters"))) return false;
+            || !click(window, item(window, "resetResourceFilters"))) return false;
         return waitFor([&] { return workspace.table()->rowCount() == 3 && workspace.filterText().isEmpty(); })
             && server.requests.size() == calls && workspace.resourceFieldFilters().isEmpty();
     }
@@ -1342,12 +2019,14 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario=="map_menu_remove") {
             if (!workspace.showMapOverview()
+                || !click(window,item(window,"openMapContextOptions_"+context))
                 || !waitFor([&] { return item(window,"removeMapContext_"+context); })
                 || !click(window,item(window,"removeMapContext_"+context))
                 || !waitFor([&] { auto* dialog=window->findChild<QObject*>("sourceRemovalDialog"); return dialog && dialog->property("opened").toBool(); })
                 || workspace.sourceRemoval().value("contextId")!=context
                 || !click(window,item(window,"cancelSourceRemoval"))) return false;
             if (!workspace.sourceRemoval().isEmpty() || workspace.contexts().size()!=3
+                || !click(window,item(window,"openMapContextOptions_"+context))
                 || !click(window,item(window,"removeMapContext_"+context))
                 || !click(window,item(window,"confirmSourceRemoval"))) return false;
             return waitFor([&] { return !workspace.busy() && workspace.contexts().size()==2 && workspace.tabs().isEmpty(); })
@@ -1370,7 +2049,7 @@ bool execute(const QString& requestedScenario) {
                 const auto offset=cards->property("contentY").toDouble();
                 if (offset<=0) return false;
                 if (scenario=="map_overview_stability") {
-                    if (!workspace.setResourceLimit("1") || window->grabWindow().isNull()) return false;
+                    if (!workspace.filter("alpha") || window->grabWindow().isNull()) return false;
                     const auto after=cards->property("contentY").toDouble();
                     if (std::abs(after-offset)>1) {
                         std::fprintf(stderr,"Cached-view change reset context-card scroll: before=%g after=%g\n",offset,after); return false;
@@ -1395,7 +2074,7 @@ bool execute(const QString& requestedScenario) {
             const auto changed=yaml+"\n# new source revision\n";
             if (!original.open(QIODevice::WriteOnly|QIODevice::Truncate) || original.write(changed)!=changed.size()) return false;
             original.close();
-            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==6; })
+            if (!workspace.refreshSources() || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })
                 || !workspace.showMapOverview() || !waitFor([&] { return item(window,"contextMapCards"); })) return false;
             window->grabWindow();
             if (item(window,"contextMapCards")->property("count").toInt()!=3) {
@@ -1422,12 +2101,17 @@ bool execute(const QString& requestedScenario) {
                     if (!blocked.open(QIODevice::WriteOnly) || blocked.write("not a directory")<0) return false;
                 }
                 if (!workspace.reload() || !waitFor([&] { return !workspace.busy(); })
-                    || workspace.property("mapCatalogWarning").toString().isEmpty() || !text(window,"mapTitle").contains("older")
+                    || workspace.property("mapCatalogWarning").toString().isEmpty() || text(window,"mapTitle") != "Contexts"
+                    || !item(window,"mapSourceWarning")->isVisible()
+                    || (scenario == "map_catalog_warning" && item(window,"errorMessage")->isVisible())
                     || item(window,"contextMapCards")->property("count").toInt()!=3) return false;
                 const auto rows=window->property("mapContexts").toList();
                 if (rows.size()!=3 || !click(window,item(window,"contextMapCard_"+rows.first().toMap()["id"].toString()))
                     || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })
                     || workspace.property("mapCatalogWarning").toString().isEmpty() || !workspace.showMapOverview()) return false;
+                if (!click(window,item(window,"mapSourceWarning"))
+                    || !waitFor([&] { auto* list=item(window,"settingsSourceList"); return workspace.workspacePage()=="settings" && list && list->isVisible(); })
+                    || !workspace.showMapOverview()) return false;
                 if (scenario=="map_catalog_warning") {
                     if (!owned.open(QIODevice::WriteOnly|QIODevice::Truncate) || owned.write(record)!=record.size()) return false;
                     owned.close();
@@ -1445,13 +2129,13 @@ bool execute(const QString& requestedScenario) {
                 restoredEngine.load(QUrl("qrc:/podlord/Main.qml"));
                 if (restoredEngine.rootObjects().isEmpty()) return false;
                 auto* restoredWindow=qobject_cast<QQuickWindow*>(restoredEngine.rootObjects().first());
-                return waitFor([&] { auto* cards=item(restoredWindow,"contextMapCards"); return !restored.busy() && restored.contexts().size()==3 && cards && cards->property("count").toInt()==0; })
+                return waitFor([&] { auto* cards=item(restoredWindow,"contextMapCards"); return !restored.busy() && restored.contexts().isEmpty() && cards && cards->property("count").toInt()==0; })
                     && restored.currentSession()==session && restored.mapOverview() && server.requests.size()==calls;
             }
             if (!waitFor([&] { return QDateTime::currentDateTimeUtc()>latest.importedAt; })
                 || !original.open(QIODevice::WriteOnly|QIODevice::Truncate) || original.write(yaml)!=yaml.size()) return false;
             original.close();
-            if (!workspace.importFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==6; })) return false;
+            if (!workspace.refreshSources() || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==3; })) return false;
             const auto savedSessions=podlord::SessionStore(profile).list();
             if (!std::holds_alternative<podlord::SessionCatalog>(savedSessions)) return false;
             const auto& sessions=std::get<podlord::SessionCatalog>(savedSessions).sessions;
@@ -1492,7 +2176,7 @@ bool execute(const QString& requestedScenario) {
                     <<"camera before"<<camera<<"camera after"<<workspace.radarView();
                 saveShellFrame(window,QStringLiteral("map-search-failure")); return false;
             };
-            if (!workspace.setResourceLimit("1") || !click(window,item(window,"workspaceSearchButton"))
+            if (!click(window,item(window,"workspaceSearchButton"))
                 || !type(window,item(window,"resourceFilter"),"Pod")
                 || !waitFor([&] { return workspace.resourceCount()==2 && text(window,"queryMatchCount")=="0/2"; })
                 || workspace.radarView()!=camera) return failed("typed query retains camera and selection");
@@ -1500,7 +2184,7 @@ bool execute(const QString& requestedScenario) {
                 || !click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })
                 || !click(window,item(window,"queryNext")) || !waitFor([&] { return text(window,"queryMatchCount")=="1/2"; })
                 || !click(window,item(window,"queryPrevious")) || !waitFor([&] { return text(window,"queryMatchCount")=="2/2"; })) return failed("explicit result navigation");
-            return workspace.displayedResourceCount()==1 && workspace.radarView()!=camera && workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
+            return workspace.displayedResourceCount()==2 && workspace.radarView()!=camera && workspace.inspectorPath().isEmpty() && server.requests.size()==calls;
         }
         if (scenario=="map_preview_expiry") {
             QFile before(path); if (!before.open(QIODevice::ReadOnly)) return false;
@@ -1919,6 +2603,8 @@ bool execute(const QString& requestedScenario) {
             return waitFor([&] {
                 auto* cpu = podlord::test::visibleItem(window->contentItem(),"pulse_cpu");
                 auto* memory = podlord::test::visibleItem(window->contentItem(),"pulse_memory");
+                auto* cpuBar = podlord::test::visibleItem(window->contentItem(),"pulse_cpu_bar");
+                auto* memoryBar = podlord::test::visibleItem(window->contentItem(),"pulse_memory_bar");
                 auto* cpuValue = item(window,"pulse_cpu_usage");
                 auto* memoryValue = item(window,"pulse_memory_usage");
                 auto* cpuGlyph = podlord::test::visibleItem(window->contentItem(),"pulse_cpu_glyph");
@@ -1927,9 +2613,10 @@ bool execute(const QString& requestedScenario) {
                     && cpuValue && memoryValue && !cpuValue->property("truncated").toBool() && !memoryValue->property("truncated").toBool()
                     && cpuValue->implicitWidth() <= cpuValue->width()+1 && memoryValue->implicitWidth() <= memoryValue->width()+1
                     && cpuGlyph && memoryGlyph && cpuGlyph->property("kind")=="Cpu" && memoryGlyph->property("kind")=="Memory"
+                    && cpuBar && !memoryBar
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_storage")
                     && !podlord::test::visibleItem(window->contentItem(),"pulse_nodes")
-                    && qAbs(cpu->width()-memory->width())<.5;
+                    && cpu->width() >= memory->width();
             }) && saveShellFrame(window,scenario) && server.requests.size()==calls;
         }
         if (scenario.startsWith("shell_map")) {
@@ -1939,8 +2626,7 @@ bool execute(const QString& requestedScenario) {
                 return click(window, item(window, name));
             };
             if (scenario == "shell_map_footer") {
-                if (!workspace.setResourceLimit("1")
-                    || !waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
+                if (!waitFor([&] { return text(window,"resourceMatchCount")=="visible: 3/3"; })
                     || !selectView("mapWorkspaceButton")
                     || !waitFor([&] { return text(window,"resourceMatchCount")=="matches: 3/3"; })) return false;
                 for (const auto& query:{QString("alpha"),QString("no-matching-resource"),QString{}}) {
@@ -1950,12 +2636,12 @@ bool execute(const QString& requestedScenario) {
                     })) return false;
                 }
                 if (!workspace.setWorkspacePage("events")
-                    || !waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
+                    || !waitFor([&] { return text(window,"resourceMatchCount")=="visible: 3/3"; })
                     || !workspace.setWorkspacePage("map")
                     || !waitFor([&] { return text(window,"resourceMatchCount")=="matches: 3/3"; })
                     || !selectView("resourcesWorkspaceButton")) return false;
-                return waitFor([&] { return text(window,"resourceMatchCount")=="visible: 1/3"; })
-                    && workspace.currentSession()==session && workspace.resourceLimit()==1 && server.requests.size()==calls;
+                return waitFor([&] { return text(window,"resourceMatchCount")=="visible: 3/3"; })
+                    && workspace.currentSession()==session && server.requests.size()==calls;
             }
             if (!workspace.filter("alpha") || !selectView("mapWorkspaceButton")) return false;
             if (!waitFor([&] { return (workspace.workspacePage()=="map" && !workspace.mapOverview())
@@ -2023,14 +2709,14 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "shell_footer_reference") {
             if (text(window, "resourceMatchCount") != "visible: 3/3"
-                || text(window, "syncStatus") != QString("API: %1/min  Synced: 0s ago").arg(calls)) return false;
+                || text(window, "syncStatus") != QString("API: %1/min").arg(calls)) return false;
             reference = reference.addSecs(59);
             if (!workspace.filter("alpha") || text(window, "resourceMatchCount") != "visible: 1/3"
-                || text(window, "syncStatus") != QString("API: %1/min  Synced: 59s ago").arg(calls)) return false;
+                || text(window, "syncStatus") != QString("API: %1/min").arg(calls)) return false;
             reference = reference.addSecs(1);
-            if (!workspace.filter("") || text(window, "syncStatus") != "API: 0/min  Synced: 1m ago") return false;
+            if (!workspace.filter("") || text(window, "syncStatus") != "API: 0/min") return false;
             reference = reference.addSecs(3540);
-            return workspace.filter("alpha") && text(window, "syncStatus") == "API: 0/min  Synced: 1h ago" && server.requests.size() == calls;
+            return workspace.filter("alpha") && text(window, "syncStatus") == "API: 0/min" && server.requests.size() == calls;
         }
         if (scenario == "shell_footer_reopen") {
             const auto session = workspace.currentSession();
@@ -2043,7 +2729,7 @@ bool execute(const QString& requestedScenario) {
                     return !workspace.busy() && !workspace.loading() && !active.isEmpty() && active != session
                         && workspace.sessionConfiguration(active).value("contextId").toString() == context;
                 })) return false;
-            const bool preserved = text(window, "syncStatus") == QString("API: %1/min  Synced: 0s ago").arg(calls) && server.requests.size() == calls;
+            const bool preserved = text(window, "syncStatus") == QString("API: %1/min").arg(calls) && server.requests.size() == calls;
             if (!preserved) qWarning() << "Reopened context footer:" << text(window,"syncStatus") << "requests" << calls << server.requests;
             return preserved;
         }
@@ -2180,6 +2866,8 @@ bool execute(const QString& requestedScenario) {
             const int tooltipDelay = delay.evaluate().toInt();
             if (delay.hasError()) return failed("tooltip delay unavailable");
             QTest::qWait(qMax(0, tooltipDelay) + 1);
+            if (tooltipVisible(resources->property("text").toString()))
+                return failed("touch exposed an icon hover tooltip");
             QSignalSpy frame(window, &QQuickWindow::frameSwapped);
             window->update();
             if (!frame.wait(1000)) return failed("Resources touch frame unavailable");
@@ -2243,6 +2931,15 @@ bool execute(const QString& requestedScenario) {
                 && workspace.resourceCount() == 3 && server.requests.size() == calls;
         }
         if (scenario == "shell_search_demand" || scenario == "shell_search_events") {
+            if (scenario == "shell_search_events") {
+                const auto columns = workspace.eventColumns();
+                const auto time = std::find_if(columns.cbegin(), columns.cend(), [](const auto& value) {
+                    return value.toMap().value("id") == "eventTime";
+                });
+                if (time == columns.cend() || !time->toMap().value("visible").toBool()
+                    || workspace.eventSortColumnIndex() != 0 || workspace.eventSortDirection() != "DESC") return false;
+            }
+            const int unfilteredCount = scenario == "shell_search_events" ? 5 : 3;
             auto* input = item(window, "resourceFilter");
             if (input->isVisible() || !click(window, item(window, "workspaceSearchButton"))
                 || !waitFor([&] { return input->isVisible() && input->hasActiveFocus(); })
@@ -2252,14 +2949,14 @@ bool execute(const QString& requestedScenario) {
                     || !waitFor([&] { return item(window, "eventFilter")->isVisible() && workspace.totalEventCount() == 2; })
                     || !type(window, item(window, "eventFilter"), "Started") || workspace.eventCount() != 1
                     || !click(window, item(window, "workspaceSearchButton"))
-                    || item(window, "eventFilter")->isVisible() || item(window, "eventFilter")->hasActiveFocus() || workspace.eventFilterText() != "Started"
+                    || item(window, "eventFilter")->isVisible() || item(window, "eventFilter")->hasActiveFocus() || !workspace.eventFilterText().isEmpty()
                     || !click(window, item(window, "resourcesWorkspaceButton"))) return false;
             } else if (!click(window, item(window, "workspaceSearchButton"))) return false;
-            if (input->isVisible() || input->hasActiveFocus() || workspace.resourceCount() != 1 || !click(window, item(window, "workspaceSearchButton"))
-                || !waitFor([&] { return input->hasActiveFocus(); }) || text(window, "resourceFilter") != "\"alpha\"") return false;
+            if (input->isVisible() || input->hasActiveFocus() || workspace.resourceCount() != unfilteredCount || !click(window, item(window, "workspaceSearchButton"))
+                || !waitFor([&] { return input->hasActiveFocus(); }) || !workspace.filterText().isEmpty()) return false;
             QTest::keyClick(window, Qt::Key_Escape);
             auto* toggle = item(window, "workspaceSearchButton");
-            if (input->isVisible() || workspace.resourceCount() != 1 || !toggle->hasActiveFocus()) return false;
+            if (input->isVisible() || workspace.resourceCount() != unfilteredCount || !toggle->hasActiveFocus()) return false;
             const auto point = podlord::test::visibleBounds(window, toggle).center();
             const QPointF global = window->mapToGlobal(point.toPoint());
             for (int repeat = 0; repeat < 2; ++repeat) {
@@ -2271,22 +2968,25 @@ bool execute(const QString& requestedScenario) {
             QCoreApplication::sendPostedEvents(window);
             QCoreApplication::sendPostedEvents();
             return waitFor([&] { return !input->isVisible() && !input->hasActiveFocus() && !toggle->property("checked").toBool(); })
-                && workspace.resourceCount() == 1 && server.requests.size() == calls;
+                && workspace.resourceCount() == unfilteredCount && server.requests.size() == calls;
         }
         if (scenario == "shell_health_refresh") {
             auto* health = item(window, "sessionHealthSegments");
             if (!health || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
             if (!workspace.refresh()) return false;
-            if (!workspace.syncLoading() || workspace.loadingProgress() != 1) return false;
+            if (!workspace.syncLoading() || workspace.loadingProgress() != 1 || !workspace.initialSyncComplete()
+                || !health->isVisible() || qAbs(health->height() - health->parentItem()->height()) >= 1) return false;
             bool stable = true;
             if (!waitFor([&] {
-                stable = stable && workspace.loadingProgress() == 1 && qAbs(health->height() - health->parentItem()->height()) < 1;
+                stable = stable && health->isVisible()
+                    && qAbs(health->height() - health->parentItem()->height()) < 1;
                 return !workspace.syncLoading();
             }, 10000)) return false;
-            return stable && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
+            return stable && workspace.loadingProgress() == 1 && health->isVisible()
+                && workspace.totalResourceCount() == 3 && server.requests.size() > calls;
         }
         if (scenario == "shell_quick_invalid_existing") {
-            const auto session = workspace.currentSession(), notice = workspace.sourceImportNotice(), error = workspace.error();
+            const auto session = workspace.currentSession();
             const auto contexts = workspace.contexts();
             if (!workspace.filter("alpha")) return false;
             const auto path = temporary.filePath("invalid");
@@ -2295,7 +2995,8 @@ bool execute(const QString& requestedScenario) {
             invalid.close();
             if (!workspace.quickImportFile(path) || !waitFor([&] { return !workspace.busy(); })) return false;
             return workspace.currentSession() == session && workspace.contexts() == contexts && workspace.filterText() == "alpha"
-                && workspace.sourceImportNotice() == notice && workspace.error() == error && server.requests.size() == calls;
+                && workspace.sourceImportNotice().isEmpty() && !workspace.error().isEmpty()
+                && workspace.sourceImportError() == workspace.error() && server.requests.size() == calls;
         }
         if (scenario == "shell_quick_sessions" || scenario == "shell_quick_reopen" || scenario == "shell_quick_context") {
             const auto session = workspace.currentSession();
@@ -2523,10 +3224,42 @@ bool execute(const QString& requestedScenario) {
         }
         return true;
     }
-    const int expectedRows = scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
-    if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, workspace.resourceLimit())
-        && workspace.resourceCount() == expectedRows && !workspace.loading(); }, 10000)) {
-        std::fprintf(stderr, "Resource load failed: %s %s\n", qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage"))); return false;
+    const int expectedRows = scenario == "radar_loading_20k" ? 20000 : scenario == "radar_loading_large" ? 5001 : scenario == "radar_loading_incremental" ? 5000 : scenario == "radar_loading_responsive" ? 1905 : scenario.startsWith("radar_water_") ? 4 : scenario.startsWith("workload_") ? 1 : scenario == "radar_many" || (scenario == "radar_navigation_repeat" || scenario == "radar_navigation_water") || scenario == "radar_initial_population" || scenario == "radar_context_identity" || scenario == "radar_reopen_position" || scenario.startsWith("radar_pooled_") || scenario.startsWith("radar_accessibility_") || scenario == "columns_pin_all" ? 1001 : scenario == "inspector_related_workspace" || scenario.startsWith("inspector_related_event_") || scenario.startsWith("inspector_related_table_events_") || scenario == "inspector_related_table_links_messages" || scenario.startsWith("filter_event_") || scenario.startsWith("view_restore_event_") || scenario=="columns_isolation" || scenario=="shell_sidebar" || scenario == "inspector_related_alias_distinct" || scenario == "inspector_related_alias_reuse" ? 5 : scenario.startsWith("table_") || scenario == "inspector_custom_secret" || scenario.startsWith("inspector_related_") ? 4 : 3;
+    if (!waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == std::min(expectedRows, podlord::ResourceDisplayModel::PageSize)
+        && workspace.resourceCount() == expectedRows
+        && (scenario != "radar_loading_large" || workspace.totalResourceCount() == expectedRows)
+        && !workspace.loading(); }, scenario == "radar_loading_20k" ? 60000 : 10000)) {
+        std::fprintf(stderr, "Resource load failed: %s %s, total=%d, visible=%d, table=%d, loading=%d, requests=%lld\n",
+            qPrintable(text(window, "errorMessage")), qPrintable(text(window, "syncProblemMessage")), workspace.totalResourceCount(),
+            workspace.resourceCount(), item(window, "resourceTable")->property("rows").toInt(), workspace.loading(),
+            static_cast<long long>(server.requests.size())); return false;
+    }
+    if (scenario.startsWith("radar_loading_")) {
+        auto* radar = window->findChild<podlord::RadarIsland*>("resourceRadar");
+        if (!radar || !waitFor([&] {
+                const auto tiles = radar->tiles()->rowCount();
+                return radar->source() && radar->source()->rowCount() == expectedRows
+                    && (scenario == "radar_loading_20k" ? radar->focusResource(expectedRows - 1) : tiles == expectedRows);
+            }, scenario == "radar_loading_20k" ? 60000 : 10000)) {
+            std::fprintf(stderr, "Radar incomplete: tiles=%d, rows=%d, total=%d, elapsed=%lld ms.\n",
+                radar ? radar->tiles()->rowCount() : -1, workspace.resourceCount(), workspace.totalResourceCount(),
+                static_cast<long long>(loadClock.elapsed()));
+            return false;
+        }
+        loadHeartbeat.stop();
+        const auto loadingDuration = loadClock.elapsed();
+        const auto visibleTiles = radar->tiles()->rowCount();
+        const bool extremitiesReachable = scenario != "radar_loading_20k"
+            || radar->focusResource(0);
+        std::printf("Resource loading: %d rows in %lld ms, %d visible tiles, longest UI event gap %lld ms, premature completion %d.\n",
+            expectedRows, static_cast<long long>(loadingDuration), visibleTiles,
+            static_cast<long long>(longestLoadGap), prematureCompletion);
+        if (!extremitiesReachable) return false;
+        if (longestLoadGap > 100 || prematureCompletion) {
+            std::fprintf(stderr, "Resource loading blocked UI events for %lld ms.\n", static_cast<long long>(longestLoadGap));
+            return false;
+        }
+        return true;
     }
     if (scenario.startsWith("dock_")) {
         const bool compact = scenario=="dock_narrow" || scenario=="dock_compact";
@@ -2861,7 +3594,7 @@ bool execute(const QString& requestedScenario) {
                     int checked = 0;
                     for (const auto* name : {"workspaceSearchButton","quickOpenDropdown","workspaceActionsButton","toggleSidebar",
                         "renameCurrentSession","masterAudioMute","resetResourceFilters","filterPreset","saveFilterPreset",
-                        "reloadFilterPresets","importFilterPresets","renameFilterPreset","deleteFilterPreset",
+                        "renameFilterPreset","deleteFilterPreset",
                         "radarZoomOut","radarZoom","toggleLandscapeFilters"}) {
                         auto* control = item(window,name);
                         if (!control || !control->isVisible() || !control->property("glyph").isValid()
@@ -2945,7 +3678,7 @@ bool execute(const QString& requestedScenario) {
             window->resize(1440,920);
             return waitFor([&] { return radar->isVisible() && item(window,"resourceRadar")==radar
                 && radar->property("viewPose").toMap()==pose && workspace.currentSession()==session
-                && workspace.totalResourceCount()==total && workspace.filterText()=="alpha"; })
+                && workspace.totalResourceCount()==total && workspace.filterText().isEmpty(); })
                 && server.requests.size()==calls && saveShellFrame(window,scenario+"-restored");
         }
         if (scenario == "ui_density_single_tab") {
@@ -2959,46 +3692,23 @@ bool execute(const QString& requestedScenario) {
         }
         if (scenario == "ui_density_filters") {
             auto* reset = item(window,"resetResourceFilters");
-            auto* limit = item(window,"resourceLimit");
-            if (!reset || !limit || reset->isEnabled()) {
+            if (!reset || item(window,"resourceLimit") || reset->isEnabled()) {
                 std::fputs("Reset filters must be disabled for the unchanged default view.\n",stderr);
                 return false;
             }
-            limit->forceActiveFocus(Qt::TabFocusReason);
-            QTest::keyClick(window,Qt::Key_Up);
-            if (!waitFor([&] { return workspace.resourceLimit()==1025 && !workspace.busy() && reset->isEnabled(); })
-                || !click(window,reset)
-                || !waitFor([&] { return workspace.resourceLimit()==1024 && !reset->isEnabled(); })) return false;
             const auto originalSize = window->size();
             window->resize(402,778);
             if (!waitFor([&] { auto* toggle=item(window,"toggleSidebar"); return toggle
                 && !podlord::test::visibleBounds(window,toggle).isEmpty(); })
-                || !click(window,item(window,"toggleSidebar"))) { std::fputs("Row-limit drawer action unavailable.\n",stderr); return false; }
+                || !click(window,item(window,"toggleSidebar"))) { std::fputs("Filter drawer action unavailable.\n",stderr); return false; }
             auto* drawer = window->findChild<QObject*>("sidebarDrawer");
-            if (!drawer || !waitFor([&] { return drawer->property("opened").toBool(); })) { std::fputs("Row-limit drawer did not open.\n",stderr); return false; }
-            limit = item(window,"resourceLimit");
-            if (!limit || !limit->setProperty("locale",QVariant::fromValue(QLocale(QLocale::German,QLocale::Germany)))) { std::fputs("Row-limit locale was not available.\n",stderr); return false; }
-            for (const auto value : {QString("1024"),QString("5000")}) {
-                if (!workspace.setResourceLimit(value) || !waitFor([&] { return !workspace.busy(); })) { qWarning() << "Row-limit value rejected" << value << workspace.error(); return false; }
-                auto* number = limit->property("contentItem").value<QQuickItem*>();
-                if (!number || !waitFor([&] {
-                    return number->property("contentWidth").toReal() <= number->width()
-                        - number->property("leftPadding").toReal() - number->property("rightPadding").toReal() + 0.5;
-                })) {
-                    qWarning() << "Resource row limit is clipped:" << value << "control" << limit->width()
-                        << "text" << (number ? number->property("contentWidth").toReal() : 0)
-                        << "editor" << (number ? number->width() : 0);
-                    saveShellFrame(window,scenario+"-limit-clipped");
-                    return false;
-                }
-            }
+            if (!drawer || !waitFor([&] { return drawer->property("opened").toBool(); })) { std::fputs("Filter drawer did not open.\n",stderr); return false; }
             QTest::keyClick(window,Qt::Key_Escape);
-            if (!waitFor([&] { return !drawer->property("visible").toBool(); })) { std::fputs("Row-limit drawer did not close.\n",stderr); return false; }
+            if (!waitFor([&] { return !drawer->property("visible").toBool(); })) { std::fputs("Filter drawer did not close.\n",stderr); return false; }
             QSignalSpy restoredFrames(window,&QQuickWindow::frameSwapped);
             window->resize(originalSize);
             window->update();
             if (!waitFor([&] { return !restoredFrames.isEmpty(); })) return false;
-            if (!workspace.setResourceLimit("1024") || !waitFor([&] { return !workspace.busy(); })) { std::fputs("Row-limit default restoration failed.\n",stderr); return false; }
             if (!click(window, item(window, "sidebarField_cluster"))) { std::fputs("Cluster field is unavailable after restoring the window.\n",stderr); return false; }
             auto* editor = item(window, "fieldFiltersInline");
             auto* field = item(window, "sidebarField_cluster");
@@ -3007,8 +3717,20 @@ bool execute(const QString& requestedScenario) {
                 || window->findChild<QObject*>("fieldFiltersPopup") || item(window, "refreshFieldFilterValues")) { std::fputs("Inline cluster field did not open.\n",stderr); return false; }
             if (!saveShellFrame(window, scenario + "-open")
                 || !type(window, item(window, "fieldFilterExpression"), "__absent__")
-                || !waitFor([&] { return workspace.resourceCount() == 0; })
-                || !click(window, field) || !waitFor([&] { return !item(window, "fieldFiltersInline"); })
+                || !waitFor([&] { return workspace.resourceCount() == 0; })) return false;
+            auto* emptyRadar = item(window, "resourceRadar");
+            if (!emptyRadar) return false;
+            const auto image = window->grabWindow();
+            const auto center = emptyRadar->mapToScene(QPointF(emptyRadar->width() / 2, emptyRadar->height() / 2)) * image.devicePixelRatio();
+            int brightPixels = 0;
+            for (int y = qMax(0, int(center.y()) - 18); y < qMin(image.height(), int(center.y()) + 18); ++y)
+                for (int x = qMax(0, int(center.x()) - 90); x < qMin(image.width(), int(center.x()) + 90); ++x)
+                    if (image.pixelColor(x, y).lightness() > 120) ++brightPixels;
+            if (brightPixels > 10) {
+                std::fputs("Empty radar still paints resource labels.\n", stderr);
+                return false;
+            }
+            if (!click(window, field) || !waitFor([&] { return !item(window, "fieldFiltersInline"); })
                 || !click(window, field)) { std::fputs("Inline cluster filter could not roundtrip.\n",stderr); return false; }
             const auto* input = item(window, "fieldFilterExpression");
             const bool retained = input && input->property("text").toString() == "__absent__"
@@ -3070,6 +3792,33 @@ bool execute(const QString& requestedScenario) {
         if (!firstTab || !secondTab || qAbs(secondTab->mapToScene(QPointF{}).x()-firstTab->mapToScene(QPointF(firstTab->width(),0)).x())>1) {
             std::fputs("Session tabs do not form one contiguous strip.\n",stderr); return false;
         }
+        auto* strip = item(window, "sessionTabs");
+        window->resize(1920, 920);
+        if (!waitFor([&] {
+            const auto* header = item(window, "workspaceToolbar");
+            return header && strip && strip->isVisible()
+                && header->mapRectToScene(header->boundingRect()).contains(strip->mapRectToScene(strip->boundingRect()));
+        })) { std::fputs("Two session tabs did not use free toolbar space.\n", stderr); return false; }
+        const auto redundantTooltip = [&](QQuickItem* control) {
+            control->forceActiveFocus(Qt::TabFocusReason);
+            QTest::qWait(800);
+            QQmlExpression visible(qmlContext(control), control, QStringLiteral("ToolTip.visible"));
+            const auto value = visible.evaluate();
+            return visible.hasError() || value.toBool();
+        };
+        if (redundantTooltip(firstTab)) return false;
+        if (auto* filter = item(window, "sidebarField_cluster"); filter && filter->isVisible() && redundantTooltip(filter)) return false;
+        if (!saveShellFrame(window,scenario+"-header")) return false;
+        for (auto* tab : {firstTab, secondTab}) {
+            const auto* name = item(window, "closeSession_" + (tab == firstTab ? first : second));
+            const auto top = tab->mapToItem(strip, QPointF{}).y();
+            if (!name || qAbs(top) > 1 || qAbs(tab->height() - strip->height()) > 1
+                || qAbs(name->mapToItem(tab, QPointF(0, name->height() / 2)).y() - tab->height() / 2) > 1) {
+                std::fprintf(stderr, "Session tab or action is not vertically centered: top=%.1f, tab=%.1f, strip=%.1f.\n",
+                    top, tab->height(), strip->height());
+                return false;
+            }
+        }
         for (auto* tab:{firstTab,secondTab}) {
             auto* accessible=tab ? QAccessible::queryAccessibleInterface(tab) : nullptr;
             if (!accessible || accessible->role()!=QAccessible::PageTab || accessible->text(QAccessible::Name).isEmpty()) {
@@ -3086,6 +3835,8 @@ bool execute(const QString& requestedScenario) {
         const auto originalSize=window->size();
         window->resize(390,844);
         QTest::qWait(30);
+        if (strip->mapToScene(QPointF{}).y() < item(window,"workspaceToolbar")->mapToScene(QPointF(0,item(window,"workspaceToolbar")->height())).y())
+            return false;
         item(window,"activateSession_"+first)->forceActiveFocus(Qt::TabFocusReason);
         QTest::keyClick(window,Qt::Key_End);
         if (!waitFor([&] {
@@ -3519,14 +4270,6 @@ bool execute(const QString& requestedScenario) {
                 view->forceActiveFocus(); QTest::keyClick(window,Qt::Key_Return);
                 return waitFor([&] { return workspace.inspectorName()=="alpha" && workspace.canEditYaml(); });
             }
-            if (scenario == "table_auto_limit") {
-                return workspace.sortColumn(column("name")) && workspace.sortColumn(column("name"))
-                    && workspace.setResourceLimit("1") && waitFor([&] {
-                        return workspace.displayedResourceCount() == 1 && workspace.visibleResourceTable()->index(0,0).data() == "custom-widget" && !shown("cpu");
-                    }) && workspace.sortColumn(column("name")) && workspace.sortColumn(column("name"))
-                    && waitFor([&] { return workspace.visibleResourceTable()->index(0,0).data() == "alpha" && shown("cpu"); })
-                    && server.requests.size() == calls;
-            }
             if (scenario == "table_auto_refresh") {
                 if (!filter("alpha") || !shown("node") || !workspace.refresh()) return false;
                 return waitFor([&] { return !workspace.loading() && !shown("node") && !shown("image") && !shown("owner"); })
@@ -3639,9 +4382,9 @@ bool execute(const QString& requestedScenario) {
             else QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, start - QPoint(60, 0));
             if (!waitFor([&] { return view->property("contentX").toDouble() > previousX + 20 && !view->property("moving").toBool(); })
                 || !workspace.inspectorPath().isEmpty() || server.requests.size() != requests) {
-                std::fprintf(stderr, "Table drag: touch=%d before=%g after=%g moving=%d inspector=%s requests=%d/%d\n",
+                std::fprintf(stderr, "Table drag: touch=%d before=%g after=%g moving=%d inspector=%s requests=%lld/%lld\n",
                     touchInput, previousX, view->property("contentX").toDouble(), view->property("moving").toBool(),
-                    qPrintable(workspace.inspectorPath()), server.requests.size(), requests);
+                    qPrintable(workspace.inspectorPath()), static_cast<long long>(server.requests.size()), static_cast<long long>(requests));
                 return false;
             }
             if (!show(column("name"))) return false;
@@ -3837,15 +4580,83 @@ bool execute(const QString& requestedScenario) {
                 if (!workspace.refresh() || !waitFor([&] { return !workspace.loading() && text(window,"overview_ready")=="10/10"; })) return false;
                 return workspace.inspectorScope()==scope && qAbs(item(window,"overviewReadinessBar")->property("value").toDouble()-1)<0.001;
             }
-            if (scenario=="table_overview_metric_size") {
+            if (scenario=="table_overview_metric_rows") {
                 auto* scroll=item(window,"overviewScroll");
                 if (!podlord::test::scrollIntoView(window,scroll)) return false;
-                scroll->forceActiveFocus(); QTest::keyClick(window,Qt::Key_End);
-                const bool compact=waitFor([&] { const auto* metric=item(window,"metric_storage_bar"); return metric && metric->isVisible() && metric->height()>=6 && metric->height()<=10; });
-                if (!compact) {
-                    const auto* metric=item(window,"metric_storage_bar");
-                    std::fprintf(stderr,"Rendered metric: present=%d visible=%d height=%g rows=%d scroll=%g/%g\n",metric!=nullptr,metric && metric->isVisible(),metric ? metric->height() : -1,scroll->property("count").toInt(),scroll->property("contentY").toDouble(),scroll->property("contentHeight").toDouble());
+                qreal filterX=-1;
+                for (const auto& id : {"status", "ready", "owner"}) {
+                    int row=-1;
+                    const auto fields=workspace.overviewFields();
+                    for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")==id) { row=index; break; }
+                    if (row<0) return false;
+                    QQmlExpression reveal(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(row));
+                    reveal.evaluate();
+                    if (reveal.hasError() || !waitFor([&] {
+                        auto* action=item(window,"overviewFilter_"+QString(id));
+                        return action && action->isVisible() && !podlord::test::visibleBounds(window,action).isEmpty();
+                    })) return false;
+                    const auto x=item(window,"overviewFilter_"+QString(id))->mapToScene(QPointF{}).x();
+                    if (filterX>=0 && qAbs(x-filterX)>1) return false;
+                    filterX=x;
                 }
+                int cpuRow=-1;
+                const auto fields=workspace.overviewFields();
+                for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")=="metric_cpu") { cpuRow=index; break; }
+                if (cpuRow<0) return false;
+                QQmlExpression showCpu(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(cpuRow));
+                showCpu.evaluate();
+                if (showCpu.hasError() || !waitFor([&] {
+                    const auto* bar=item(window,"metric_cpu_bar");
+                    const auto* marker=item(window,"metric_cpu_marker_request");
+                    const auto* labels=item(window,"metric_cpu_marker_values");
+                    const auto* value=item(window,"overview_metric_cpu");
+                    return bar && bar->isVisible() && marker && marker->isVisible() && labels && labels->isVisible() && value
+                        && value->property("text").toString()=="2000 mCPU"
+                        && labels->property("text").toString().contains("request 100 mCPU")
+                        && marker->height()<=8
+                        && marker->mapToItem(bar,QPointF{}).x() >= -1
+                        && marker->mapToItem(bar,QPointF{}).x() < bar->width();
+                })) return false;
+                if (!saveShellFrame(window,scenario+"-cpu",item(window,"workspaceInspector"))) return false;
+                int memoryRow=-1;
+                for (int index=0; index<fields.size(); ++index) if (fields[index].toMap().value("id")=="metric_memory") { memoryRow=index; break; }
+                if (memoryRow<0) return false;
+                QQmlExpression showMemory(qmlContext(scroll),scroll,QString("positionViewAtIndex(%1, ListView.Center)").arg(memoryRow));
+                showMemory.evaluate();
+                if (showMemory.hasError() || !waitFor([&] {
+                    const auto* bar=item(window,"metric_memory_bar");
+                    const auto* marker=item(window,"metric_memory_marker_limit");
+                    const auto* labels=item(window,"metric_memory_marker_values");
+                    const auto* value=item(window,"overview_metric_memory");
+                    return bar && bar->isVisible() && marker && marker->isVisible() && labels && labels->isVisible() && value
+                        && value->property("text").toString()=="91 MiB"
+                        && labels->property("text").toString().contains("request 70 MiB · limit 170 MiB")
+                        && marker->height()<=8 && marker->mapToItem(bar,QPointF{}).x()+marker->width()<=bar->width();
+                }) || !saveShellFrame(window,scenario+"-memory",item(window,"workspaceInspector"))) return false;
+                QQmlExpression reveal(qmlContext(scroll),scroll,"positionViewAtIndex(count - 1, ListView.Center)");
+                reveal.evaluate();
+                if (reveal.hasError()) return false;
+                scroll->setProperty("currentIndex",scroll->property("count").toInt()-1);
+                const auto inViewport=[&](QQuickItem* row) {
+                    if (!row) return false;
+                    const auto center=row->mapToScene(QPointF(row->width()/2,row->height()/2));
+                    auto* inspector=item(window,"workspaceInspector");
+                    return scroll->mapRectToScene(scroll->boundingRect()).contains(center)
+                        && inspector && inspector->mapRectToScene(inspector->boundingRect()).contains(center);
+                };
+                for (int attempt=0; attempt<12 && !inViewport(item(window,"overview_metric_storage")); ++attempt) {
+                    const auto at=scroll->mapToScene(QPointF(scroll->width()/2,scroll->height()/2));
+                    QWheelEvent wheel(at,window->mapToGlobal(at.toPoint()),{},QPoint(0,-1200),Qt::NoButton,Qt::NoModifier,Qt::NoScrollPhase,false);
+                    QCoreApplication::sendEvent(window,&wheel);
+                    QTest::qWait(25);
+                }
+                const bool compact=waitFor([&] {
+                    const auto* row=item(window,"overview_metric_storage");
+                    const auto* bar=item(window,"metric_storage_bar");
+                    return row && row->isVisible() && inViewport(const_cast<QQuickItem*>(row))
+                        && row->property("text").toString().contains("request:")
+                        && (!bar || !bar->isVisible()) && row->height() < 80;
+                });
                 return compact && server.requests.size()==calls
                     && saveShellFrame(window,scenario,item(window,"workspaceInspector"));
             }
@@ -3921,8 +4732,8 @@ bool execute(const QString& requestedScenario) {
             if (scenario == "table_hover") QTest::mouseMove(window, cell->mapToScene({cell->width()/2, cell->height()/2}).toPoint()); else cell->forceActiveFocus();
             const bool shown = waitFor([&] {
                 for (auto* surface : QGuiApplication::allWindows()) if (auto* quick = qobject_cast<QQuickWindow*>(surface)) {
-                    const auto* tip = item(quick,"plainTipText");
-                    if (quick->isVisible() && tip && tip->isVisible() && tip->property("text").toString() == value(0,"image")) return true;
+                    const auto* tip = quick->findChild<QObject*>("resourceValueTooltip");
+                    if (quick->isVisible() && tip && tip->property("visible").toBool() && tip->property("text").toString() == value(0,"image")) return true;
                 }
                 return false;
             });
@@ -4163,10 +4974,13 @@ bool execute(const QString& requestedScenario) {
         const auto directory = temporary.filePath("partial-import");
         if (!QDir().mkpath(directory) || !QFile::copy(temporary.filePath("source.config"), directory + "/config")) return false;
         QFile broken(directory + "/broken.config");
-        const QByteArray invalid("not kubeconfig: [\n");
+        const QByteArray invalid("contexts: [\n");
         if (!broken.open(QIODevice::WriteOnly) || broken.write(invalid) != invalid.size()) return false;
         broken.close();
-        if (!workspace.importFile(directory) || !waitFor([&] { return !workspace.busy() && !workspace.sourceImportIssues().isEmpty(); })
+        if (!workspace.importFile(directory) || !waitFor([&] { return !workspace.busy() && workspace.sourceImportChoices().size() == 1; })) return false;
+        const auto choice = workspace.sourceImportChoices().first().toMap();
+        if (!workspace.resolveSourceImport({QVariantMap{{"candidateId", choice.value("candidateId")}, {"targetId", QString{}}}})
+            || !waitFor([&] { return !workspace.busy() && !workspace.sourceImportIssues().isEmpty(); })
             || !click(window, item(window, "settingsSourceImportDetails"))) return false;
         auto* details = window->findChild<QObject*>("sourceImportDetails");
         return details && waitFor([&] { return details->property("opened").toBool(); })
@@ -4212,7 +5026,7 @@ bool execute(const QString& requestedScenario) {
                 };
                 auto* map=item(window,"resourceRadar");
                 auto* pane=map;
-                while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+                while (pane && !pane->property("expanded").isValid()) pane=pane->parentItem();
                 geometry("source-sidebar",window->findChild<QQuickItem*>("workspaceSidebarHost"));
                 geometry("host",pane ? pane->parentItem() : nullptr);
                 geometry("pane",pane);
@@ -4281,7 +5095,7 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (scenario == "radar_overlay_navigation") {
             if (item(window,"resetRadar")) return failed("removed reset control must not exist");
-            const auto* navigation=item(window,"radarNavigationOverlay");
+            const auto* navigation=item(window,"radarNavigation");
             if (!navigation) return failed("radar navigation remains available");
             for (const auto* control : navigation->findChildren<QQuickItem*>())
                 if (control->isVisible() && control->property("text").toString().trimmed().endsWith('%'))
@@ -4300,7 +5114,18 @@ bool execute(const QString& requestedScenario) {
             if (mapRadar) for (const auto* name : {"mapOverview"}) {
                 auto* control = item(window, name);
                 if (!control || !control->isVisible() || !viewport.contains(control->mapRectToScene(control->boundingRect())))
-                    return failed("map history must overlay the drawing area");
+                    return failed("map navigation must overlay the drawing area");
+            }
+            if (mapRadar) {
+                auto* title = item(window, "mapTitle");
+                auto* overview = item(window, "mapOverview");
+                if (!title || !title->isVisible() || !overview || !viewport.contains(title->mapRectToScene(title->boundingRect())))
+                    return failed("map title must overlay the drawing area");
+                const auto context = workspace.sessionConfiguration(workspace.currentSession()).value("contextId").toString();
+                if (!workspace.renameSourceContext(context, QString(160, 'W')) || !waitFor([&] {
+                    return !workspace.busy() && title->property("text").toString().contains(QString(16, 'W'));
+                }) || title->mapRectToScene(title->boundingRect()).right() > overview->mapRectToScene(overview->boundingRect()).left())
+                    return failed("long map title must yield to navigation controls");
             }
             const auto before = radar->property("viewPose").toMap()["zoom"].toDouble();
             return click(window, item(window, "radarZoom"))
@@ -4358,7 +5183,7 @@ bool execute(const QString& requestedScenario) {
             auto* water=item(window,"radarWater");
             auto* info=window->findChild<QQuickItem*>("radarInfoPanel");
             auto* pane=radar;
-            while (pane && !pane->property("compact").isValid()) pane=pane->parentItem();
+            while (pane && !pane->property("expanded").isValid()) pane=pane->parentItem();
             const auto renderedFrame=[&] {
                 QSignalSpy frames(window,&QQuickWindow::frameSwapped);
                 window->update();
@@ -4380,11 +5205,10 @@ bool execute(const QString& requestedScenario) {
                 if (!requireDetails) return !info->isVisible();
                 const auto details=scene(info);
                 const auto* filterHost=item(window,"radarDetailsOverlayHost");
-                const auto* navigation=item(window,"radarNavigationOverlay");
                 return info->isVisible() && details.width()>0 && details.height()>0 && windowBounds.contains(details)
                     && podlord::test::visibleBounds(window,info).contains(details)
                     && (filterHost && filterHost->isVisible() ? scene(const_cast<QQuickItem*>(filterHost)).contains(details) && !map.intersects(details)
-                        : !map.intersects(details) || (mapRadar && map.contains(details) && navigation && !scene(const_cast<QQuickItem*>(navigation)).intersects(details)));
+                        : !map.intersects(details) || (mapRadar && map.contains(details)));
             };
             if (!geometryValid(false)) return failed("geometry/starved, clipped or reserved empty info");
             if (mapRadar) {
@@ -4637,13 +5461,16 @@ bool execute(const QString& requestedScenario) {
         if (scenario.startsWith("radar_info_panel")) {
             if (mapRadar && !waitFor([&] {
                 const auto* host=item(window,"resourceMapHost");
-                if (!host || !host->isVisible()) return false;
+                const auto* navigation=item(window,"radarNavigation");
+                if (!host || !host->isVisible() || !navigation || !navigation->isVisible()) return false;
                 const auto expected=host->mapRectToScene(QRectF(QPointF{},host->size())).adjusted(4,4,-4,-4);
                 const auto actual=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
-                return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.y()-expected.y())<=1
-                    && qAbs(actual.width()-expected.width())<=1 && qAbs(actual.height()-expected.height())<=1
+                const auto navigationBottom=navigation->mapRectToScene(navigation->boundingRect()).bottom();
+                return qAbs(actual.x()-expected.x())<=1 && qAbs(actual.width()-expected.width())<=1
+                    && qAbs(actual.bottom()-expected.bottom())<=1 && actual.top()>=expected.top()
+                    && actual.top()<navigationBottom && navigationBottom<actual.bottom()
                     && !window->grabWindow().isNull();
-            })) return failed("expanded map renders at its full visible size");
+            })) return failed("expanded map fills the space behind navigation");
             const auto initialViewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
             const auto first=radarPoint(radar,0);
             if (!first) return failed("first resource hover target");
@@ -4665,7 +5492,8 @@ bool execute(const QString& requestedScenario) {
                 if (!saveShellFrame(window,requestedScenario+"-pointer")) return false;
             }
             QTest::mouseMove(window,radar->mapToScene(QPointF(8,8)).toPoint());
-            QTest::qWait(60);
+            if (!waitFor([&] { const auto* details=item(window,"radarInfoPanel"); return !details || !details->isVisible(); }))
+                return failed("hover details close over empty map");
             auto* reader=item(window,"radarInfoScroll");
             if (!reader) return failed("external info reader");
             QTest::mouseMove(window,QPoint(1,1),0);
@@ -4683,9 +5511,8 @@ bool execute(const QString& requestedScenario) {
                 const auto popup=tip->mapRectToScene(QRectF(QPointF{},tip->size()));
                 const auto viewport=radar->mapRectToScene(QRectF(QPointF{},radar->size()));
                 const auto* filterHost=item(window,"radarDetailsOverlayHost");
-                const auto* navigation=item(window,"radarNavigationOverlay");
                 const bool outsideMap=filterHost && filterHost->isVisible() ? filterHost->mapRectToScene(QRectF(QPointF{},filterHost->size())).contains(popup) && !viewport.intersects(popup)
-                    : !viewport.intersects(popup) || (mapRadar && viewport.contains(popup) && navigation && !navigation->mapRectToScene(QRectF(QPointF{},navigation->size())).intersects(popup));
+                    : !viewport.intersects(popup) || (mapRadar && viewport.contains(popup));
                 return viewport==initialViewport && outsideMap && QRectF(0,0,window->width(),window->height()).contains(popup);
             })) {
                 const auto* host=item(window,"radarDetailsOverlayHost");
@@ -5476,7 +6303,7 @@ bool execute(const QString& requestedScenario) {
                     || !waitFor([&] { return item(window, "eventHeader_5") && item(window, "eventHeader_5")->width() > 0; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "3"; })) return false;
                 if (!click(window, item(window, "eventHeader_5")) || !waitFor([&] { return text(window, "eventCell_0_5") == "12"; })) return false;
-                return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == -1; }) && server.requests.size() == calls;
+                return click(window, item(window, "eventHeader_5")) && waitFor([&] { return text(window, "eventCell_0_5") == "3" && workspace.eventSortColumnIndex() == 0 && workspace.eventSortDirection() == "DESC"; }) && server.requests.size() == calls;
             }
             if (!type(window, item(window, "eventFilter"), "Scheduled") || !waitFor([&] { return workspace.eventTable()->rowCount() == 1 && text(window, "eventCell_0_2") == "Scheduled"; })) return false;
             if (server.requests.size() != calls) return false;
@@ -5536,18 +6363,98 @@ bool execute(const QString& requestedScenario) {
             const auto name = [&](const QString& suffix) { return (prefix + suffix).toUtf8(); };
             if (!click(window, item(window, event ? "inspectorEventsButton" : "inspectorLinksButton"))) return false;
             auto* model = workspace.property(event ? "inspectorEventTable" : "inspectorLinkTable").value<QAbstractItemModel*>();
-            if (!model || model->rowCount() != 2 || model->columnCount() != 5) return false;
+            if (!model || model->rowCount() != (event ? 2 : 3) || model->columnCount() != (event ? 5 : 7)) return false;
+            if (event && (workspace.inspectorEventSortColumn() != 0 || workspace.inspectorEventSortDirection() != "DESC"
+                || model->index(0, 2).data().toString() != "Scheduled")) return false;
             if (scenario.contains("_color_")) return eventColor("inspectorEventCell_0_1") && server.requests.size() == calls;
             const auto operation = scenario.section('_', -1);
-            const int column = event ? 3 : 0;
+            if (operation == "messages") {
+                auto* linkGrid = item(window, "inspectorLinks");
+                auto* table = item(window, "inspectorLinkTable");
+                if (!table) return false;
+                QQmlExpression reveal(qmlContext(table), table, "positionViewAtIndex(model.index(0, 5), TableView.Contain)");
+                reveal.evaluate();
+                if (reveal.hasError()) return false;
+                if (!waitFor([&] { return item(window, "inspectorLinkCell_0_5") != nullptr; })) return false;
+                auto* firstCell = item(window, "inspectorLinkCell_0_5");
+                if (!linkGrid || linkGrid->property("wrapColumn").toInt() != 6 || !firstCell) {
+                    std::fprintf(stderr, "Links layout: grid=%d wrap=%d first=%d\n", bool(linkGrid),
+                        linkGrid ? linkGrid->property("wrapColumn").toInt() : -1, bool(firstCell));
+                    return false;
+                }
+                const auto children = firstCell->childItems();
+                const auto label = std::find_if(children.cbegin(), children.cend(), [](auto* child) {
+                    return child->metaObject()->indexOfProperty("wrapMode") >= 0;
+                });
+                if (label == children.cend() || (*label)->property("wrapMode").toInt() != 0) {
+                    std::fprintf(stderr, "Links first cell wrap: child=%d mode=%d\n", label != children.cend(),
+                        label != children.cend() ? (*label)->property("wrapMode").toInt() : -1);
+                    return false;
+                }
+                if (event || model->index(0, 0).data().toString() != "alpha"
+                    || model->index(0, 1).data().toString() != QStringLiteral("●")
+                    || model->index(0, 5).data().toString() != "Pod/alpha"
+                    || !model->index(0, 6).data().toString().contains("Image registry was unreachable")
+                    || !model->index(0, 6).data().toString().contains("Registry token missing")
+                    || !model->index(0, 6).data().toString().contains(QLocale::system().toString(
+                        QDateTime::fromString("2026-10-03T10:00:00Z", Qt::ISODate).toLocalTime(), QLocale::ShortFormat))) return false;
+                const auto evidence = qEnvironmentVariable("PODLORD_LINKS_EVIDENCE");
+                if (!evidence.isEmpty()) window->grabWindow().save(evidence);
+                for (int row = 1; row < model->rowCount(); ++row)
+                    if (model->index(row, 0).data().toString() == "custom-widget")
+                        return model->index(row, 5).data().toString() == "Widget/custom-widget"
+                            && model->index(row, 6).data().toString().contains("Owner controller could not update")
+                            && model->index(row, 6).data().toString().contains("Controller rejected spec");
+                return false;
+            }
+            if (operation == "fill") {
+                auto columns = workspace.inspectorLinkColumns();
+                for (auto& value : columns) { auto column = value.toMap(); column["width"] = 70; value = column; }
+                if (!workspace.saveTableLayout("inspectorLink", columns)
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); })) { std::fprintf(stderr, "Link fill: save failed: %s\n", qPrintable(workspace.tableLayoutError())); return false; }
+                auto* table = item(window, "inspectorLinkTable");
+                window->setWidth(2400);
+                if (!table || !waitFor([&] { return table->width() > 1000 && table->property("contentWidth").toReal() >= table->width() - 1; })) {
+                    std::fprintf(stderr, "Link fill: wide viewport=%g content=%g error=%s\n", table ? table->width() : -1, table ? table->property("contentWidth").toReal() : -1, qPrintable(workspace.tableLayoutError())); return false;
+                }
+                window->setWidth(360);
+                if (!waitFor([&] { return table->width() > 0 && table->property("contentWidth").toReal() > table->width() + 1; })) {
+                    std::fprintf(stderr, "Link fill: narrow viewport=%g content=%g\n", table->width(), table->property("contentWidth").toReal()); return false;
+                }
+                table->setProperty("contentX", 120);
+                if (!waitFor([&] { return table->property("contentX").toReal() > 0; })) std::fprintf(stderr, "Link fill: scroll x=%g\n", table->property("contentX").toReal());
+                if (table->property("contentX").toReal() <= 0) return false;
+                auto pinnedOnly = workspace.inspectorLinkColumns();
+                for (auto& value : pinnedOnly) {
+                    auto column = value.toMap();
+                    column["visible"] = column["id"] == "resource";
+                    column["pinned"] = column["id"] == "resource";
+                    value = column;
+                }
+                if (!workspace.saveTableLayout("inspectorLink", pinnedOnly)
+                    || !waitFor([&] { return !workspace.tableLayoutSaving(); })) return false;
+                window->setWidth(2400);
+                auto* pinnedTable = item(window, "inspectorLinkPinnedTable");
+                const bool filled = pinnedTable && waitFor([&] {
+                    return pinnedTable->width() > 1000 && pinnedTable->property("contentWidth").toReal() >= pinnedTable->width() - 1;
+                });
+                if (!filled) std::fprintf(stderr, "Link fill: pinned viewport=%g content=%g shown=%d error=%s\n",
+                    pinnedTable ? pinnedTable->width() : -1, pinnedTable ? pinnedTable->property("contentWidth").toReal() : -1,
+                    pinnedTable && pinnedTable->isVisible(), qPrintable(workspace.tableLayoutError()));
+                return filled;
+            }
+            const int column = event ? 3 : 5;
             const auto header = name("Header_" + QString::number(column));
             const auto cell = name("Cell_0_" + QString::number(column));
+            if (event && !revealTableCell(window, "inspectorEventTable", 0, column)) return false;
             if (!waitFor([&] { return item(window, cell.constData()); })) return false;
             if (operation == "sort") {
-                if (!click(window, item(window, header.constData())) || model->data(model->index(0,column)).toString() != (event ? "3" : "alpha")) return false;
-                if (!click(window, item(window, header.constData())) || model->data(model->index(0,column)).toString() != (event ? "12" : "custom-widget")) return false;
+                if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "3" : "Pod/bravo")) return false;
+                if (!click(window, item(window, header.constData())) || model->data(model->index(event ? 0 : 1,column)).toString() != (event ? "12" : "Widget/custom-widget")) return false;
+                if (!event && model->data(model->index(0, 1)).toString() != QStringLiteral("●")) return false;
                 return click(window, item(window, header.constData()))
-                    && workspace.property(event ? "inspectorEventSortColumn" : "inspectorLinkSortColumn").toInt() == -1 && server.requests.size() == calls;
+                    && workspace.property(event ? "inspectorEventSortColumn" : "inspectorLinkSortColumn").toInt() == (event ? 0 : -1)
+                    && server.requests.size() == calls;
             }
             if (operation == "sortrestore") {
                 bool reloaded = false;
@@ -5564,10 +6471,10 @@ bool execute(const QString& requestedScenario) {
             }
             if (operation == "copy") {
                 item(window, cell.constData())->forceActiveFocus(); QTest::keySequence(window, QKeySequence::Copy);
-                return QGuiApplication::clipboard()->text() == (event ? "3" : "alpha") && server.requests.size() == calls;
+                return QGuiApplication::clipboard()->text() == (event ? "3" : "Pod/alpha") && server.requests.size() == calls;
             }
             if (operation == "context" || operation == "keyboard") {
-                const auto endpoint = name(event ? "Cell_0_2" : operation == "context" ? "Cell_1_2" : "Cell_1_0");
+                const auto endpoint = name(event ? "Cell_0_2" : operation == "context" ? "Cell_1_5" : "Cell_2_5");
                 auto* target = item(window, endpoint.constData());
                 if (!target || !podlord::test::scrollIntoView(window, target)) return false;
                 if (operation == "keyboard") { target->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Return); }
@@ -5576,20 +6483,20 @@ bool execute(const QString& requestedScenario) {
                     if (!waitFor([&] { return item(window, name("MenuInspector").constData()) && item(window, name("MenuInspector").constData())->isVisible(); })
                         || !click(window, item(window, name("MenuInspector").constData()))) return false;
                 }
-                return waitFor([&] { return workspace.inspectorName() == (!event && operation == "keyboard" ? "custom-widget" : "alpha"); });
+                return waitFor([&] { return workspace.inspectorName() == (!event && operation == "keyboard" ? "custom-widget" : !event ? "bravo" : "alpha"); });
             }
             if (operation == "invalid") {
                 QGuiApplication::clipboard()->setText("retained");
                 return !workspace.copyInspectorCell(prefix, "missing", 0) && !workspace.copyInspectorCell("unknown", "missing", 0)
                     && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), -1)
-                    && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), 5)
-                    && !workspace.sortInspectorColumn(prefix, -1) && !workspace.sortInspectorColumn(prefix, 5)
+                    && !workspace.copyInspectorCell(prefix, model->index(0,0).data(Qt::UserRole).toString(), event ? 5 : 7)
+                    && !workspace.sortInspectorColumn(prefix, -1) && !workspace.sortInspectorColumn(prefix, event ? 5 : 7)
                     && QGuiApplication::clipboard()->text() == "retained" && server.requests.size() == calls;
             }
             if (operation == "find") {
                 if (!click(window, item(window, name("FindButton").constData())) || !type(window, item(window, name("FindInput").constData()), event ? "message" : "default")) return false;
-                if (!waitFor([&] { return text(window, name("FindCount").constData()) == "1/2"; }) || !click(window, item(window, name("FindNext").constData()))) return false;
-                return text(window, name("FindCount").constData()) == "2/2" && model->rowCount() == 2 && server.requests.size() == calls;
+                if (!waitFor([&] { return text(window, name("FindCount").constData()) == (event ? "1/2" : "1/3"); }) || !click(window, item(window, name("FindNext").constData()))) return false;
+                return text(window, name("FindCount").constData()) == (event ? "2/2" : "2/3") && model->rowCount() == (event ? 2 : 3) && server.requests.size() == calls;
             }
             if (operation == "narrow") window->setWidth(360);
             if (!click(window, item(window, name("ColumnsButton").constData()))) return false;
@@ -5602,14 +6509,15 @@ bool execute(const QString& requestedScenario) {
             }
             if (!click(window, item(window, name("SaveColumns").constData())) || !waitFor([&] { return !workspace.tableLayoutSaving(); }) || !workspace.tableLayoutError().isEmpty()) return false;
             auto columns = workspace.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList();
-            const auto saved = columns.last().toMap();
+            const auto saved = columns[event ? columns.size() - 1 : 3].toMap();
             if (operation == "hide") return !saved["visible"].toBool() && server.requests.size() == calls;
             if (operation == "pin") return saved["pinned"].toBool() && server.requests.size() == calls;
             if (operation == "restore") {
                 if (server.requests.size() != calls) return false;
                 podlord::Workspace restored(profile);
                 if (!waitFor([&] { return !restored.busy(); })) return false;
-                return restored.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList().last().toMap()["width"].toInt() == 222;
+                const auto restoredColumns = restored.property(event ? "inspectorEventColumns" : "inspectorLinkColumns").toList();
+                return restoredColumns[event ? restoredColumns.size() - 1 : 3].toMap()["width"].toInt() == 222;
             }
             return saved["width"].toInt() == 222 && server.requests.size() == calls;
         }
@@ -5773,9 +6681,9 @@ bool execute(const QString& requestedScenario) {
             reveal.evaluate();
             return !reveal.hasError() && waitFor([&] { return text(window, "inspectorEventCell_0_4") == "Local event message"; }) && server.requests.size() == calls;
         }
-        if (!click(window, item(window, "inspectorLinksButton")) || !waitFor([&] { return item(window, "inspectorLinkCell_0_2") && item(window, "inspectorLinkCell_1_2"); })) return false;
+        if (!click(window, item(window, "inspectorLinksButton")) || !waitFor([&] { return item(window, "inspectorLinkCell_0_5") && item(window, "inspectorLinkCell_1_5"); })) return false;
         if (server.requests.size() != calls) return false;
-        return click(window, item(window, "inspectorLinkCell_0_2")) && waitFor([&] { return workspace.inspectorName() == "bravo"; });
+        return click(window, item(window, "inspectorLinkCell_1_5")) && waitFor([&] { return workspace.inspectorName() == "bravo"; });
     }
     if (scenario == "forbidden") return text(window, "syncProblemMessage").contains("Authorization denied");
     if (scenario == "relative_token") return server.authorization == "Bearer local-test-token";
@@ -5896,7 +6804,16 @@ bool execute(const QString& requestedScenario) {
                 && client.rows("sync").size() == 3;
             if (!accepted) std::fprintf(stderr, "Adaptive reopen: %s rows=%lld\n", qPrintable(reopened.join(',')),
                 static_cast<long long>(client.rows("sync").size()));
-            return accepted;
+            if (!accepted) return false;
+            server.newApiKind = true;
+            const auto discovered = runSync(30 * 60 + 1);
+            if (!discovered.contains("/api") || !discovered.contains("/apis/example.test/v1")
+                || !discovered.contains("/apis/example.test/v1/gadgets") || client.rows("sync").size() != 4) {
+                std::fprintf(stderr, "Adaptive new kind: %s rows=%lld\n", qPrintable(discovered.join(',')),
+                    static_cast<long long>(client.rows("sync").size()));
+                return false;
+            }
+            return !runSync(26).contains("/api");
         }
         reference = reference.addSecs(26);
         const auto roots = server.requests.count("/api");
@@ -5913,6 +6830,24 @@ bool execute(const QString& requestedScenario) {
         const auto calls = server.requests.size();
         if (!type(window, item(window, "resourceFilter"), "bravo")) return false;
         return waitFor([&] { return item(window, "resourceTable")->property("rows").toInt() == 1; }) && server.requests.size() == calls;
+    }
+    if (scenario == "filter_compact_fields") {
+        auto* cpu = item(window, "sidebarField_cpu");
+        if (!cpu || cpu->isVisible() || !item(window, "sidebarField_name")->isVisible()) return false;
+        if (!saveShellFrame(window, scenario + "-compact")) return false;
+        if (!click(window, item(window, "showMoreFilters")) || !waitFor([&] { return cpu->isVisible(); })
+            || !saveShellFrame(window, scenario + "-expanded")) return false;
+        if (!click(window, item(window, "showMoreFilters")) || cpu->isVisible()
+            || !workspace.filterField("cpu", "100")) return false;
+        return waitFor([&] { return cpu->isVisible(); }) && workspace.resetResourceFilters()
+            && waitFor([&] { return !cpu->isVisible(); });
+    }
+    if (scenario == "recover_sync") {
+        if (!workspace.refresh() || !waitFor([&] { return text(window, "syncProblemMessage").contains("HTTP 400"); })) return false;
+        const auto failureTime = QLocale::system().toString(reference.toLocalTime(), QLocale::ShortFormat);
+        return text(window, "syncProblemMessage").contains(failureTime)
+            && waitFor([&] { return !workspace.loading(); }) && workspace.refresh()
+            && waitFor([&] { return server.refresh >= 4 && !workspace.loading() && text(window, "syncProblemMessage").isEmpty(); });
     }
     if (scenario == "retain") {
         if (!workspace.refresh()) return false;
@@ -6023,7 +6958,10 @@ bool execute(const QString& requestedScenario) {
                 if (scenario == "inspector_auto_inactive" && !workspace.setWindowFocused(true)) return false;
             }
             renewalStage = "await renewed detail";
-            if (!waitFor([&] { return server.detailReads == reads + 1; })) return false;
+            if (!waitFor([&] { return server.detailReads == reads + 1; })) {
+                qWarning() << "Inspector renewal did not start" << scenario << server.detailReads << reads << workspace.inspectorStatus();
+                return false;
+            }
             if (scenario == "inspector_auto_late") {
                 if (!workspace.closeInspector() || !waitFor([&] { return !workspace.loading(); })) return false;
                 return workspace.inspectorPath().isEmpty() && server.delayedReadDelivered && !server.prematureDisconnect;
@@ -6034,15 +6972,24 @@ bool execute(const QString& requestedScenario) {
                 return workspace.yamlEditing() && workspace.yamlText() == draft
                     && server.detailReads == reads + 1 && server.delayedReadDelivered && !server.prematureDisconnect;
             }
-            if (!waitFor([&] { return !workspace.loading(); }) || workspace.inspectorPath() != path) return false;
+            if (!waitFor([&] { return !workspace.loading(); }) || workspace.inspectorPath() != path) {
+                qWarning() << "Inspector renewal did not finish" << scenario << workspace.loading() << workspace.inspectorPath();
+                return false;
+            }
             if (scenario == "inspector_auto_auth" || scenario == "inspector_auto_failure") {
-                if (workspace.yamlText() != oldYaml || !workspace.inspectorStatus().contains(scenario.endsWith("auth") ? "Authentication" : "HTTP 500", Qt::CaseInsensitive)) return false;
+                if (workspace.yamlText() != oldYaml || !workspace.inspectorStatus().contains(scenario.endsWith("auth") ? "Authentication" : "HTTP 500", Qt::CaseInsensitive)) {
+                    qWarning() << "Inspector renewal did not retain prior data" << scenario << (workspace.yamlText() == oldYaml) << workspace.inspectorStatus();
+                    return false;
+                }
                 if (scenario.endsWith("auth")) {
                     if (!workspace.authenticationRequired()) return false;
                     reference = reference.addSecs(600);
                 } else {
                     reference = reference.addSecs(31);
-                    if (!workspace.setWindowFocused(true) || !workspace.yamlText().isEmpty()) return false;
+                    if (!workspace.setWindowFocused(true) || !workspace.yamlText().isEmpty()) {
+                        qWarning() << "Inspector failure retry state" << workspace.yamlText().isEmpty() << workspace.inspectorStatus() << server.detailReads;
+                        return false;
+                    }
                 }
             } else if (scenario == "inspector_auto_secret") {
                 if (!accessibleName(window, "alpha, Value, alpha-private-value") || !accessibleName(window, "alpha, Hide")
@@ -6052,7 +6999,8 @@ bool execute(const QString& requestedScenario) {
             } else if (!workspace.yamlText().contains("ordinary-value-v2")) return false;
             for (int repeat = 0; repeat < 3; ++repeat) if (!workspace.setWindowFocused(true)) return false;
             QTest::qWait(100);
-            renewalComplete = server.detailReads == reads + 1;
+            // A failed detail is retried after its backoff. Repeated focus does not start another read.
+            renewalComplete = server.detailReads == reads + (scenario == "inspector_auto_failure" ? 2 : 1);
             return renewalComplete;
         }
         if (scenario.startsWith("inspector_yaml_expiry_")) {
@@ -6533,22 +7481,6 @@ bool execute(const QString& requestedScenario) {
                 return workspace.filterPresets().contains("Secrets") && workspace.filterPresets().contains("Native copy")
                     && workspace.filterPresetsError().isEmpty() && server.requests.size() == before;
             }
-            if (action == "import" || action == "import_conflict" || action == "import_url") {
-                if (!waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-                if (action == "import_url") return !workspace.importFilterPresets(QUrl("https://example.test/filter-presets.json"))
-                    && workspace.filterPresetsError().contains("local") && server.requests.size() == before;
-                const auto source = temporary.filePath("saved filters %.json");
-                QFile presets(source);
-                const auto bytes = QJsonDocument(QJsonArray{QJsonObject{{"name", "Secrets"}, {"search", "Secret"}, {"namespace", "default"}}}).toJson();
-                if (!presets.open(QIODevice::WriteOnly) || presets.write(bytes) != bytes.size()) return false;
-                presets.close();
-                if (action == "import_conflict" && (!workspace.saveFilterPreset("Secrets") || !waitFor([&] { return !workspace.filterPresetsBusy(); }))) return false;
-                if (!workspace.importFilterPresets(QUrl::fromLocalFile(source)) || !waitFor([&] { return !workspace.filterPresetsBusy(); })) return false;
-                if (!presets.open(QIODevice::ReadOnly) || presets.readAll() != bytes) return false;
-                if (action == "import_conflict") return workspace.filterPresetsError().contains("already in use") && server.requests.size() == before;
-                return workspace.filterPresetsError().isEmpty() && workspace.loadFilterPreset("Secrets") && workspace.table()->rowCount() == 1
-                    && workspace.resourceFieldFilters().value("namespace").toString() == "default" && server.requests.size() == before;
-            }
             if (action == "columns" || action == "restart") {
                 if (!click(window, item(window, "valueColumnsButton"))
                     || !click(window, item(window, "valueColumnPinned_name"))
@@ -6972,7 +7904,7 @@ bool realSearchCluster(const QString& source, ClusterJourney journey = ClusterJo
 #ifdef Q_OS_IOS
     if (!podlord::test::orientIosTestWindow(window)) return failure("system orientation");
 #endif
-    if (!workspace.saveReadSettings(1200,0,"5",workspace.collectionCacheHours()) || !waitFor([&] { return !workspace.busy() && workspace.requestLimit()==1200; })) return failure("read policy");
+    if (!workspace.saveReadSettings(1200,workspace.inactiveSyncMinutes(),"5",workspace.collectionCacheHours()) || !waitFor([&] { return !workspace.busy() && workspace.requestLimit()==1200; })) return failure("read policy");
     if (!workspace.quickImportFile(source) || !waitFor([&] { return !workspace.busy() && workspace.contexts().size()==1; })) return failure("context discovery");
     if (!click(window,item(window,"mapWorkspaceButton"))) return failure("open imported context overview");
     std::printf("Real cluster TLS: supported=%d backend=%s available=%s loaded=%s built=%s\n", QSslSocket::supportsSsl(),

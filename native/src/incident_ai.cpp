@@ -4,6 +4,7 @@
 #include "session_store.h"
 #include <QCryptographicHash>
 #include <QDir>
+#include <QFutureWatcher>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -14,9 +15,11 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <algorithm>
+#include <QtConcurrent>
 
 namespace podlord {
 constexpr qint64 cacheLifetimeSeconds = 90LL * 24 * 60 * 60;
+constexpr qsizetype maxAiSettingsBytes = 2 * 1024 * 1024;
 const QStringList resourceProblemCodes{"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "InvalidImageName",
     "CreateContainerConfigError", "CreateContainerError", "OOMKilled", "Evicted", "Unschedulable",
     "ProgressDeadlineExceeded", "NotReady"};
@@ -63,6 +66,36 @@ QString stableMessage(QString message) {
     static const QRegularExpression changingNumber(R"(\b(?!(?:401|403|404|429|500|502|503|504)\b)\d+\b)");
     message.replace(changingNumber, "#");
     return message;
+}
+QJsonObject stableObservation(QJsonObject row) {
+    for (const auto& field : {"metricAt", "eventFirstTime", "eventLastTime", "eventCount"}) row.remove(field);
+    if (row.value("restarts").isDouble()) row["restarts"] = row.value("restarts").toInt() > 0;
+    const auto references = row.value("metricReferences").toObject();
+    const auto completeness = row.value("metricComplete").toObject();
+    for (const auto& field : {"cpu", "memory"}) {
+        const auto value = row.value(field);
+        if (!value.isDouble()) continue;
+        const auto kind = row.value("kind").toString();
+        const auto reference = references.value(field).toObject();
+        const auto threshold = reference.value(kind == "Pod" ? "limit" : "capacity");
+        const bool comparable = (kind == "Pod" || kind == "Node") && threshold.isDouble()
+            && threshold.toDouble() > 0 && completeness.value(field) == true && row.value("metricStale") == false
+            && (kind != "Pod" || reference.value("limitComplete") == true);
+        row[field] = comparable ? QJsonValue(value.toDouble() >= threshold.toDouble()) : QJsonValue("measured");
+    }
+    for (const auto& field : {"conditions", "containerStates", "lastTerminations"}) {
+        auto entries = row.value(field).toArray();
+        for (qsizetype index = 0; index < entries.size(); ++index) {
+            auto entry = entries.at(index).toObject();
+            for (const auto& time : {"since", "startedAt", "finishedAt", "lastTransitionTime"}) entry.remove(time);
+            if (entry.value("restarts").isDouble()) entry["restarts"] = entry.value("restarts").toInt() > 0;
+            if (entry.value("message").isString()) entry["message"] = stableMessage(entry.value("message").toString());
+            entries.replace(index, entry);
+        }
+        if (!entries.isEmpty()) row[field] = entries;
+    }
+    if (row.value("eventMessage").isString()) row["eventMessage"] = stableMessage(row.value("eventMessage").toString());
+    return row;
 }
 QSet<QString> screenedKeySignals(const QJsonObject& row) {
     static const QRegularExpression safeKey("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$");
@@ -443,6 +476,46 @@ QString incidentEvidenceText(const QJsonArray& evidence, bool includeVolatileCou
     }
     return lines.join('\n');
 }
+// Retain the previous fingerprint only to reuse reports created before the simpler key.
+QString legacyAutomaticEvidenceText(const QJsonArray& evidence) {
+    QSet<QString> observations;
+    for (const auto& value : evidence) {
+        auto fact = value.toObject();
+        if (fact["relation"] == "same namespace problem") continue;
+        const auto status = fact["status"].toString();
+        const bool unhealthy = !fact["issue"].toString().isEmpty() || fact["type"] == "Warning"
+            || QStringList{"NotReady", "Failed", "Lost", "Unavailable", "Error"}.contains(status)
+            || fact["networkHealth"] == "Warning" || fact["networkHealth"] == "Failure"
+            || fact["cpuLimitReached"] == true || fact["memoryLimitReached"] == true
+            || fact["restarts"].toString().toInt() > 0 || !fact["lastTermination"].toString().isEmpty();
+        if (fact["depth"].toInt() != 0 && !unhealthy) continue;
+        fact["id"] = "R";
+        fact["depth"] = 0;
+        fact["relation"] = "observed";
+        fact.remove("linkedTo");
+        fact.remove("chain");
+        observations.insert(incidentEvidenceText(QJsonArray{fact}, false));
+    }
+    auto ordered = observations.values();
+    ordered.sort();
+    return ordered.join('\n');
+}
+QJsonObject citationFacts(const QJsonArray& evidence, const QJsonObject& answer) {
+    static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");
+    QSet<QString> cited;
+    for (const auto& field : {"summary", "cause", "action"}) {
+        auto matches = citation.globalMatch(answer[field].toString());
+        while (matches.hasNext()) cited.insert(matches.next().captured(1));
+    }
+    QJsonObject facts;
+    for (const auto& value : evidence) {
+        const auto fact = value.toObject();
+        if (!cited.contains(fact["id"].toString())) continue;
+        facts.insert(fact["id"].toString(), QJsonObject{{"kind", fact["kind"]}, {"namespace", fact["namespace"]},
+            {"name", fact["name"]}, {"selected", fact["depth"].toInt() == 0}});
+    }
+    return facts;
+}
 QString analysisSystemText(bool diagnostic) {
     const QString style = "Write in the requested language for a junior developer with no cluster context. "
         "Use short sentences. Do not use semicolons or long dashes as sentence separators. ";
@@ -497,8 +570,9 @@ bool IncidentAi::supported() const {
     return true;
 #endif
 }
-IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote, CredentialStore* credentials)
-    : QObject(parent), profile_(std::move(profile)), endpoint_(std::move(endpoint)),
+IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEndpoints remote, CredentialStore* credentials,
+                       int analysisTimeoutMs)
+    : QObject(parent), profile_(std::move(profile)), endpoint_(std::move(endpoint)), analysisTimeoutMs_(analysisTimeoutMs),
       chatgpt_(profile_, std::move(remote.chatgptAuth), std::move(remote.chatgptApi), nullptr, credentials),
       claude_(profile_, ApiAiClient::Provider::Claude, std::move(remote.claude), nullptr, credentials),
       openrouter_(profile_, ApiAiClient::Provider::OpenRouter, std::move(remote.openrouter), nullptr, credentials) {
@@ -512,7 +586,7 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
     connect(&openrouter_, &ApiAiClient::analysisSent, this, [this](const QString& id) { recordRequest("openrouter", id); });
     const auto path = QDir(profile_).filePath("incident-ai.json");
     QFile file(path);
-    if (QFileInfo(path).isSymLink() || (file.exists() && (!file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024))) {
+    if (QFileInfo(path).isSymLink() || (file.exists() && (!file.open(QIODevice::ReadOnly) || file.size() > maxAiSettingsBytes))) {
         writable_ = false;
         status_ = "AI settings could not be read. Automatic analysis is off.";
         return;
@@ -523,19 +597,16 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
         const auto document = QJsonDocument::fromJson(savedBytes_, &parseError);
         const auto root = document.object();
         if (parseError.error != QJsonParseError::NoError || !document.isObject()
-            || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3 && root["version"] != 4)
-            || (root["version"].toInt() >= 3 ? !root["enabledByProvider"].isObject() : !root["enabledContexts"].isArray())
+            || (root["version"] != 1 && root["version"] != 2 && root["version"] != 3
+                && root["version"] != 4 && root["version"] != 5)
+            || (root["version"] == 5 ? !root["autoEnabled"].isBool()
+                : root["version"].toInt() >= 3 ? !root["enabledByProvider"].isObject() : !root["enabledContexts"].isArray())
             || !root["records"].isArray() || !root["model"].isString()) {
             writable_ = false;
             status_ = "AI settings are invalid. Automatic analysis is off.";
             return;
         }
-        if (root["version"] == 4) {
-            const auto providers = root["enabledByProvider"].toObject();
-            for (const auto& provider : {"ollama", "chatgpt", "claude", "openrouter"})
-                for (const auto& value : providers.value(provider).toArray())
-                    if (value.isString() && !value.toString().isEmpty()) enabledByProvider_[provider].insert(value.toString());
-        }
+        if (root["version"] == 5) autoEnabled_ = root["autoEnabled"].toBool();
         model_ = root["model"].toString();
         if (root["version"].toInt() >= 2) {
             provider_ = root["provider"].toString();
@@ -554,7 +625,8 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
             const auto key = entry["key"].toString();
             const auto answer = entry["answer"].toObject();
             const auto created = QDateTime::fromString(entry["created"].toString(), Qt::ISODateWithMs);
-            if (key.size() == 64 && !answer["summary"].toString().isEmpty() && !answer["action"].toString().isEmpty()
+            if (key.size() == 64 && (answer["attempted"] == true
+                || (!answer["summary"].toString().isEmpty() && !answer["action"].toString().isEmpty()))
                 && created.isValid()) {
                 if (created > expiration) records_.insert(key, {answer, created});
                 else expired = true;
@@ -576,15 +648,15 @@ IncidentAi::IncidentAi(QString profile, QUrl endpoint, QObject* parent, RemoteEn
     }
     if (endpoint_.scheme() != "http" || !QStringList{"127.0.0.1", "localhost", "::1"}.contains(endpoint_.host())
         || endpoint_.path() != "" || !endpoint_.userInfo().isEmpty()) {
-        writable_ = false; enabledByProvider_.clear(); status_ = "Ollama endpoint must be local loopback."; return;
+        writable_ = false; autoEnabled_ = false; status_ = "Ollama endpoint must be local loopback."; return;
     }
     if (supported()) {
         if (provider_ != "ollama") { providerChanged(); refreshModels(); }
         else refreshModels();
     }
 }
-bool IncidentAi::enabled(const QString& context) const {
-    return supported() && !context.isEmpty() && enabledByProvider_.value(provider_).contains(context);
+bool IncidentAi::enabled() const {
+    return supported() && autoEnabled_;
 }
 void IncidentAi::providerChanged() {
     if (provider_ == "ollama") { emit changed(); return; }
@@ -600,7 +672,7 @@ void IncidentAi::providerChanged() {
     } else {
         status_.clear();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
     }
     emit changed();
 }
@@ -754,51 +826,57 @@ bool IncidentAi::save() {
     if (!lock.tryLock(0)) { status_ = "AI settings are being changed elsewhere. Retry after restarting PodLord."; emit changed(); return false; }
     QFile current(path);
     if (current.exists()) {
-        if (!current.open(QIODevice::ReadOnly) || current.size() > 2 * 1024 * 1024 || current.readAll() != savedBytes_) {
+        if (!current.open(QIODevice::ReadOnly) || current.size() > maxAiSettingsBytes || current.readAll() != savedBytes_) {
             status_ = "AI settings changed in another process. Restart PodLord before editing them."; emit changed(); return false;
         }
     } else if (!savedBytes_.isEmpty()) {
         status_ = "AI settings were removed in another process. Restart PodLord before editing them."; emit changed(); return false;
     }
-    QJsonObject enabledByProvider;
-    for (const auto& provider : {"ollama", "chatgpt", "claude", "openrouter"}) {
-        QJsonArray enabled;
-        QStringList contexts = enabledByProvider_.value(provider).values(); contexts.sort();
-        for (const auto& context : contexts) enabled.append(context);
-        enabledByProvider.insert(provider, enabled);
-    }
     QJsonArray records;
-    QList<QPair<QString, Record>> ordered;
-    for (auto entry = records_.cbegin(); entry != records_.cend(); ++entry) ordered.append({entry.key(), entry.value()});
-    std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) { return a.second.created > b.second.created; });
-    for (const auto& [key, record] : ordered.mid(0, 500))
-        records.append(QJsonObject{{"key", key}, {"answer", record.answer}, {"created", record.created.toUTC().toString(Qt::ISODateWithMs)}});
+    for (auto item = records_.cbegin(); item != records_.cend(); ++item)
+        records.append(QJsonObject{{"key", item.key()}, {"answer", item->answer},
+            {"created", item->created.toUTC().toString(Qt::ISODateWithMs)}});
     QJsonArray requests;
     const auto cutoff = QDateTime::currentDateTimeUtc().addSecs(-86400);
     for (auto item = requests_.cbegin(); item != requests_.cend(); ++item)
         for (const auto& at : item.value()) if (at > cutoff)
             requests.append(QJsonObject{{"account", item.key()}, {"at", at.toUTC().toString(Qt::ISODateWithMs)}});
     QSaveFile file(path); file.setDirectWriteFallback(false);
-    const auto data = QJsonDocument(QJsonObject{{"version", 4}, {"enabledByProvider", enabledByProvider}, {"provider", provider_},
+    const auto data = QJsonDocument(QJsonObject{{"version", 5}, {"autoEnabled", autoEnabled_}, {"provider", provider_},
         {"model", model_}, {"chatgptModel", chatgptModel_}, {"claudeModel", claudeModel_},
         {"openrouterModel", openrouterModel_}, {"reasoning", reasoning_}, {"records", records}, {"requests", requests}}).toJson();
+    if (data.size() > maxAiSettingsBytes) {
+        status_ = "AI cache is full. Automatic analysis is paused."; emit changed(); return false;
+    }
     if (!file.open(QIODevice::WriteOnly) || !file.setPermissions(QFile::ReadOwner | QFile::WriteOwner)
         || file.write(data) != data.size() || !file.commit()) {
         status_ = "Cannot save private AI settings."; emit changed(); return false;
     }
     savedBytes_ = data;
-    while (records_.size() > 500) records_.remove(ordered.takeLast().first);
     return true;
 }
-bool IncidentAi::setEnabled(const QString& context, bool value) {
-    if (!supported() || context.isEmpty() || !writable_) return false;
-    auto& enabled = enabledByProvider_[provider_];
-    const bool previous = enabled.contains(context);
+bool IncidentAi::setEnabled(bool value) {
+    if (!supported() || !writable_) return false;
+    const bool previous = enabled();
     if (previous == value) return true;
-    if (value) enabled.insert(context); else enabled.remove(context);
-    if (!save()) { if (previous) enabled.insert(context); else enabled.remove(context); return false; }
-    if (!value) stopObserving(context);
-    else if (models().isEmpty()) refreshModels();
+    autoEnabled_ = value;
+    if (!save()) { autoEnabled_ = previous; return false; }
+    if (!value) {
+        const auto snapshots = snapshots_;
+        const auto rawSnapshots = rawSnapshots_;
+        const auto pending = pendingObservations_;
+        QStringList contexts = snapshots_.keys();
+        for (const auto& context : pendingObservations_.keys()) if (!contexts.contains(context)) contexts.append(context);
+        for (const auto& context : contexts) stopObserving(context);
+        snapshots_ = snapshots;
+        rawSnapshots_ = rawSnapshots;
+        pendingObservations_ = pending;
+    } else {
+        const auto snapshots = snapshots_;
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item)
+            if (!pendingObservations_.contains(item.key())) observe(item.key(), item.value().first, item.value().second, true);
+        if (models().isEmpty()) refreshModels();
+    }
     emit changed();
     return true;
 }
@@ -809,6 +887,9 @@ void IncidentAi::stopObserving(const QString& context) {
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
     }
     snapshots_.remove(context);
+    preparations_.remove(context);
+    rawSnapshots_.remove(context);
+    pendingObservations_.remove(context);
     activeKeys_.remove(context);
     for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
     for (auto item = manualVisible_.begin(); item != manualVisible_.end();) item = item->context == context ? manualVisible_.erase(item) : ++item;
@@ -818,8 +899,14 @@ void IncidentAi::stopObserving(const QString& context) {
 }
 void IncidentAi::retainContexts(const QSet<QString>& contexts) {
     bool changedState = false;
-    const auto observed = snapshots_.keys();
-    for (const auto& context : observed) if (!contexts.contains(context)) { stopObserving(context); changedState = true; }
+    QStringList observed = snapshots_.keys();
+    for (const auto& context : pendingObservations_.keys()) if (!observed.contains(context)) observed.append(context);
+    for (const auto& context : observed) if (!contexts.contains(context)) {
+        stopObserving(context); clusters_.remove(context); changedState = true;
+    }
+    for (auto item = clusters_.begin(); item != clusters_.end();)
+        if (contexts.contains(item.key())) ++item;
+        else item = clusters_.erase(item);
     if (changedState) emit changed();
 }
 bool IncidentAi::setModel(const QString& model) {
@@ -835,7 +922,7 @@ bool IncidentAi::setModel(const QString& model) {
         modelReady_ = provider_ == "chatgpt" ? chatgpt_.connected()
             : provider_ == "claude" ? claude_.configured() : openrouter_.configured();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
         emit changed();
         return true;
     }
@@ -867,7 +954,7 @@ bool IncidentAi::setReasoning(const QString& reasoning) {
     queue_.clear(); queued_.clear(); visible_.clear(); manualVisible_.clear(); diagnostic_.reset();
     contextStatus_.clear();
     const auto snapshots = snapshots_;
-    for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+    for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
     emit changed();
     return true;
 }
@@ -974,20 +1061,11 @@ void IncidentAi::refreshReasoning() {
         else thinkValue_ = QJsonValue(reasoning_);
         modelReady_ = true; status_.clear();
         const auto snapshots = snapshots_;
-        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second);
+        for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item) observe(item.key(), item.value().first, item.value().second, true);
         emit changed();
     });
 }
-void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language) {
-    if (!enabled(context) && model().isEmpty()) return;
-    const auto now = QDateTime::currentDateTimeUtc();
-    bool expired = false;
-    for (auto item = records_.begin(); item != records_.end();) {
-        if (item->created.secsTo(now) >= cacheLifetimeSeconds) { item = records_.erase(item); expired = true; }
-        else ++item;
-    }
-    if (expired) save();
-    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) item = item.value() <= now ? retryAfter_.erase(item) : ++item;
+static QJsonArray screenedRows(const QJsonArray& rows) {
     static const QList<QPair<QString, QRegularExpression>> eventPatterns{
         {"registry-auth-rejected", QRegularExpression("unauthorized|denied|authentication required|no basic auth credentials")},
         {"image-not-found", QRegularExpression("manifest unknown|image not found|404 not found")},
@@ -1072,10 +1150,123 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
         }
         safeRows.append(safe);
     }
+    return safeRows;
+}
+struct IncidentAi::Preparation final {
+    QJsonArray rows;
+    std::shared_ptr<const ResourceGraph> graph;
+    ProblemIndex problems;
+    QMap<QString, QJsonObject> byUid, nodes, claims, volumes;
+    QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
+    QSet<QString> observedSecrets;
+    explicit Preparation(QJsonArray safeRows, bool prepareGraph) : rows(std::move(safeRows)) {
+        if (!prepareGraph) return;
+        graph = std::make_shared<const ResourceGraph>(rows);
+        problems = indexProblems(rows);
+        static const QRegularExpression safeEventReason("^[A-Za-z][A-Za-z0-9]{0,30}$");
+        for (const auto& value : rows) {
+            const auto row = value.toObject();
+            const auto uid = row["uid"].toString();
+            if (!uid.isEmpty()) byUid.insert(uid, row);
+            if (row["kubernetesEvent"].toBool()) {
+                if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
+                    && safeEventReason.match(row["eventReason"].toString()).hasMatch()
+                    && !row["eventTargetUid"].toString().isEmpty())
+                    warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
+                continue;
+            }
+            const auto kind = row["kind"].toString(), name = row["name"].toString();
+            if (name.isEmpty()) continue;
+            if (kind == "Node") nodes.insert(name, row);
+            else if (kind == "PersistentVolumeClaim") claims.insert(row["namespace"].toString() + '\n' + name, row);
+            else if (kind == "PersistentVolume") volumes.insert(name, row);
+            else if (kind == "Secret") observedSecrets.insert(row["namespace"].toString() + '\n' + name);
+            if (row["problemSeverity"].toInt() > 0 && !row["namespace"].toString().isEmpty()
+                && QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "PersistentVolumeClaim"}.contains(kind)) {
+                QString category;
+                for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
+                    if (resourceProblemCodes.contains(issue.trimmed())) { category = issue.trimmed(); break; }
+                if (category.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) category = row["status"].toString();
+                if (!category.isEmpty()) namespaceProblems[row["namespace"].toString()].insert(kind + ' ' + category);
+            }
+        }
+    }
+};
+void IncidentAi::observe(const QString& context, const QJsonArray& rows, const QString& language, bool force,
+                         const QString& cluster) {
+    if (!enabled() && model().isEmpty()) return;
+    const auto identity = cluster.isEmpty() ? clusters_.value(context, context) : cluster;
+    const bool changedCluster = clusters_.contains(context) && clusters_.value(context) != identity;
+    clusters_.insert(context, identity);
+    const auto now = QDateTime::currentDateTimeUtc();
+    bool expired = false;
+    for (auto item = records_.begin(); item != records_.end();) {
+        if (item->created.secsTo(now) >= cacheLifetimeSeconds) { item = records_.erase(item); expired = true; }
+        else ++item;
+    }
+    if (expired) save();
+    bool retryElapsed = false;
+    for (auto item = retryAfter_.begin(); item != retryAfter_.end();) {
+        if (item.value() <= now) { item = retryAfter_.erase(item); retryElapsed = true; }
+        else ++item;
+    }
+    const auto previous = snapshots_.constFind(context);
+    if (!force && !expired && !retryElapsed && !changedCluster && rawSnapshots_.value(context) == rows
+        && ((activeKeys_.contains(context) && previous != snapshots_.cend() && previous->second == language)
+            || (pendingObservations_.contains(context) && pendingObservations_.value(context).language == language))) return;
+    rawSnapshots_[context] = rows;
+    const auto refreshPath = pendingObservations_.value(context).refreshPath;
+    const auto revision = ++nextObservationRevision_;
+    pendingObservations_[context] = {language, refreshPath, revision};
+    if (rows.size() < 256) {
+        pendingObservations_.remove(context);
+        observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed,
+            std::make_shared<const Preparation>(screenedRows(rows), modelReady_));
+        if (!refreshPath.isEmpty()) refresh(context, refreshPath);
+        return;
+    }
+    auto* watcher = new QFutureWatcher<std::shared_ptr<const Preparation>>(this);
+    connect(watcher, &QFutureWatcher<std::shared_ptr<const Preparation>>::finished, this,
+        [this, watcher, context, language, force, expired, retryElapsed, changedCluster, revision] {
+            auto prepared = watcher->result();
+            watcher->deleteLater();
+            const auto pending = pendingObservations_.value(context);
+            if (pending.revision != revision) return;
+            pendingObservations_.remove(context);
+            if (modelReady_ && !prepared->graph) {
+                pendingObservations_[context] = pending;
+                observe(context, rawSnapshots_.value(context), language, true, clusters_.value(context));
+                return;
+            }
+            observePrepared(context, language, force || changedCluster, changedCluster, expired, retryElapsed,
+                std::move(prepared));
+            if (!pending.refreshPath.isEmpty()) refresh(context, pending.refreshPath);
+        });
+    watcher->setFuture(QtConcurrent::run([rows, prepareGraph = modelReady_] {
+        return std::make_shared<const Preparation>(screenedRows(rows), prepareGraph);
+    }));
+}
+void IncidentAi::observePrepared(const QString& context, const QString& language, bool force,
+                                 bool changedCluster, bool expired, bool retryElapsed,
+                                 std::shared_ptr<const Preparation> prepared) {
+    const auto& safeRows = prepared->rows;
     const auto previous = snapshots_.constFind(context);
     const bool changedSnapshot = previous == snapshots_.cend() || previous->first != safeRows || previous->second != language;
+    bool changedEvidence = force || expired || retryElapsed || !activeKeys_.contains(context)
+        || previous == snapshots_.cend() || previous->second != language || previous->first.size() != safeRows.size();
+    if (changedSnapshot && !changedEvidence) {
+        for (qsizetype index = 0; index < safeRows.size(); ++index) {
+            const auto current = safeRows.at(index).toObject();
+            const auto old = previous->first.at(index).toObject();
+            if (current != old && stableObservation(current) != stableObservation(old)) {
+                changedEvidence = true;
+                break;
+            }
+        }
+    }
     snapshots_[context] = {safeRows, language};
-    if (changedSnapshot) {
+    preparations_[context] = prepared;
+    if (changedEvidence && changedSnapshot) {
         for (auto item = manualVisible_.begin(); item != manualVisible_.end();) {
             if (item->context != context) { ++item; continue; }
             const auto current = manualIncident(context, item->path);
@@ -1083,53 +1274,35 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             else { *item = *current; ++item; }
         }
     }
-    if (!enabled(context)) { if (changedSnapshot) emit changed(); return; }
+    if (!enabled()) { if (changedSnapshot) emit changed(); return; }
     if (!modelReady_) return;
-    const ResourceGraph graph(safeRows);
-    const auto problems = indexProblems(safeRows);
-    for (auto item = visible_.begin(); item != visible_.end();) item = item->context == context ? visible_.erase(item) : ++item;
-    QSet<QString> activeKeys;
-    QMap<QString, QJsonObject> byUid;
-    QMap<QString, QJsonObject> nodes, claims, volumes;
-    QMap<QString, QSet<QString>> warningReasons, namespaceProblems;
-    QSet<QString> observedSecrets;
-    for (const auto& value : safeRows) {
-        const auto row = value.toObject();
-        if (!row["uid"].toString().isEmpty()) byUid.insert(row["uid"].toString(), row);
-        if (row["kubernetesEvent"].toBool()) {
-            if (row["eventType"] == "Warning" && row["problemSeverity"].toInt() > 0
-                && warningProblemCodes.contains(row["eventReason"].toString()) && !row["eventTargetUid"].toString().isEmpty())
-                warningReasons[row["eventTargetUid"].toString()].insert(row["eventReason"].toString());
-            continue;
-        }
-        const auto kind = row["kind"].toString(), name = row["name"].toString();
-        if (name.isEmpty()) continue;
-        if (kind == "Node") nodes.insert(name, row);
-        else if (kind == "PersistentVolumeClaim") claims.insert(row["namespace"].toString() + '\n' + name, row);
-        else if (kind == "PersistentVolume") volumes.insert(name, row);
-        else if (kind == "Secret") observedSecrets.insert(row["namespace"].toString() + '\n' + name);
-        if (row["problemSeverity"].toInt() > 0 && !row["namespace"].toString().isEmpty()
-            && QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "PersistentVolumeClaim"}.contains(kind)) {
-            QString category;
-            for (const auto& issue : row["issue"].toString().split(',', Qt::SkipEmptyParts))
-                if (resourceProblemCodes.contains(issue.trimmed())) { category = issue.trimmed(); break; }
-            if (category.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) category = row["status"].toString();
-            if (!category.isEmpty()) namespaceProblems[row["namespace"].toString()].insert(kind + ' ' + category);
-        }
+    if (!changedEvidence) return;
+    QMap<QString, Incident> previousVisible;
+    for (auto item = visible_.begin(); item != visible_.end();) {
+        if (item->context != context) { ++item; continue; }
+        previousVisible.insert(item.key(), *item);
+        item = visible_.erase(item);
     }
+    QSet<QString> activeKeys;
+    bool migrated = false;
     for (const auto& value : safeRows) {
         const auto row = value.toObject();
         if (row["kubernetesEvent"].toBool()) continue;
-        if (row.isEmpty() || !QStringList{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "Node", "PersistentVolumeClaim"}.contains(row["kind"].toString())) continue;
-        const auto reasons = warningReasons.value(row["uid"].toString());
+        if (row.isEmpty() || row["kind"].toString().isEmpty() || row["path"].toString().isEmpty()) continue;
+        const auto reasons = prepared->warningReasons.value(row["uid"].toString());
         if (row["problemSeverity"].toInt() == 0 && reasons.isEmpty()) continue;
         QString code;
         if (row["problemSeverity"].toInt() > 0) {
             const auto issues = row["issue"].toString().split(',', Qt::SkipEmptyParts);
             for (const auto& issue : issues) if (resourceProblemCodes.contains(issue.trimmed())) { code = issue.trimmed(); break; }
             if (code.isEmpty() && resourceProblemCodes.contains(row["status"].toString())) code = row["status"].toString();
+            static const QRegularExpression readiness("^Ready [0-9]{1,3}/[0-9]{1,3}$");
+            if (code.isEmpty()) for (const auto& issue : issues)
+                if (readiness.match(issue.trimmed()).hasMatch()) { code = issue.trimmed(); break; }
         }
         if (code.isEmpty() && !reasons.isEmpty()) { auto ordered = reasons.values(); ordered.sort(); code = ordered.first(); }
+        if (code.isEmpty() && row["problemSeverity"].toInt() > 0)
+            code = row["problemSeverity"].toInt() > 1 ? "Critical resource health" : "Warning resource health";
         if (code.isEmpty()) continue;
         auto root = row;
         QSet<QString> visited;
@@ -1138,19 +1311,19 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             if (owners.isEmpty()) break;
             const auto uid = owners.first().toObject()["uid"].toString();
             if (uid.isEmpty() || visited.contains(uid)) break;
-            if (!byUid.contains(uid)) {
+            if (!prepared->byUid.contains(uid)) {
                 const auto owner = root["owner"].toString().section(", ", 0, 0);
                 if (owner.contains('/')) root = QJsonObject{{"kind", owner.section('/', 0, 0)}, {"name", owner.section('/', 1)}};
                 break;
             }
-            visited.insert(uid); root = byUid.value(uid);
+            visited.insert(uid); root = prepared->byUid.value(uid);
         }
         const auto nameSpace = row["namespace"].toString();
         const auto group = root["kind"].toString() + '/' + root["name"].toString();
         QSet<QString> relatedSignals;
         for (const auto& reason : reasons) if (reason != code) relatedSignals.insert("Observed warning event: " + reason);
         int categories = 0;
-        auto namespaceCategories = namespaceProblems.value(nameSpace).values();
+        auto namespaceCategories = prepared->namespaceProblems.value(nameSpace).values();
         namespaceCategories.sort();
         for (const auto& category : namespaceCategories) {
             if (category == row["kind"].toString() + ' ' + code) continue;
@@ -1158,14 +1331,14 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             if (++categories == 8) break;
         }
         if (row["kind"] == "Pod") {
-            const auto node = nodes.value(row["node"].toString());
+            const auto node = prepared->nodes.value(row["node"].toString());
             const auto nodeStatus = node["status"].toString();
             if (nodeStatus == "Ready" || nodeStatus == "NotReady") relatedSignals.insert("Assigned Node: " + nodeStatus);
             for (const auto& claimReference : row["volumeClaims"].toArray()) {
-                const auto claim = claims.value(nameSpace + '\n' + claimReference.toString());
+                const auto claim = prepared->claims.value(nameSpace + '\n' + claimReference.toString());
                 const auto claimStatus = claim["status"].toString();
                 if (QStringList{"Pending", "Lost", "Bound"}.contains(claimStatus)) relatedSignals.insert("Referenced claim: " + claimStatus);
-                const auto volume = volumes.value(claim["boundVolume"].toString());
+                const auto volume = prepared->volumes.value(claim["boundVolume"].toString());
                 const auto volumeStatus = volume["status"].toString();
                 if (QStringList{"Pending", "Available", "Bound", "Released", "Failed"}.contains(volumeStatus))
                     relatedSignals.insert("Bound volume: " + volumeStatus);
@@ -1176,7 +1349,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
                 else {
                     bool observed = false, unverified = false;
                     for (const auto& reference : references) {
-                        if (observedSecrets.contains(nameSpace + '\n' + reference.toString())) observed = true;
+                        if (prepared->observedSecrets.contains(nameSpace + '\n' + reference.toString())) observed = true;
                         else unverified = true;
                     }
                     if (observed) relatedSignals.insert("Image pull Secret reference: seen among observed resources");
@@ -1184,7 +1357,7 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
                 }
             }
         } else if (row["kind"] == "PersistentVolumeClaim") {
-            const auto volume = volumes.value(row["boundVolume"].toString());
+            const auto volume = prepared->volumes.value(row["boundVolume"].toString());
             const auto volumeStatus = volume["status"].toString();
             if (QStringList{"Pending", "Available", "Bound", "Released", "Failed"}.contains(volumeStatus))
                 relatedSignals.insert("Bound volume: " + volumeStatus);
@@ -1195,23 +1368,49 @@ void IncidentAi::observe(const QString& context, const QJsonArray& rows, const Q
             ? QString("default") : thinkValue_.toVariant().toString();
         const auto account = provider_ == "chatgpt" ? chatgpt_.activeClientId()
             : provider_ == "claude" ? claude_.identity() : provider_ == "openrouter" ? openrouter_.identity() : QString{};
-        const auto evidence = incidentEvidence(graphEvidence(graph, problems, row),
+        const auto evidence = incidentEvidence(graphEvidence(*prepared->graph, prepared->problems, row),
             evidenceBudgetBytes(language, row["kind"].toString(), code, related));
-        const auto identity = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
-            + '\n' + incidentEvidenceText(evidence, false)
-            + '\n' + provider_ + '\n' + account
-            + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n20";
-        const auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
-        activeKeys.insert(key);
         const auto kind = row["kind"].toString();
+        const auto identity = clusters_.value(context, context) + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + kind + "\n22";
+        auto key = QString::fromLatin1(QCryptographicHash::hash(identity.toUtf8(), QCryptographicHash::Sha256).toHex());
+        const auto previousIncident = previousVisible.constFind(context + '\n' + row["path"].toString());
+        if (!changedCluster && previousIncident != previousVisible.cend()
+            && previousIncident->kind == kind && previousIncident->code == code
+            && previousIncident->key != key) {
+            if (inFlight_ == previousIncident->key) key = previousIncident->key;
+            else if (!records_.contains(key) && records_.contains(previousIncident->key)) {
+                records_.insert(key, records_.value(previousIncident->key));
+                migrated = true;
+            }
+        }
+        if (!changedCluster && !records_.contains(key)) {
+            QStringList automaticRelated;
+            for (const auto& signal : related) if (!signal.startsWith("Same namespace problem:")) automaticRelated.append(signal);
+            const auto old21 = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + automaticRelated.join("\n")
+                + '\n' + legacyAutomaticEvidenceText(evidence) + '\n' + provider_ + '\n' + account
+                + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n21";
+            const auto old20 = context + '\n' + nameSpace + '\n' + group + '\n' + code + '\n' + related.join("\n")
+                + '\n' + incidentEvidenceText(evidence, false) + '\n' + provider_ + '\n' + account
+                + '\n' + model() + '\n' + thinkSignature + '\n' + language + "\n20";
+            for (const auto& oldIdentity : {old21, old20}) {
+                const auto oldKey = QString::fromLatin1(QCryptographicHash::hash(oldIdentity.toUtf8(), QCryptographicHash::Sha256).toHex());
+                if (!records_.contains(oldKey)) continue;
+                auto record = records_.take(oldKey);
+                record.answer["citations"] = citationFacts(evidence, record.answer);
+                records_.insert(key, record);
+                migrated = true;
+                break;
+            }
+        }
+        activeKeys.insert(key);
         Incident incident{key, context, code, kind, row["path"].toString(), language,
             provider_, model(), reasoning(), thinkSignature, related, false, evidence};
         if (!visible_.contains(context + '\n' + incident.path)) visible_.insert(context + '\n' + incident.path, incident);
         if (records_.contains(key) || queued_.contains(key) || inFlight_ == key || retryAfter_.value(key) > QDateTime::currentDateTimeUtc()) continue;
-        if (queue_.size() >= 32) continue;
         queue_.enqueue(incident); queued_.insert(key);
     }
     activeKeys_[context] = activeKeys;
+    if (migrated) save();
     QQueue<Incident> retained;
     while (!queue_.isEmpty()) {
         const auto incident = queue_.dequeue();
@@ -1312,8 +1511,10 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
         ? QString("default") : thinkValue_.toVariant().toString();
     const auto account = provider_ == "chatgpt" ? chatgpt_.activeClientId()
         : provider_ == "claude" ? claude_.identity() : provider_ == "openrouter" ? openrouter_.identity() : QString{};
-    const ResourceGraph graph(snapshot->first);
-    const auto evidence = incidentEvidence(graphEvidence(graph, indexProblems(snapshot->first), selected),
+    const auto prepared = preparations_.value(context);
+    const auto graph = prepared && prepared->graph ? prepared->graph : std::make_shared<const ResourceGraph>(snapshot->first);
+    const auto problems = prepared && prepared->graph ? prepared->problems : indexProblems(snapshot->first);
+    const auto evidence = incidentEvidence(graphEvidence(*graph, problems, selected),
         evidenceBudgetBytes(snapshot->second, kind, code, related));
     const auto identity = context + '\n' + path + '\n' + code + '\n' + related.join("\n")
         + '\n' + incidentEvidenceText(evidence, false)
@@ -1325,6 +1526,11 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
 }
 void IncidentAi::prepareManual(const QString& context, const QString& path) {
     const auto id = context + '\n' + path;
+    const auto automatic = visible_.constFind(id);
+    if (automatic != visible_.cend() && activeKeys_.value(context).contains(automatic->key)) {
+        if (manualVisible_.remove(id)) emit changed();
+        return;
+    }
     const auto current = manualIncident(context, path);
     const auto previous = manualVisible_.constFind(id);
     if (!current) {
@@ -1338,13 +1544,22 @@ void IncidentAi::prepareManual(const QString& context, const QString& path) {
 }
 bool IncidentAi::refresh(const QString& context, const QString& path) {
     if (!modelReady_) return false;
+    if (preparing(context)) {
+        const auto rows = rawSnapshots_.value(context);
+        if (!std::any_of(rows.cbegin(), rows.cend(), [&](const auto& value) {
+            return value.toObject()["path"] == path;
+        })) return false;
+        pendingObservations_[context].refreshPath = path;
+        return true;
+    }
     const auto found = visible_.constFind(context + '\n' + path);
     const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
-    const auto recognized = !hasDraftError && enabled(context) && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
+    const auto recognized = !hasDraftError && enabled() && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
     const auto fallback = recognized ? std::optional<Incident>{} : manualIncident(context, path);
     if (!recognized && !fallback) return false;
     const auto incident = recognized ? *found : *fallback;
     if (!recognized) manualVisible_.insert(context + '\n' + path, incident);
+    if (inFlight_ == incident.key) { emit changed(); return true; }
     const auto previous = records_.constFind(incident.key);
     if (previous != records_.cend()) {
         const auto record = *previous;
@@ -1352,7 +1567,6 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
         if (!save()) { records_.insert(incident.key, record); return false; }
     }
     retryAfter_.remove(incident.key);
-    if (inFlight_ == incident.key) { emit changed(); return true; }
     QQueue<Incident> retained;
     while (!queue_.isEmpty()) {
         const auto next = queue_.dequeue();
@@ -1435,40 +1649,41 @@ void IncidentAi::dispatch() {
     const bool manual = queue_.head().manual;
     const auto serviceRetryAfter = serviceRetryAfterByProvider_.value(provider_);
     if (!manual && serviceRetryAfter > now) { dispatchTimer_.start(int(now.msecsTo(serviceRetryAfter))); return; }
-    if (!manual && lastRequest_.isValid() && lastRequest_.msecsTo(now) < 30000) {
-        dispatchTimer_.start(int(30000 - lastRequest_.msecsTo(now))); return;
+    if (!manual && lastRequest_.isValid() && lastRequest_.msecsTo(now) < 10000) {
+        dispatchTimer_.start(int(10000 - lastRequest_.msecsTo(now))); return;
     }
     Incident incident;
     bool found = false;
-    QQueue<Incident> deferred;
-    qint64 waitMs = 0;
     while (!queue_.isEmpty()) {
         const auto next = queue_.dequeue(); queued_.remove(next.key);
-        if ((!next.manual && !enabled(next.context)) || records_.contains(next.key)) continue;
+        if ((!next.manual && !enabled()) || records_.contains(next.key)) continue;
         if (next.path == "diagnostic/exec-env") {
             if (!diagnostic_ || diagnostic_->key != next.key) continue;
         } else if (next.manual && !activeKeys_.value(next.context).contains(next.key)) {
             const auto current = manualIncident(next.context, next.path);
             if (!current || current->key != next.key) continue;
         }
-        auto& recent = recent_[next.context];
-        recent.erase(std::remove_if(recent.begin(), recent.end(), [now](const auto& at) { return at.secsTo(now) >= 3600; }), recent.end());
-        if (!next.manual && recent.size() >= 5) {
-            deferred.enqueue(next); queued_.insert(next.key);
-            const auto remaining = 3600000 - recent.first().msecsTo(now);
-            waitMs = waitMs == 0 ? remaining : std::min(waitMs, remaining);
-            continue;
-        }
-        incident = next; recent.append(now); found = true; break;
+        incident = next; found = true; break;
     }
-    while (!deferred.isEmpty()) queue_.enqueue(deferred.dequeue());
-    if (!found) { if (waitMs > 0) dispatchTimer_.start(int(waitMs)); return; }
+    if (!found) return;
+    if (incident.path != "diagnostic/exec-env") {
+        records_.insert(incident.key, {QJsonObject{{"attempted", true}}, now});
+        if (!save()) {
+            records_.remove(incident.key);
+            if (!manual) autoEnabled_ = false;
+            queue_.clear(); queued_.clear();
+            emit changed();
+            return;
+        }
+    }
     inFlight_ = incident.key; inFlightContext_ = incident.context; lastRequest_ = now;
-    contextStatus_[incident.context] = incident.provider == "chatgpt" ? "Analyzing a cluster problem with ChatGPT…"
-        : incident.provider == "claude" ? "Analyzing a cluster problem with Claude…"
-        : incident.provider == "openrouter" ? "Analyzing a cluster problem with OpenRouter…"
-        : "Analyzing a cluster problem with local Ollama…";
     emit changed();
+    QTimer::singleShot(analysisTimeoutMs_, this, [this, incident, now] {
+        if (inFlight_ != incident.key || lastRequest_ != now) return;
+        if (activeReply_) activeReply_->abort();
+        chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
+        complete(incident, {}, "Analysis timed out. Retry.");
+    });
     const auto system = analysisSystemText(incident.path == "diagnostic/exec-env");
     const auto input = incident.path == "diagnostic/exec-env"
         ? "Language: " + incident.language + "\nError code: " + incident.code + "\nField: users[].user.exec.env"
@@ -1496,12 +1711,12 @@ void IncidentAi::dispatch() {
     auto* reply = network_.post(request, QJsonDocument(payload).toJson(QJsonDocument::Compact));
     activeReply_ = reply;
     connect(reply, &QNetworkReply::finished, this, [this, reply, incident] {
-        const auto bytes = reply->readAll();
+        const auto bytes = reply->isOpen() ? reply->readAll() : QByteArray{};
         const auto ok = reply->error() == QNetworkReply::NoError && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200
             && bytes.size() <= 65536;
         reply->deleteLater();
         const auto response = QJsonDocument::fromJson(bytes).object();
-        activeReply_ = nullptr;
+        if (activeReply_ == reply) activeReply_ = nullptr;
         complete(incident, response["message"].toObject()["content"].toString(), ok ? QString{} : "Ollama request failed.");
     });
 }
@@ -1512,7 +1727,7 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
         ? QString("default") : thinkValue_.toVariant().toString();
     const auto currentManual = incident.manual ? manualIncident(incident.context, incident.path) : std::optional<Incident>{};
     if ((incident.path == "diagnostic/exec-env" && (!diagnostic_ || diagnostic_->key != incident.key))
-        || (incident.path != "diagnostic/exec-env" && !incident.manual && (!enabled(incident.context) || !activeKeys_.value(incident.context).contains(incident.key)))
+        || (incident.path != "diagnostic/exec-env" && !incident.manual && (!enabled() || !activeKeys_.value(incident.context).contains(incident.key)))
         || (incident.path != "diagnostic/exec-env" && incident.manual && !activeKeys_.value(incident.context).contains(incident.key)
             && (!currentManual || currentManual->key != incident.key))
         || provider_ != incident.provider || model() != incident.model || reasoning() != incident.reasoning
@@ -1573,26 +1788,33 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     const bool accepted = error.isEmpty() && !summary.isEmpty() && summary.size() <= 600 && cause.size() <= 600
         && !action.isEmpty() && action.size() <= 600;
     if (accepted) {
-        records_.insert(incident.key, {QJsonObject{{"summary", summary}, {"cause", cause}, {"action", action}}, QDateTime::currentDateTimeUtc()});
+        QJsonObject stored{{"summary", summary}, {"cause", cause}, {"action", action}};
+        stored["citations"] = citationFacts(incident.evidence, stored);
+        records_.insert(incident.key, {stored, QDateTime::currentDateTimeUtc()});
         contextStatus_.remove(incident.context); serviceRetryAfterByProvider_.remove(incident.provider); save();
     } else {
-        retryAfter_.insert(incident.key, QDateTime::currentDateTimeUtc().addSecs(900));
-        serviceRetryAfterByProvider_.insert(incident.provider, QDateTime::currentDateTimeUtc().addSecs(900));
-        contextStatus_[incident.context] = error.isEmpty()
+        if (incident.path == "diagnostic/exec-env")
+            retryAfter_.insert(incident.key, QDateTime::currentDateTimeUtc().addSecs(900));
+        const bool rateLimited = error.contains("HTTP 429") || error.contains("usage limit", Qt::CaseInsensitive);
+        serviceRetryAfterByProvider_.insert(incident.provider, QDateTime::currentDateTimeUtc().addSecs(rateLimited ? 900 : 60));
+        contextStatus_[incident.context] = {incident.path, error.isEmpty()
             ? "AI analysis failed: invalid answer. Retry later or choose another model."
-            : error;
+            : error};
     }
     emit changed();
     if (accepted && incident.path != "diagnostic/exec-env") emit analysisCompleted(incident.context, incident.path);
     dispatch();
 }
 QVariantMap IncidentAi::result(const QString& context, const QString& path) const {
-    const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
+    const auto found = enabled() ? visible_.constFind(context + '\n' + path) : visible_.cend();
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;
     const auto& incident = (draft && manual != manualVisible_.cend()) || found == visible_.cend() ? *manual : *found;
     const auto record = records_.constFind(incident.key);
+    if (record != records_.cend() && record->created.secsTo(QDateTime::currentDateTimeUtc()) < cacheLifetimeSeconds
+        && record->answer["attempted"] == true)
+        return inFlight_ == incident.key ? QVariantMap{{"pending", true}} : QVariantMap{{"failed", true}};
     if (record == records_.cend() || record->created.secsTo(QDateTime::currentDateTimeUtc()) >= cacheLifetimeSeconds) {
         if (retryAfter_.value(incident.key) > QDateTime::currentDateTimeUtc()) return {{"failed", true}};
         if ((found == visible_.cend() || draft) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
@@ -1618,11 +1840,39 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
         }
     }
     for (const auto& name : ambiguousLegacyNames) legacyNames.remove(name);
+    const auto savedFacts = record->answer["citations"].toObject();
+    QMap<QString, QString> currentIds;
+    QString selectedId;
+    for (const auto& value : incident.evidence) {
+        const auto fact = value.toObject();
+        const auto identity = fact["kind"].toString() + '\n' + fact["namespace"].toString() + '\n' + fact["name"].toString();
+        currentIds.insert(identity, fact["id"].toString());
+        if (fact["depth"].toInt() == 0) selectedId = fact["id"].toString();
+    }
     const auto resolvedSource = [&](QString source) {
         for (auto item = legacyNames.cbegin(); item != legacyNames.cend(); ++item)
             source.replace(QRegularExpression("(?<![A-Za-z0-9_-])" + QRegularExpression::escape(item.key())
                 + "(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])"), "[" + item.value() + "]");
-        return source;
+        if (savedFacts.isEmpty()) return source;
+        QString resolved;
+        qsizetype from = 0;
+        auto matches = citation.globalMatch(source);
+        while (matches.hasNext()) {
+            const auto match = matches.next();
+            resolved += source.mid(from, match.capturedStart() - from);
+            const auto saved = savedFacts.value(match.captured(1)).toObject();
+            if (saved.isEmpty()) resolved += match.captured();
+            else {
+                const auto identity = saved["kind"].toString() + '\n' + saved["namespace"].toString() + '\n' + saved["name"].toString();
+                const auto id = saved["selected"].toBool() ? selectedId : currentIds.value(identity);
+                resolved += id.isEmpty() ? saved["kind"].toString() + ' '
+                    + (saved["namespace"].toString().isEmpty() ? saved["name"].toString()
+                        : saved["namespace"].toString() + '/' + saved["name"].toString()) : '[' + id + ']';
+            }
+            from = match.capturedEnd();
+        }
+        resolved += source.mid(from);
+        return resolved;
     };
     QSet<QString> cited;
     for (const auto& field : {"summary", "cause", "action"}) {
@@ -1638,8 +1888,10 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
             {"path", fact["path"].toString()}});
     }
     QVariantMap output;
+    static const QRegularExpression sentenceBreak(R"(([.!?。！？])[\t ]+(?=[\p{L}\p{N}]))");
     for (const auto& field : {"summary", "cause", "action"}) {
-        const auto source = resolvedSource(record->answer[field].toString());
+        auto source = resolvedSource(record->answer[field].toString());
+        source.replace(sentenceBreak, QStringLiteral("\\1\n\n"));
         QString rendered, html;
         qsizetype from = 0;
         auto matches = citation.globalMatch(source);
@@ -1666,7 +1918,7 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     return output;
 }
 QString IncidentAi::requestPreview(const QString& context, const QString& path) const {
-    const auto found = enabled(context) ? visible_.constFind(context + '\n' + path) : visible_.cend();
+    const auto found = enabled() ? visible_.constFind(context + '\n' + path) : visible_.cend();
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;

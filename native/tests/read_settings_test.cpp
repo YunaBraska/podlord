@@ -66,6 +66,7 @@ bool scenario(const QString& name) {
         if (!value(store.save(expected, {}), expected)) return false;
         auto root = QJsonDocument::fromJson(read(path)).object();
         root["version"] = 9;
+        root["inactiveSyncMinutes"] = 0;
         root.remove("musicVolumePercent");
         root.remove("alertVolumePercent");
         const auto oldBytes = QJsonDocument(root).toJson();
@@ -79,6 +80,30 @@ bool scenario(const QString& name) {
             && migrated.value("alertVolumePercent") == 100 && migrated.value("requestHardLimitPerMinute") == 120
             && migrated.value("language") == "de" && migrated.value("themeName") == "Imperial Ledger",
             "v9 migration lost settings or did not add volume defaults");
+    }
+    if (name == "inactive_zero_migration") {
+        auto expected = ReadSettings{};
+        if (!require(expected.inactiveSyncMinutes == 15, "Background refresh default should be 15 minutes")) return false;
+        expected.requestHardLimitPerMinute = 120;
+        expected.language = "de";
+        if (!value(store.save(expected, {}), expected)) return false;
+        auto root = QJsonDocument::fromJson(read(path)).object();
+        root["inactiveSyncMinutes"] = 0;
+        const auto oldBytes = QJsonDocument(root).toJson();
+        if (!write(path, oldBytes) || !value(store.load(), expected)
+            || !require(read(path) == oldBytes, "Loading a zero interval rewrote the profile")) return false;
+        auto updated = expected;
+        updated.logLimitMb = 7;
+        return value(store.save(updated, expected), updated)
+            && value(store.load(), updated)
+            && require(QJsonDocument::fromJson(read(path)).object()["inactiveSyncMinutes"] == updated.inactiveSyncMinutes,
+                "Saving did not replace the old zero interval");
+    }
+    if (name == "inactive_zero_rejected") {
+        auto invalid = ReadSettings{};
+        invalid.inactiveSyncMinutes = 0;
+        return require(ReadSettings{}.inactiveSyncMinutes > 0, "Background refresh default must be positive")
+            && failure(store.save(invalid, {}), StoreError::InvalidInput);
     }
     if (name.startsWith("audio_volume_")) {
         const ReadSettings defaults;
@@ -165,11 +190,21 @@ bool scenario(const QString& name) {
         const auto bytes=QJsonDocument(root).toJson();
         return write(path,bytes) && failure(store.load(),StoreError::InvalidData) && read(path)==bytes;
     }
-    if (name == "yaml_default") return value(store.load(), {0, 0, 5, 3});
+    if (name == "yaml_default") return value(store.load(), {});
     if (name == "yaml_save") return value(store.save({120, 2, 6, 1}, {}), {120, 2, 6, 1}) && value(store.load(), {120, 2, 6, 1});
-    if (name == "yaml_zero") return failure(store.save({0, 0, 5, 0}, {}), StoreError::InvalidInput) && !QFileInfo::exists(profile);
-    if (name == "yaml_negative") return failure(store.save({0, 0, 5, -1}, {}), StoreError::InvalidInput) && !QFileInfo::exists(profile);
-    if (name == "yaml_conflict") return value(store.save({0, 0, 5, 4}, {}), {0, 0, 5, 4}) && failure(store.save({0, 0, 5, 1}, {}), StoreError::Conflict) && value(store.load(), {0, 0, 5, 4});
+    if (name == "yaml_zero" || name == "yaml_negative") {
+        auto invalid = ReadSettings{};
+        invalid.yamlLimitMiB = name == "yaml_zero" ? 0 : -1;
+        return failure(store.save(invalid, {}), StoreError::InvalidInput) && !QFileInfo::exists(profile);
+    }
+    if (name == "yaml_conflict") {
+        auto saved = ReadSettings{};
+        saved.yamlLimitMiB = 4;
+        auto stale = saved;
+        stale.yamlLimitMiB = 1;
+        return value(store.save(saved, {}), saved) && failure(store.save(stale, {}), StoreError::Conflict)
+            && value(store.load(), saved);
+    }
     if (name == "missing") return value(store.load(), {}) && require(!QFileInfo::exists(profile), "Read created a missing profile.");
     if (name == "empty_profile") return failure(ReadSettingsStore({}).load(), StoreError::InvalidInput) && failure(ReadSettingsStore({}).save({}, {}), StoreError::InvalidInput);
     if (name == "relative_profile") return failure(ReadSettingsStore("relative").load(), StoreError::InvalidInput) && failure(ReadSettingsStore("relative").save({}, {}), StoreError::InvalidInput);

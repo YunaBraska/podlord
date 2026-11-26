@@ -4,6 +4,7 @@
 #include <QFontMetricsF>
 #include <QPainter>
 #include <QQuickWindow>
+#include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -12,6 +13,7 @@
 #include <numbers>
 #include <tuple>
 #include <typeinfo>
+#include <utility>
 
 namespace podlord {
 namespace {
@@ -200,10 +202,11 @@ RadarIsland::RadarIsland(QQuickItem* parent) : QQuickPaintedItem(parent) {
     connect(this,&QQuickItem::heightChanged,this,[this] { project(); update(); });
     connect(this,&QQuickItem::visibleChanged,this,[this] {
         if (isVisible()) schedule();
-        else { animationTimer_.stop(); tiles_.publish({},false); }
+        else { if (terrainPreparation_) terrainPreparation_->cancel(); fitPending_=false; animationTimer_.stop(); tiles_.publish({},false); }
     });
 }
 RadarIsland::~RadarIsland() {
+    if (terrainPreparation_) terrainPreparation_->cancel();
     animationTimer_.stop();
     disconnect(frameConnection_);
     for (const auto& connection:connections_) disconnect(connection);
@@ -253,6 +256,7 @@ void RadarIsland::setSource(QAbstractItemModel* source) {
     observeSource(); emit sourceChanged();
 }
 void RadarIsland::observeSource() {
+    if (terrainPreparation_) terrainPreparation_->cancel();
     for (const auto& connection:connections_) disconnect(connection);
     connections_.clear(); geometryDirty_=true; filteredDirty_=true;
     tiles_.view_=source_;
@@ -294,12 +298,14 @@ void RadarIsland::schedule() {
 }
 void RadarIsland::setIdentityScope(const QString& scope) {
     if (identityScope_ == scope) return;
+    if (terrainPreparation_) terrainPreparation_->cancel();
     identityScope_ = scope;
     geometryDirty_=true;
     schedule();
     emit sourceChanged();
 }
 void RadarIsland::synchronize() {
+    sourceEmpty_ = !source_ || source_->rowCount() == 0;
     dirty_=false;
     const bool refreshMetadata=geometryDirty_;
     auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
@@ -318,21 +324,29 @@ void RadarIsland::synchronize() {
                 const auto scope=cache->metadata(index,Qt::UserRole+3);
                 const auto uid=row["uid"].toString();
                 const auto identity=identityScope_+":"+kind+":"+scope+":"+name+":"+(uid.isEmpty() ? "-" : uid);
-                rows.append({cache->metadata(index,Qt::UserRole),kind,name,scope,row["cluster"].toString(cluster),row["owner"].toString(),identity});
+                rows.append({cache->metadata(index,Qt::UserRole),kind,name,scope,row["cluster"].toString(cluster),
+                    row["owner"].toString(),identity,row["kubernetesEvent"].toBool()});
             }
         }
         if (rows!=signature_) {
-            signature_=rows;
             if (const auto* terrain=terrains_.object(identityScope_); terrain && terrain->signature==rows) {
+                signature_=rows;
                 positions_=terrain->positions; resourceBuckets_=terrain->buckets; markers_=terrain->markers; markerBuckets_=terrain->markerBuckets; terrainBounds_=terrain->bounds;
             } else {
-                std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
-                    const int aRank = rank(a.kind), bRank = rank(b.kind);
-                    return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
-                        < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
+                if (terrainPreparation_) { geometryDirty_=true; return; }
+                const auto scope=identityScope_;
+                auto* watcher=new QFutureWatcher<Terrain>(this);
+                terrainPreparation_=watcher;
+                connect(watcher,&QFutureWatcher<Terrain>::finished,this,[this,watcher,scope] {
+                    if (terrainPreparation_==watcher) terrainPreparation_=nullptr;
+                    if (!watcher->isCanceled() && watcher->future().resultCount()==1 && scope==identityScope_)
+                        terrains_.insert(scope,new Terrain(watcher->result()));
+                    watcher->deleteLater();
+                    geometryDirty_=true;
+                    schedule();
                 });
-                layout(rows);
-                terrains_.insert(identityScope_,new Terrain{signature_,positions_,resourceBuckets_,markers_,markerBuckets_,terrainBounds_});
+                watcher->setFuture(QtConcurrent::run(&RadarIsland::layout,std::move(rows),scope));
+                return;
             }
         }
     }
@@ -352,9 +366,17 @@ void RadarIsland::synchronize() {
         }
     }
     project(refreshMetadata); update(); emit currentResourceChanged();
+    if (fitPending_) { fitPending_=false; fitView(); }
 }
-void RadarIsland::layout(const QList<Row>& rows) {
-    positions_.clear(); resourceBuckets_.clear(); markers_.clear(); markerBuckets_.clear(); terrainBounds_={};
+void RadarIsland::layout(QPromise<Terrain>& promise, QList<Row> rows, QString scope) {
+    if (promise.isCanceled()) return;
+    Terrain result;
+    result.signature = rows;
+    std::sort(rows.begin(),rows.end(),[](const Row& a,const Row& b) {
+        const int aRank = rank(a.kind), bRank = rank(b.kind);
+        return std::tie(a.cluster,a.scope,aRank,a.owner,a.kind,a.name,a.path)
+            < std::tie(b.cluster,b.scope,bRank,b.owner,b.kind,b.name,b.path);
+    });
     struct District final { QString key, label, group; QList<Row> rows; QList<QPoint> cells; QPoint anchor; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     struct Cluster final { QString name, label; QList<District> districts; QRectF labelBounds; int width=0, height=0, x=0, y=0; };
     const auto caption=[](const QString& value) { return value.size()>48 ? value.left(45)+"..." : value; };
@@ -366,35 +388,67 @@ void RadarIsland::layout(const QList<Row>& rows) {
     for (const auto& row:rows) grouped[row.cluster][row.kind=="Namespace" ? row.name : row.scope].append(row);
     QList<Cluster> clusters;
     for (auto groupedCluster=grouped.cbegin();groupedCluster!=grouped.cend();++groupedCluster) {
+        if (promise.isCanceled()) return;
         Cluster cluster; cluster.name=groupedCluster.key(); cluster.label=caption(cluster.name.isEmpty() ? QStringLiteral("Cluster") : cluster.name); cluster.labelBounds=bounds(cluster.label,true);
         int area=0,maxWidth=0;
         for (auto groupedDistrict=groupedCluster->cbegin();groupedDistrict!=groupedCluster->cend();++groupedDistrict) {
+            if (promise.isCanceled()) return;
             District district;
             district.key=groupedDistrict.key(); district.label=caption(district.key.isEmpty() ? QStringLiteral("Cluster resources") : district.key);
             district.group=cluster.name+"/"+district.key; district.rows=groupedDistrict.value(); district.labelBounds=bounds(district.label,false);
             QSet<QPoint> occupied; occupied.insert(QPoint{});
             QHash<QPoint,double> frontier;
-            const auto shoreKey=identityScope_+":"+district.group;
+            const auto shoreKey=scope+":"+district.group;
             const std::array<double,3> coast{range("coast-two:"+shoreKey,-std::numbers::pi,std::numbers::pi),
                 range("coast-three:"+shoreKey,-std::numbers::pi,std::numbers::pi),range("coast-five:"+shoreKey,-std::numbers::pi,std::numbers::pi)};
             QHash<QString,QPoint> local;
-            QList<Row> resources;
+            QList<Row> resources, events;
             for (const auto& row:district.rows)
                 if (row.kind=="Namespace" && row.name==district.key) local.insert(row.path,QPoint{});
+                else if (row.kubernetesEvent) events.append(row);
                 else resources.append(row);
             const double direction=-std::numbers::pi/2+cluster.districts.size()*2*std::numbers::pi/groupedCluster->size()+range(district.group+":namespace-angle",-.16,.16);
             const int arms=resources.size()<=3 ? int(resources.size()) : std::clamp(int(std::ceil(std::sqrt(resources.size())/1.2)),3,10);
             const double spread=std::clamp(arms*.09,.16,.78);
             for (int index=0;index<resources.size();++index) {
+                if (promise.isCanceled()) return;
                 const auto& row=resources[index]; const int arm=index%arms,depth=index/arms;
                 if (local.isEmpty()) { local.insert(row.path,QPoint{}); continue; }
                 const double family=range(district.group+":"+row.kind+":"+row.owner+":coast-branch",-.7,.7);
                 const double theta=direction+family+(arms==1 ? 0 : (arm/double(arms-1)-.5)*spread)+range(row.identity+":branch",-.04,.04);
-                const double distance=8+ring(row.kind)*6.2+depth*6.4+(row.kind=="Event" ? 8 : 0),drift=range(row.identity+":drift",-3.5,3.5);
+                const double distance=8+ring(row.kind)*6.2+depth*6.4,drift=range(row.identity+":drift",-3.5,3.5);
                 local.insert(row.path,place(QPointF(std::cos(theta)*distance-std::sin(theta)*drift,std::sin(theta)*distance+std::cos(theta)*drift),occupied,frontier,row.identity,coast));
             }
+            if (!events.isEmpty()) {
+                QList<QPoint> shore = occupied.values();
+                std::sort(shore.begin(), shore.end(), [](const QPoint& a,const QPoint& b) {
+                    return std::tuple{a.y(),a.x()} < std::tuple{b.y(),b.x()};
+                });
+                QSet<QPoint> visited = occupied;
+                QList<std::pair<QPoint,int>> wave;
+                for (const auto& point:shore) wave.append({point,0});
+                QList<QPoint> eventCoast;
+                for (int head=0;head<wave.size() && eventCoast.size()<events.size()*4;++head) {
+                    const auto [point,distance]=wave[head];
+                    for (const auto& delta:{QPoint(0,-1),QPoint(1,0),QPoint(0,1),QPoint(-1,0)}) {
+                        const auto next=point+delta;
+                        if (visited.contains(next)) continue;
+                        visited.insert(next); wave.append({next,distance+1});
+                        if (distance>=2) eventCoast.append(next);
+                    }
+                }
+                QPointF center;
+                for (const auto& point:occupied) center+=point;
+                center/=occupied.size();
+                std::sort(eventCoast.begin(),eventCoast.end(),[&](const QPoint& a,const QPoint& b) {
+                    const auto angle=[&](const QPoint& point) { return std::atan2(point.y()-center.y(),point.x()-center.x()); };
+                    return std::tuple{angle(a),a.y(),a.x()} < std::tuple{angle(b),b.y(),b.x()};
+                });
+                for (int index=0;index<events.size();++index)
+                    local.insert(events[index].path,eventCoast[(qint64(index)*eventCoast.size()+eventCoast.size()/2)/events.size()]);
+            }
             int left=0,right=0,top=0,bottom=0;
-            for (const auto& point:occupied) {
+            for (const auto& point:std::as_const(local)) {
                 left=std::min(left,point.x()); right=std::max(right,point.x());
                 top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
             }
@@ -430,32 +484,35 @@ void RadarIsland::layout(const QList<Row>& rows) {
         offset=-(QPoint(cluster.x+district.x,cluster.y+district.y)+district.anchor);
     }
     const auto resource=[&](const Row& row,const QPoint& point) {
-        positions_.insert(row.path,world(point)); resourceBuckets_[bucket(point)].append(row.path);
+        result.positions.insert(row.path,world(point)); result.buckets[bucket(point)].append(row.path);
     };
     for (const auto& cluster:clusters) {
         const QPoint origin=offset+QPoint(cluster.x,cluster.y);
         const auto clusterPoint=origin+QPoint(cluster.width/2,2);
-        const auto clusterMarker=markers_.size();
-        markers_.append({world(clusterPoint),cluster.labelBounds,"Cluster",cluster.name,cluster.label,true,{}});
+        const auto clusterMarker=result.markers.size();
+        result.markers.append({world(clusterPoint),cluster.labelBounds,"Cluster",cluster.name,cluster.label,true,{}});
         const auto packed=QRectF(world(origin),QSizeF(cluster.width*step,cluster.height*step));
-        terrainBounds_=terrainBounds_.isEmpty() ? packed : terrainBounds_.united(packed);
+        result.bounds=result.bounds.isEmpty() ? packed : result.bounds.united(packed);
         for (const auto& district:cluster.districts) {
             const auto districtOrigin=origin+QPoint(district.x,district.y);
             const auto anchor=districtOrigin+district.anchor;
             QRectF land;
             for (int index=0;index<district.rows.size();++index) {
                 const auto point=districtOrigin+district.cells[index]; resource(district.rows[index],point);
+                if (district.rows[index].kubernetesEvent) continue;
                 const QRectF body(world(point)-QPointF(2.75,2.75),QSizeF(5.5,5.5));
                 land=land.isEmpty() ? body : land.united(body);
             }
-            markers_.append({world(anchor),district.labelBounds,district.key.isEmpty() ? "Cluster" : "Namespace",district.group,district.label,false,land});
-            auto& clusterLand=markers_[clusterMarker].area;
+            result.markers.append({world(anchor),district.labelBounds,district.key.isEmpty() ? "Cluster" : "Namespace",district.group,district.label,false,land});
+            auto& clusterLand=result.markers[clusterMarker].area;
             clusterLand=clusterLand.isEmpty() ? land : clusterLand.united(land);
         }
     }
-    for (int index=0;index<markers_.size();++index)
-        inBuckets(markers_[index].area,[&](const QPoint& area) { markerBuckets_[area].append(index); });
+    for (int index=0;index<result.markers.size();++index)
+        inBuckets(result.markers[index].area,[&](const QPoint& area) { result.markerBuckets[area].append(index); });
+    if (!promise.isCanceled()) promise.addResult(std::move(result));
 }
+
 QVariantMap RadarIsland::viewPose() const { return {{"x",pan_.x()},{"y",pan_.y()},{"zoom",zoom_}}; }
 bool RadarIsland::validPose(const QVariantMap& pose) {
     bool xOk=false,yOk=false,zOk=false;
@@ -480,6 +537,10 @@ void RadarIsland::setCaptionPixelSize(qreal size) {
 void RadarIsland::setHeadingPixelSize(qreal size) {
     if (!std::isfinite(size) || size < 1 || headingPixelSize_ == size) return;
     headingPixelSize_ = size; update(); emit textSizesChanged();
+}
+void RadarIsland::setLabelTopInset(qreal inset) {
+    if (!std::isfinite(inset) || inset < 0 || labelTopInset_ == inset) return;
+    labelTopInset_ = inset; update(); emit labelTopInsetChanged();
 }
 bool RadarIsland::pan(double dx,double dy) {
     if (!std::isfinite(dx) || !std::isfinite(dy)) return false;
@@ -557,7 +618,8 @@ bool RadarIsland::traverseVisible(int direction) {
 bool RadarIsland::fitView() {
     if (!isVisible() || !source_ || width()<=16 || height()<=32) return false;
     if (dirty_) synchronize();
-    const auto& bounds=terrainBounds_;
+    if (terrainPreparation_ || geometryDirty_) { fitPending_=true; return false; }
+    const QRectF bounds=terrainBounds_;
     if (bounds.isEmpty()) return false;
     const auto center=bounds.center();
     const double zoom=std::clamp(std::min((width()-16)/bounds.width(),(height()-32)/bounds.height()),minimumZoom,maximumZoom);
@@ -567,6 +629,7 @@ bool RadarIsland::fitView() {
 QImage RadarIsland::previewImage() {
     if (!isVisible()) return {};
     if (dirty_) synchronize();
+    if (terrainPreparation_ || geometryDirty_) return {};
     QImage image(320,200,QImage::Format_ARGB32_Premultiplied); image.fill(QColor("#071619"));
     const auto& bounds=terrainBounds_;
     if (bounds.isEmpty()) return image;
@@ -587,6 +650,7 @@ void RadarIsland::project(bool refresh) {
     const auto* proxy=qobject_cast<QSortFilterProxyModel*>(source_.data());
     // Subclasses can override roles without declaring another Q_OBJECT.
     const bool passthrough=proxy && typeid(*proxy)==typeid(ResourceFilter);
+    const bool problemsMode=passthrough && static_cast<const ResourceFilter*>(proxy)->mode()=="problems";
     if (isVisible() && width()>0 && height()>0) {
         const auto onScreen=worldViewport();
         const auto viewport=onScreen.adjusted(-step,-step,step,step);
@@ -612,6 +676,7 @@ void RadarIsland::project(bool refresh) {
                 if (tone=="status") { if (health==1 || health==2) tile.color=tile.announce; }
                 else if (tone=="fresh") tile.color=QColor::fromRgb(0x7DFFC3);
                 else if (!tone.isEmpty()) { const QColor color(tone); if (color.isValid()) tile.color=color; }
+                if (problemsMode) tile.color=tile.announce;
                 if (effectsEnabled_ && alerts_ && !alerts_->reducedMotion() && onScreen.intersects(QRectF(point-QPointF(2.75,2.75),QSizeF(5.5,5.5)))) {
                     const auto animation=effect.value(QStringLiteral("animation")).toString();
                     if (animation=="blink") tile.animation=Animation::Blink;
@@ -639,6 +704,7 @@ void RadarIsland::syncAnimationClock() {
     else if (!animationTimer_.isActive()) animationTimer_.start();
 }
 void RadarIsland::paint(QPainter* painter) {
+    if (sourceEmpty_) return;
     const auto viewport=worldViewport();
     const auto screen=[&](QPointF point) { return QPointF(width()/2,height()/2)+(point+pan_)*zoom_; };
     const auto tile=[&](QPointF world, QColor color) {
@@ -663,8 +729,7 @@ void RadarIsland::paint(QPainter* painter) {
     for (const int index:visibleMarkers) {
         const auto& marker=markers_[index];
         if (!viewport.intersects(marker.area)) continue;
-        const bool active=groups_.contains(marker.group);
-        if (viewport.contains(marker.world)) tile(marker.world,active ? terrainColor(marker.kind) : dimmed);
+        if (viewport.contains(marker.world)) tile(marker.world,dimmed);
         const bool clusterLabel=marker.overview;
         if ((clusterLabel && zoom_>=1.35) || (!clusterLabel && zoom_<.85)) continue;
         QRectF label=marker.labelBounds;
@@ -681,7 +746,8 @@ void RadarIsland::paint(QPainter* painter) {
             label.moveCenter(center);
             label.moveLeft(std::clamp(label.left(),4.,width()-label.width()-4));
             label.moveTop(std::clamp(label.top(),4.,height()-label.height()-4));
-            if (label.adjusted(-4,-4,4,4).intersects(land)
+            if (label.top() < labelTopInset_
+                || label.adjusted(-4,-4,4,4).intersects(land)
                 || std::any_of(labels.cbegin(),labels.cend(),[&](const auto& shown) { return shown.first.adjusted(-4,-2,4,2).intersects(label); })) continue;
             const auto topLeft=(label.topLeft()-QPointF(width()/2,height()/2))/zoom_-pan_;
             const QRectF query(topLeft,label.size()/zoom_);

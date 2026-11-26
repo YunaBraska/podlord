@@ -222,6 +222,7 @@ Pane {
                 glyphColor: workspace.appearanceColors.muted
                 text: settingRow.help
                 Accessible.name: settingRow.label + ": " + settingRow.help
+                wantsTip: false
                 onClicked: ToolTip.show(settingRow.help, 8000)
             }
         }
@@ -321,13 +322,11 @@ Pane {
                     Switch {
                         id: aiAutoSwitch
                         objectName: "incidentAiEnable"
-                        visible: workspace.currentSession !== "" && workspace.incidentAiModel !== ""
+                        visible: workspace.incidentAiModel !== ""
                         text: workspace.uiText["ai.auto"]
                         checked: workspace.incidentAiEnabled
-                        Accessible.name: workspace.uiText["ai.enable"]
+                        Accessible.name: workspace.uiText["ai.auto"]
                         Accessible.description: workspace.uiText["ai.autoData"]
-                        ToolTip.visible: hovered
-                        ToolTip.text: workspace.uiText["ai.autoData"]
                         implicitHeight: settings.Window.window && (settings.Window.window.width < 900
                             || settings.Window.window.compactLandscape === true) ? 44 : 32
                         indicator: Rectangle {
@@ -425,7 +424,7 @@ Pane {
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; visible: settings.section === "sync"
-                    SettingRow { label: workspace.uiText["settings.backgroundRefresh"]; help: workspace.uiText["settings.backgroundRefreshHelp"]; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 0; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.backgroundRefreshMinutes"] } }
+                    SettingRow { label: workspace.uiText["settings.backgroundRefresh"] + " (min)"; help: ""; SpinBox { id: inactive; objectName: "inlineInactiveMinutes"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.backgroundRefreshMinutes"] } }
                     SettingRow { label: workspace.uiText["settings.requestLimitPerMinute"]; help: workspace.uiText["settings.requestLimitPerMinuteHelp"]; SpinBox { id: requests; objectName: "inlineRequestLimit"; from: 0; to: 60000; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.requestLimitPerMinute"] } }
                     SettingRow { label: workspace.uiText["settings.resourceCacheTtl"]; help: workspace.uiText["settings.resourceRetentionHelp"]; SpinBox { id: cacheHours; objectName: "inlineCollectionCacheHours"; from: 1; to: 2147483647; editable: true; onValueModified: syncAutosave.restart(); enabled: !workspace.busy; Accessible.name: workspace.uiText["settings.resourceCacheTtlHours"] } }
                     SelectableText { objectName: "collectionCacheUsage"; Layout.fillWidth: true; text: workspace.uiText["settings.cachedPayloadEstimate"] + (workspace.cachePayloadBytes / 1048576).toFixed(2) + " MiB"; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.description: workspace.uiText["settings.resourceDataSizeHelp"] }
