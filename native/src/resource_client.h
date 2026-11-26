@@ -200,6 +200,8 @@ private:
         QDateTime lastSync;
         QDateTime lastDiscovery;
         QList<QDateTime> requestStarts;
+        qint64 lastRequestStart = -1;
+        qint64 backoffUntil = 0;
         QDateTime presentationExpiry;
         quint64 presentationRevision = 0;
         quint64 presentationJob = 0;
@@ -258,10 +260,11 @@ private:
     ReadSettings settings_;
     bool enabled_ = true;
     qint64 lastStart_ = -1;
+    int focusedReadStreak_ = 0;
     bool resetConnections_ = false;
     QElapsedTimer clock_;
-    qint64 backoffUntil_ = 0;
     bool enqueue(Task task);
+    QString contextKey(const QString& id) const;
     static bool collectionRead(Read read);
     static bool parallelRead(const Task& task);
     void updateProgress(const QString& id);

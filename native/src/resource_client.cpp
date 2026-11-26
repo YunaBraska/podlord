@@ -416,7 +416,11 @@ QVariantList ResourceClient::requestAudit(const QString& id) const {
     if (running_) live(*running_,"Running");
     for (const auto& task:reads_) live(task,"Running");
     for (const auto& task:preparing_) live(task,"Processing");
-    for (const auto& task:queue_) live(task,backoffUntil_>clock_.elapsed() ? "Backoff" : "Queued");
+    qint64 backoffUntil = 0;
+    const auto key = contextKey(id);
+    for (auto it = states_.cbegin(); it != states_.cend(); ++it)
+        if (contextKey(it.key()) == key) backoffUntil = std::max(backoffUntil, it->backoffUntil);
+    for (const auto& task:queue_) live(task,backoffUntil > clock_.elapsed() ? "Backoff" : "Queued");
     result.append(completed);
     return result;
 }
@@ -556,7 +560,7 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
         scheduleSync(); return true;
     }
     it->syncTotal = 0; it->syncCompleted = 0;
-    it->progress = 0;
+    if (!it->initialized) it->progress = 0;
     if (!foreground && !it->collections.isEmpty()) {
         const auto now = now_();
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
@@ -595,12 +599,17 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
 bool ResourceClient::isVisible(const QString& id) const {
     return !id.isEmpty() && std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) { return view.session == id; });
 }
+QString ResourceClient::contextKey(const QString& id) const {
+    const auto state = states_.constFind(id);
+    return state != states_.cend() && !state->connection.contextId.isEmpty() ? state->connection.contextId : id;
+}
 bool ResourceClient::logsShown(const QString& id, const QString& key) const {
     return !key.isEmpty() && std::any_of(views_.cbegin(), views_.cend(), [&](const View& view) { return view.session == id && view.logKey == key; });
 }
 bool ResourceClient::wanted(const QString& id) const {
     const auto state = states_.constFind(id);
-    return state != states_.cend() && state->open && (isVisible(id) || settings_.inactiveSyncMinutes > 0);
+    return state != states_.cend() && state->open
+        && (isVisible(id) || !state->initialized || settings_.inactiveSyncMinutes > 0);
 }
 bool ResourceClient::configure(ReadSettings settings) {
     if (!settings.valid()) return false;
@@ -638,9 +647,6 @@ bool ResourceClient::showSession(const QString& id, const QString& view) {
     for (auto it = views_.cbegin(); it != views_.cend(); ++it)
         if (!id.isEmpty() && it.key() != view && it->session == id) return false;
     if (views_.value(view).session != id) {
-        const auto previous = views_.value(view).session;
-        if (auto state = states_.find(previous); state != states_.end() && state->syncPending > 0)
-            state->lastDiscovery = {};
         hideLogs(view);
         if (auto previous = views_.find(view); previous != views_.end()) previous->inspector = {};
     }
@@ -688,10 +694,10 @@ void ResourceClient::scheduleSync() {
     if (delay != std::numeric_limits<qint64>::max()) sync_.start(static_cast<int>(std::min<qint64>(delay, std::numeric_limits<int>::max())));
 }
 qint64 ResourceClient::syncInterval(const QString& id, const State& state) const {
+    const auto view = std::find_if(views_.cbegin(), views_.cend(), [&](const View& candidate) { return candidate.session == id; });
+    if (view == views_.cend()) return !state.initialized ? 45000 : static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
     if (!state.lastDiscovery.isValid()) return 1000;
     const bool available = !state.snapshot.isEmpty();
-    const auto view = std::find_if(views_.cbegin(), views_.cend(), [&](const View& candidate) { return candidate.session == id; });
-    if (view == views_.cend()) return static_cast<qint64>(settings_.inactiveSyncMinutes) * 60000;
     if (!view->focused) return !state.retryableFailures.isEmpty() ? 30000 : available ? 240000 : 45000;
     if (!available) return state.failures.isEmpty() ? 12000 : 25000;
     const auto idle = clock_.elapsed() - view->activityAt;
@@ -1001,9 +1007,14 @@ int ResourceClient::requestCountLastMinute(const QString& id) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend()) return 0;
     const auto now = now_();
-    return static_cast<int>(std::count_if(state->requestStarts.cbegin(), state->requestStarts.cend(), [&](const auto& at) {
-        return at > now.addSecs(-60) && at <= now;
-    }));
+    const auto key = contextKey(id);
+    int count = 0;
+    for (auto it = states_.cbegin(); it != states_.cend(); ++it)
+        if (contextKey(it.key()) == key)
+            count += static_cast<int>(std::count_if(it->requestStarts.cbegin(), it->requestStarts.cend(), [&](const auto& at) {
+                return at > now.addSecs(-60) && at <= now;
+            }));
+    return count;
 }
 void ResourceClient::recordRequestStarted(const Task& task) {
     const auto now = now_();
@@ -1011,7 +1022,11 @@ void ResourceClient::recordRequestStarted(const Task& task) {
     starts.removeIf([&](const auto& at) { return at <= now.addSecs(-60) || at > now; });
     starts.append(now);
     emit requestStarted(task.id, task.path, lastStart_);
-    emit changed(task.id);
+    const auto key = contextKey(task.id);
+    QStringList affected;
+    for (auto it = states_.cbegin(); it != states_.cend(); ++it)
+        if (it->open && contextKey(it.key()) == key) affected.append(it.key());
+    for (const auto& id : affected) emit changed(id);
 }
 QString ResourceClient::status(const QString& id) const {
     const auto it = states_.constFind(id);
@@ -1042,6 +1057,7 @@ bool ResourceClient::syncLoading(const QString& id) const {
 double ResourceClient::loadingProgress(const QString& id) const {
     const auto state = states_.constFind(id);
     if (state == states_.cend()) return 0;
+    if (state->initialized) return 1;
     return syncLoading(id) ? std::min(state->progress, 0.99) : state->progress;
 }
 bool ResourceClient::initialSyncComplete(const QString& id) const {
@@ -1336,7 +1352,7 @@ bool ResourceClient::enqueue(Task task) {
     if (task.read == Read::Log) ++state.logs[task.logKey].pending;
     else ++state.resourcePending;
     if (collectionRead(task.read)) {
-        if (!state.syncPending && state.progress >= 1) state.progress = 0;
+        if (!state.initialized && !state.syncPending && state.progress >= 1) state.progress = 0;
         ++state.syncPending; ++state.syncTotal;
     }
     queue_.append(std::move(task));
@@ -1350,22 +1366,62 @@ void ResourceClient::dispatch() {
         return task.read == Read::Apply && credentialRevision(task.id) != std::optional<quint64>{task.revision};
     });
     if (!enabled_ || running_ || reads_.size() + preparing_.size() >= 4 || queue_.isEmpty()) { if (queue_.isEmpty()) gate_.stop(); return; }
-    const qint64 spacing = settings_.requestHardLimitPerMinute > 0 ? std::max<qint64>(400, (60000 + settings_.requestHardLimitPerMinute - 1) / settings_.requestHardLimitPerMinute) : 400;
-    const auto wait = std::max(backoffUntil_, lastStart_ < 0 ? qint64{0} : lastStart_ + spacing) - clock_.elapsed();
-    if (wait > 0) { gate_.start(static_cast<int>(std::min<qint64>(wait, std::numeric_limits<int>::max()))); return; }
-    auto chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) {
-        return task.change.has_value() || task.read == Read::Detail || task.read == Read::FileTarget
-            || task.read == Read::FileSocket || (task.read == Read::Log && task.foreground);
-    });
-    if (chosen == queue_.end()) chosen = std::find_if(queue_.begin(), queue_.end(), [this](const auto& task) {
-        if (!task.foreground || task.read != Read::List || !task.path.startsWith("/api/v1/")
-            || (task.kind != "Pod" && task.kind != "Node")) return false;
-        const auto state = states_.constFind(task.id);
-        return state != states_.cend() && !state->initialized && state->snapshot.isEmpty();
-    });
-    if (chosen == queue_.end()) chosen = std::find_if(queue_.begin(), queue_.end(), [](const auto& task) { return task.foreground; });
-    if (chosen == queue_.end()) chosen = queue_.begin();
+    const auto now = clock_.elapsed();
+    const auto globalWait = (lastStart_ < 0 ? qint64{0} : lastStart_ + 400) - now;
+    if (globalWait > 0) { gate_.start(static_cast<int>(std::min<qint64>(globalWait, std::numeric_limits<int>::max()))); return; }
+    const qint64 contextSpacing = settings_.requestHardLimitPerMinute > 0
+        ? (60000 + settings_.requestHardLimitPerMinute - 1) / settings_.requestHardLimitPerMinute : 0;
+    QMap<QString, qint64> latestStart;
+    QMap<QString, qint64> latestBackoff;
+    for (auto it = states_.cbegin(); it != states_.cend(); ++it) {
+        const auto key = contextKey(it.key());
+        latestStart[key] = std::max(latestStart.value(key, qint64{-1}), it->lastRequestStart);
+        latestBackoff[key] = std::max(latestBackoff.value(key, qint64{0}), it->backoffUntil);
+    }
+    const auto due = [&](const Task& task) {
+        const auto key = contextKey(task.id);
+        const auto last = latestStart.value(key, qint64{-1});
+        return std::max(latestBackoff.value(key, qint64{0}), last < 0 ? qint64{0} : last + contextSpacing);
+    };
+    QSet<QString> focusedIds;
+    QSet<QString> visibleIds;
+    for (const auto& view : views_) {
+        if (view.focused) focusedIds.insert(view.session);
+        visibleIds.insert(view.session);
+    }
+    qint64 nextDue = std::numeric_limits<qint64>::max();
+    auto chosen = queue_.end();
+    int chosenPriority = std::numeric_limits<int>::max();
+    for (auto task = queue_.begin(); task != queue_.end(); ++task) {
+        const auto readyAt = due(*task);
+        if (readyAt > now) { nextDue = std::min(nextDue, readyAt); continue; }
+        const bool focused = focusedIds.contains(task->id);
+        const bool collection = collectionRead(task->read);
+        const bool explicitRead = task->change.has_value() || task->read == Read::Detail
+            || task->read == Read::FileTarget || task->read == Read::FileSocket
+            || (task->read == Read::Log && task->foreground);
+        const auto state = states_.constFind(task->id);
+        const bool firstEssentials = focused && task->read == Read::List && task->path.startsWith("/api/v1/")
+            && (task->kind == "Pod" || task->kind == "Node") && !state->initialized && state->snapshot.isEmpty();
+        const int priority = explicitRead ? 0
+            : focusedReadStreak_ >= 3 && collection && !focused ? 1
+            : firstEssentials ? 2
+            : collection && focused ? 3
+            : task->foreground ? 4
+            : visibleIds.contains(task->id) ? 5 : 6;
+        if (chosen == queue_.end() || priority < chosenPriority
+            || (priority == chosenPriority && state->lastRequestStart < states_.constFind(chosen->id)->lastRequestStart)) {
+            chosen = task;
+            chosenPriority = priority;
+        }
+    }
+    if (chosen == queue_.end() && nextDue > now) {
+        gate_.start(static_cast<int>(std::min<qint64>(nextDue - now, std::numeric_limits<int>::max())));
+        return;
+    }
+    if (chosen == queue_.end()) return;
     if (!parallelRead(*chosen) && (!reads_.isEmpty() || !preparing_.isEmpty())) return;
+    focusedReadStreak_ = collectionRead(chosen->read) && focusedIds.contains(chosen->id) ? focusedReadStreak_ + 1 : 0;
     running_ = *chosen;
     queue_.erase(chosen);
     // Change requests retain the revision of their captured connection, including finite read-back.
@@ -1392,6 +1448,7 @@ void ResourceClient::dispatch() {
         running_.reset(); emit changed(task.id); dispatch(); return;
     }
     lastStart_ = clock_.elapsed();
+    states_[task.id].lastRequestStart = lastStart_;
     if (task.read == Read::Log && states_[task.id].logs[task.logKey].cycleAt < 0) states_[task.id].logs[task.logKey].cycleAt = lastStart_;
     const auto& connection = task.change ? task.change->connection : states_[task.id].connection;
     QByteArray base = connection.server.toEncoded();
@@ -1614,7 +1671,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
         if (http == 429) {
             bool valid = false;
             const auto seconds = retryAfter.toLongLong(&valid);
-            backoffUntil_ = std::max(backoffUntil_, clock_.elapsed() + (valid && seconds >= 0 ? std::min<qint64>(seconds, 3600) * 1000 : 30000));
+            state.backoffUntil = std::max(state.backoffUntil, clock_.elapsed() + (valid && seconds >= 0 ? std::min<qint64>(seconds, 3600) * 1000 : 30000));
         }
         if (http == 200 && !transportError && bytes.size() <= 24 * 1024 * 1024) {
             QJsonParseError error;
@@ -1652,7 +1709,7 @@ void ResourceClient::finish(const Task& task, int http, const QByteArray& bytes,
             if (date.isValid()) delay = std::max<qint64>(1000, now_().msecsTo(date));
         }
         const auto now = clock_.elapsed();
-        backoffUntil_ = delay > std::numeric_limits<qint64>::max() - now ? std::numeric_limits<qint64>::max() : now + delay;
+        state.backoffUntil = delay > std::numeric_limits<qint64>::max() - now ? std::numeric_limits<qint64>::max() : now + delay;
         fail(task, "The server is limiting requests. Waiting before retrying.");
     } else if (http == 403) {
         fail(task, "Authorization denied; other resource kinds remain available.");

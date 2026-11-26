@@ -372,7 +372,7 @@ public:
                         document["items"] = values;
                         if (scenario.startsWith("radar_loading_")) document["metadata"] = QJsonObject{};
                     }
-                    if (scenario == "shell_health_tab_switch_large" && path == "/api/v1/pods") {
+                    if ((scenario == "shell_health_tab_switch_large" || scenario == "shell_health_tab_switch_inflight_large") && path == "/api/v1/pods") {
                         QJsonArray values;
                         for (int index = 0; index < 300; ++index) values.append(pod(QString("health-%1").arg(index)));
                         document = {{"metadata", QJsonObject{}}, {"items", values}};
@@ -587,6 +587,7 @@ public:
                         || ((scenario == "hidden_followup" || scenario == "shutdown_pending") && path == "/api") ? 400 : 0;
                     if (scenario=="map_preview_deferred" && path=="/api/v1/pods" && url.query().contains("continue=") && authorization=="Bearer inactive-token") delay=1800;
                     if (scenario=="shell_health_initial" && path=="/api/v1/pods") delay=1800;
+                    if (scenario=="shell_health_tab_switch_inflight_large" && path=="/api/v1/pods" && authorization=="Bearer local-test-token") delay=1800;
                     if ((scenario=="initial_load_navigation" || scenario=="initial_map_resume") && path=="/api" && authorization=="Bearer local-test-token") delay=1200;
                     QTimer::singleShot(delay, this, [this, live, response, delay] {
                         if (live && live->state() == QAbstractSocket::ConnectedState) {
@@ -1797,8 +1798,14 @@ bool execute(const QString& requestedScenario) {
     if (scenario.startsWith("shell_health_tab_switch")) {
         if (!workspace.setWorkspacePage("resources")) return false;
         auto* health = item(window, "sessionHealthSegments");
+        const bool inflight = scenario == "shell_health_tab_switch_inflight_large";
         const int expected = scenario.endsWith("_large") ? 301 : 3;
-        if (!health || !waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == expected; }, 15000)) {
+        if (!health || !waitFor([&] {
+            return inflight ? workspace.syncLoading() && std::any_of(server.requests.cbegin(), server.requests.cend(), [](const QString& path) {
+                return path.startsWith("/api/v1/pods");
+            }) && workspace.totalResourceCount() < expected
+                : !workspace.syncLoading() && workspace.totalResourceCount() == expected;
+        }, 15000)) {
             qWarning() << "First health load" << workspace.syncLoading() << workspace.totalResourceCount(); return false;
         }
         const auto first = workspace.currentSession();
@@ -1819,7 +1826,8 @@ bool execute(const QString& requestedScenario) {
             qWarning() << "Restore first health context" << workspace.busy() << workspace.currentSession() << first;
             return false;
         }
-        return workspace.initialSyncComplete() && health->isVisible()
+        return waitFor([&] { return !workspace.syncLoading() && workspace.totalResourceCount() == expected; }, 15000)
+            && workspace.initialSyncComplete() && health->isVisible()
             && qAbs(health->height() - health->parentItem()->height()) < 1
             && item(window, "sessionHealth_healthy") && item(window, "sessionHealth_healthy")->height() > 0;
     }
@@ -2922,7 +2930,7 @@ bool execute(const QString& requestedScenario) {
             auto* health = item(window, "sessionHealthSegments");
             if (!health || !waitFor([&] { return qAbs(health->height() - health->parentItem()->height()) < 1; })) return false;
             if (!workspace.refresh()) return false;
-            if (!workspace.syncLoading() || workspace.loadingProgress() >= 1 || !workspace.initialSyncComplete()
+            if (!workspace.syncLoading() || workspace.loadingProgress() != 1 || !workspace.initialSyncComplete()
                 || !health->isVisible() || qAbs(health->height() - health->parentItem()->height()) >= 1) return false;
             bool stable = true;
             if (!waitFor([&] {
