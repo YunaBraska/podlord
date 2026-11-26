@@ -203,6 +203,12 @@ jobs:
             codesign --verify --deep --strict "$app"
             codesign -d --entitlements :- "$app" 2>/dev/null | /usr/bin/plutil -extract application-identifier raw -o - - | grep -Fx "$SIGNING_TEAM.berlin.yuna.podlord"
             test -f "$app/embedded.mobileprovision"
+            for forbidden_domain in github.com/sponsors buymeacoffee.com ko-fi.com liberapay.com; do
+              if find "$app" -type f ! -path '*/_CodeSignature/*' ! -name embedded.mobileprovision -exec strings {} + | grep -Fq "$forbidden_domain"; then
+                printf 'Store app must not contain %s.\n' "$forbidden_domain" >&2
+                exit 1
+              fi
+            done
             stage=$(mktemp -d "$RUNNER_TEMP/podlord-ios-package.XXXXXX")
             mkdir -p "$stage/Payload"
             ditto "$app" "$stage/Payload/Podlord.app"

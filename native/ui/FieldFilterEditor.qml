@@ -30,7 +30,7 @@ Pane {
             Accessible.description: editor.quantityField ? "Numeric filters use actual measurements. CPU uses cores, c, milliCPU or millicores. Memory/storage units are case-insensitive: m or MB means megabytes, mi or MiB means mebibytes. Ranges all match; exact numeric alternatives use OR. Without numeric terms, exact text, prefix, suffix and regex match the displayed value, including unavailable or incomplete values." : "Edit the complete expression, including custom values. Filtering does not start requests."
             onTextEdited: editor.controller.filterField(editor.controller.filterPickerField, text)
         }
-        Label {
+        SelectableText {
             Layout.fillWidth: true
             text: editor.controller.filterError
             textFormat: Text.PlainText
@@ -74,7 +74,7 @@ Pane {
                     width: 18; height: 18
                     color: valueControl.checked ? editor.controller.appearanceColors.accent : editor.controller.appearanceColors.inset
                     border.color: valueControl.activeFocus ? editor.controller.appearanceColors.accent : editor.controller.appearanceColors.border
-                    Label { anchors.centerIn: parent; text: valueControl.checked ? "✓" : ""; color: editor.controller.appearanceColors.inset }
+                    SelectableText { anchors.centerIn: parent; text: valueControl.checked ? "✓" : ""; color: editor.controller.appearanceColors.inset }
                 }
                 contentItem: Label {
                     text: valueControl.displayValue
@@ -88,7 +88,7 @@ Pane {
                 onPressAndHold: copyMenu.popup(valueControl, 0, valueControl.height)
                 ToolTip {
                     visible: valueControl.hovered || valueControl.activeFocus
-                    contentItem: Label {
+                    contentItem: SelectableText {
                         text: valueControl.displayValue
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap

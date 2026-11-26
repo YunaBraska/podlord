@@ -20,7 +20,7 @@ brew install --cask podlord</code></pre>
 
 <section class="install-step">
   <h2>Native snapshots and stable releases</h2>
-  <p>The landing-page images show C++ PodLord. For that edition, choose a GitHub prerelease containing <code>podlord-native-</code> archives after a qualified merge to main. The latest stable release and Homebrew may still contain C# PodLord. Select the archive for your operating system and processor. On macOS, move the extracted app to Applications.</p>
+  <p>The landing-page images show C++ PodLord. For that edition, choose a GitHub prerelease containing <code>podlord-native-</code> archives after a qualified merge to main. Check each release's build information before installing. Select the archive for your operating system and processor. On macOS, move the extracted app to Applications.</p>
   <p>Snapshots are prereleases, not Store releases or a notarization claim. Regular releases remain manual. Homebrew installations update with <code>brew upgrade</code>.</p>
   <p><a class="button" href="https://github.com/YunaBraska/podlord/releases">Browse releases and snapshots</a></p>
 </section>

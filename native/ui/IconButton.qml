@@ -9,17 +9,21 @@ ToolButton {
     required property string glyph
     property bool showText: false
     property bool activeIndicator: false
+    property bool destructive: false
+    property color glyphColor: destructive ? workspace.appearanceColors.danger : workspace.appearanceColors.text
     readonly property int targetSize: Window.window && (Window.window.width < 900 || Window.window.compactLandscape === true) ? 44 : 32
     implicitWidth: Math.max(targetSize, implicitContentWidth + leftPadding + rightPadding)
     implicitHeight: Math.max(targetSize, implicitContentHeight + topPadding + bottomPadding)
     padding: 6
     Accessible.name: text
-    ToolTip.visible: !showText && (hovered || visualFocus)
-    ToolTip.text: text
+    property string tipText: text
+    property bool wantsTip: !showText && (hovered || visualFocus)
+    PlainToolTip { target: control }
     background: Rectangle {
         color: control.down || control.checked ? workspace.appearanceColors.selection
             : control.hovered ? workspace.appearanceColors.raised : workspace.appearanceColors.inset
-        border.color: control.checked || control.activeIndicator || control.activeFocus
+        border.color: control.destructive ? workspace.appearanceColors.danger
+            : control.checked || control.activeIndicator || control.activeFocus
             ? workspace.appearanceColors.accent : workspace.appearanceColors.border
     }
     contentItem: RowLayout {
@@ -30,14 +34,15 @@ ToolButton {
             visible: control.glyph !== ""
             kind: control.glyph
             fill: workspace.appearanceColors.inset
-            stroke: control.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+            stroke: control.enabled ? control.glyphColor : workspace.appearanceColors.muted
         }
         Label {
             visible: control.showText
             text: control.text
             textFormat: Text.PlainText
             font: control.font
-            color: control.enabled ? workspace.appearanceColors.text : workspace.appearanceColors.muted
+            color: !control.enabled ? workspace.appearanceColors.muted
+                : control.destructive ? workspace.appearanceColors.danger : workspace.appearanceColors.text
         }
     }
 }

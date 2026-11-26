@@ -7,6 +7,7 @@
 #include <QMediaPlayer>
 #include <QAudioOutput>
 #include <QStandardItemModel>
+#include <QElapsedTimer>
 #include <QSortFilterProxyModel>
 
 namespace podlord {
@@ -84,6 +85,8 @@ public:
     Q_INVOKABLE bool setPreferences(bool muted, bool reducedMotion);
     Q_INVOKABLE bool reload();
     Q_INVOKABLE bool previewSound(const QString& id);
+    /** One audible cue per short burst of retryable API failures in a session. */
+    bool notifyRequestFailure(const QString& session);
     bool zoomPreviewBusy() const { return zoomPreviewBusy_; }
     QString zoomPreviewError() const { return zoomPreviewError_; }
     /** Evaluate one draft against the current cache, focusing an eligible visible path without saving or replaying effects. */
@@ -144,6 +147,7 @@ private:
     QTimer expiry_;
     std::unique_ptr<QAudioOutput> output_;
     std::unique_ptr<QMediaPlayer> player_;
+    QMap<QString, QElapsedTimer> requestFailureSounds_;
     int volumePercent_ = 100;
     bool persist(AlertCatalog desired);
     bool queue(const QString& session);

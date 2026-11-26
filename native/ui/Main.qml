@@ -23,6 +23,9 @@ ApplicationWindow {
         terminalDialog.followsInspector = followsInspector
         terminalDialog.open()
     }
+    function openAiSettings() {
+        if (workspace.setWorkspacePage("settings") && settingsLoader.item) settingsLoader.item.section = "ai"
+    }
     ContainerTerminalDialog { id: terminalDialog; hostWindow: window }
     ContextRemovalDialog {}
     function focusSearchIfOpen() {
@@ -65,8 +68,6 @@ ApplicationWindow {
         Rectangle { anchors.fill: parent; visible: configDrop.containsDrag; color: "transparent"; border.width: 2; border.color: workspace.appearanceColors.accent }
     }
     property string ociImportConfigPath: ""
-    readonly property var quickOpenEntries: quickOpenMenu.visible ? [{name: workspace.uiText["nav.contexts"], header: true}]
-        .concat(window.mapContexts.map(entry => ({id: entry.id, name: entry.name, context: true}))) : []
     function editTabContextAlias(tabId) {
         const contextId = workspace.sessionConfiguration(tabId).contextId
         const context = workspace.contexts.find(entry => entry.id === contextId)
@@ -100,10 +101,7 @@ ApplicationWindow {
         id: quickOpenCommand
         text: workspace.uiText["context.openFile"]
         enabled: !workspace.busy
-        onTriggered: {
-            const anchor = quickOpenControl.visible ? quickOpenControl : workspaceActionsButton
-            quickOpenMenu.popup(anchor, 0, anchor.height)
-        }
+        onTriggered: quickChooser.open()
     }
     Action { id: problemsCommand; text: "Toggle Problems"; enabled: workspace.currentSession !== ""; onTriggered: workspace.setFilterMode(workspace.problemsOnly ? "" : "problems") }
     CommandPalette { id: commands; actions: [mapCommand, resourcesCommand, eventsCommand, sourcesCommand, portCommand, settingsCommand, problemsCommand] }
@@ -180,9 +178,9 @@ ApplicationWindow {
         anchors.centerIn: parent
         modal: true
         closePolicy: Popup.CloseOnEscape
-        contentItem: Label { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        contentItem: SelectableText { text: workspace.discardPrompt; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         footer: DialogButtonBox {
-            Button {
+            FlatButton {
                 id: discardStayButton
                 objectName: "discardStay"
                 text: "Stay"
@@ -190,8 +188,9 @@ ApplicationWindow {
                 Keys.onReturnPressed: discardChanges.reject()
                 Keys.onEnterPressed: discardChanges.reject()
             }
-            Button {
+            FlatButton {
                 objectName: "discardAccept"
+                destructive: true
                 text: "Discard changes"
                 DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
                 Keys.onReturnPressed: discardChanges.accept()
@@ -218,26 +217,26 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         property bool stopMode: !!workspace.portForwardTarget.existingId
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: (workspace.portForwardTarget.title || "") + "\n" + (workspace.portForwardTarget.namespace || "") + " / " + (workspace.portForwardTarget.kind || "") + " / " + (workspace.portForwardTarget.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: "Port-forward target: " + text }
-            Label { Layout.fillWidth: true; text: "Only this device can access 127.0.0.1. Closing this tab stops its forwards."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: (workspace.portForwardTarget.title || "") + "\n" + (workspace.portForwardTarget.namespace || "") + " / " + (workspace.portForwardTarget.kind || "") + " / " + (workspace.portForwardTarget.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: "Port-forward target: " + text }
+            SelectableText { Layout.fillWidth: true; text: "Only this device can access 127.0.0.1. Closing this tab stops its forwards."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             RowLayout {
                 visible: !portForwardDialog.stopMode
-                Label { text: "Local TCP port" }
+                SelectableText { text: "Local TCP port" }
                 TextField { id: forwardLocal; objectName: "portForwardLocal"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Local TCP port, 1 through 65535" }
             }
             RowLayout {
                 visible: !portForwardDialog.stopMode
-                Label { text: "Target TCP port" }
+                SelectableText { text: "Target TCP port" }
                 TextField { id: forwardRemote; objectName: "portForwardRemote"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Pod or Service TCP port, 1 through 65535" }
             }
-            Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            Label { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            Label { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         }
         footer: DialogButtonBox {
-            Button { id: forwardCancel; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "startPortForward"; text: "Start forwarding"; visible: !portForwardDialog.stopMode; enabled: !workspace.authenticationRequired && !workspace.busy; onClicked: workspace.startPreparedPortForward(forwardLocal.text, forwardRemote.text) }
-            Button { objectName: "stopPortForward"; text: "Stop forwarding"; visible: portForwardDialog.stopMode; onClicked: workspace.stopPreparedPortForward() }
+            FlatButton { id: forwardCancel; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "startPortForward"; text: "Start forwarding"; visible: !portForwardDialog.stopMode; enabled: !workspace.authenticationRequired && !workspace.busy; onClicked: workspace.startPreparedPortForward(forwardLocal.text, forwardRemote.text) }
+            FlatButton { objectName: "stopPortForward"; destructive: true; text: "Stop forwarding"; visible: portForwardDialog.stopMode; onClicked: workspace.stopPreparedPortForward() }
         }
         onAboutToShow: {
             forwardLocal.text = String(workspace.portForwardTarget.localPort || "")
@@ -258,10 +257,10 @@ ApplicationWindow {
         anchors.centerIn: parent
         modal: true
         closePolicy: Popup.CloseOnEscape
-        contentItem: Label { width: viewCloseFailure.availableWidth; text: workspace.error + "\n" + workspace.uiText["view.closeFailureBody"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+        contentItem: SelectableText { width: viewCloseFailure.availableWidth; text: workspace.error + "\n" + workspace.uiText["view.closeFailureBody"]; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         footer: DialogButtonBox {
-            Button { id: stayView; objectName: "stayViewClose"; text: "Stay"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "discardViewClose"; text: "Close without saving view"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { id: stayView; objectName: "stayViewClose"; text: "Stay"; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "discardViewClose"; destructive: true; text: "Close without saving view"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onOpened: stayView.forceActiveFocus(Qt.TabFocusReason)
         onRejected: workspace.confirmViewClose(false)
@@ -269,12 +268,6 @@ ApplicationWindow {
         }
     }
 
-    FileDialog {
-        id: chooser
-        objectName: "kubeconfigFileDialog"
-        title: "Import kubeconfig"
-        onAccepted: workspace.importFile(selectedFile.toString())
-    }
     ModalDialog {
         id: ociImportDialog
         objectName: "ociImportDialog"
@@ -285,10 +278,10 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Cancel
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: "Choose an OKE context, then its OCI config and unencrypted RSA PEM key. The config's key_file path is not used."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: "Choose an OKE context, then its OCI config and unencrypted RSA PEM key. The config's key_file path is not used."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ComboBox { id: ociImportContext; objectName: "ociImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "OKE context for API key" }
-            Button { objectName: "chooseOciConfig"; text: "Choose OCI config and key"; enabled: ociImportContext.currentIndex >= 0 && !workspace.busy; onClicked: ociConfigChooser.open() }
-            Label { Layout.fillWidth: true; text: workspace.sourceImportError; visible: ociImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+            FlatButton { objectName: "chooseOciConfig"; text: "Choose OCI config and key"; enabled: ociImportContext.currentIndex >= 0 && !workspace.busy; onClicked: ociConfigChooser.open() }
+            SelectableText { Layout.fillWidth: true; text: workspace.sourceImportError; visible: ociImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         }
         onClosed: window.ociImportConfigPath = ""
         Connections { target: workspace; function onSourceImportFinished(success) { if (success && ociImportDialog.visible) ociImportDialog.close() } }
@@ -319,10 +312,10 @@ ApplicationWindow {
         modal: true
         standardButtons: Dialog.Cancel
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: "Choose a GKE context and a Google service-account JSON key. A validated copy is kept in private app storage; the original file remains where you selected it."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: "Choose a GKE context and a Google service-account JSON key. A validated copy is kept in private app storage; the original file remains where you selected it."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ComboBox { id: gkeImportContext; objectName: "gkeImportContext"; Layout.fillWidth: true; model: workspace.contexts; textRole: "name"; valueRole: "id"; Accessible.name: "GKE context for service-account key" }
-            Button { objectName: "chooseGkeKey"; text: workspace.busy ? "Importing..." : "Choose service-account JSON key"; enabled: gkeImportContext.currentIndex >= 0 && !workspace.busy; onClicked: gkeKeyChooser.open() }
-            Label { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            FlatButton { objectName: "chooseGkeKey"; text: workspace.busy ? "Importing..." : "Choose service-account JSON key"; enabled: gkeImportContext.currentIndex >= 0 && !workspace.busy; onClicked: gkeKeyChooser.open() }
+            SelectableText { objectName: "gkeImportError"; Layout.fillWidth: true; text: workspace.sourceImportError; visible: gkeImportDialog.visible && text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
         }
         onClosed: importing = false
         Connections { target: workspace; function onSourceImportFinished(success) { if (gkeImportDialog.importing) { gkeImportDialog.importing = false; if (success) gkeImportDialog.close() } } }
@@ -337,6 +330,7 @@ ApplicationWindow {
         id: quickChooser
         objectName: "quickFileDialog"
         title: "Open kubeconfig file"
+        currentFolder: workspace.defaultKubeconfigFolder
         onAccepted: workspace.quickImportFile(selectedFile.toString())
     }
     Shortcut { sequences: [StandardKey.Open]; enabled: !workspace.busy; onActivated: quickChooser.open() }
@@ -344,6 +338,7 @@ ApplicationWindow {
         id: folderChooser
         objectName: "kubeconfigFolderDialog"
         title: "Import kubeconfig folder"
+        currentFolder: workspace.defaultKubeconfigFolder
         onAccepted: workspace.importFile(selectedFolder.toString())
     }
     ModalDialog {
@@ -364,7 +359,7 @@ ApplicationWindow {
                 required property var modelData
                 width: ListView.view.width
                 text: modelData.sourcePath + "\n" + modelData.message
-                contentItem: Label { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+                contentItem: SelectableText { text: parent.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
             }
         }
     }
@@ -378,12 +373,12 @@ ApplicationWindow {
         focus: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            Label { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-            Label { Layout.fillWidth: true; text: "Only this UID will be authorized. Kubernetes grace periods and finalizers remain in effect. This cannot be undone."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { objectName: "resourceDeleteTarget"; Layout.fillWidth: true; text: workspace.deletionTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: "Only this UID will be authorized. Kubernetes grace periods and finalizers remain in effect. This cannot be undone."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
-            Button { id: deleteCancel; objectName: "cancelResourceDelete"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "confirmResourceDelete"; text: "Delete this resource"; enabled: workspace.deletionPending && !workspace.authenticationRequired && !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { id: deleteCancel; objectName: "cancelResourceDelete"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "confirmResourceDelete"; destructive: true; text: "Delete this resource"; enabled: workspace.deletionPending && !workspace.authenticationRequired && !workspace.busy; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onAboutToShow: footer.contentItem.currentIndex = -1
         onOpened: deleteCancel.forceActiveFocus(Qt.TabFocusReason)
@@ -400,16 +395,16 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
             ScrollView {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 TextArea { objectName: "yamlApplyDiff"; readOnly: true; selectByMouse: true; text: workspace.yamlApplyDiff; textFormat: TextEdit.PlainText; font.family: workspace.monospaceFamily; Accessible.name: "Field changes, Secret values hidden" }
             }
-            Label { Layout.fillWidth: true; text: "Only Apply sends this patch. UID and original version must still match. Secret values remain hidden."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: "Only Apply sends this patch. UID and original version must still match. Secret values remain hidden."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
-            Button { id: applyCancel; objectName: "cancelYamlApply"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "confirmYamlApply"; text: "Apply to this resource"; enabled: workspace.yamlApplyPreview && !workspace.discardPending; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { id: applyCancel; objectName: "cancelYamlApply"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "confirmYamlApply"; text: "Apply to this resource"; enabled: workspace.yamlApplyPreview && !workspace.discardPending; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onAboutToShow: footer.contentItem.currentIndex = -1
         onOpened: applyCancel.forceActiveFocus(Qt.TabFocusReason)
@@ -426,7 +421,7 @@ ApplicationWindow {
         modal: true
         closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
-            Label { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: workspace.yamlApplyTarget; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             ScrollView {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 Layout.minimumHeight: 80; Layout.preferredHeight: 80
@@ -449,15 +444,15 @@ ApplicationWindow {
                             property string choice: workspace.yamlConflictChoice(index)
                             Connections { target: workspace; function onYamlApplyChanged() { conflictRow.choice = workspace.yamlConflictChoice(conflictRow.index) } }
                             Label { Layout.fillWidth: true; text: modelData.path + ": " + conflictRow.choice; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text }
-                            Button { objectName: "chooseYamlMine_" + index; text: "Use mine"; Accessible.name: "Use my value for " + modelData.path; onClicked: workspace.chooseYamlConflict(index, true) }
-                            Button { objectName: "chooseYamlServer_" + index; text: "Use server"; Accessible.name: "Use server value for " + modelData.path; onClicked: workspace.chooseYamlConflict(index, false) }
+                            FlatButton { objectName: "chooseYamlMine_" + index; text: "Use mine"; Accessible.name: "Use my value for " + modelData.path; onClicked: workspace.chooseYamlConflict(index, true) }
+                            FlatButton { objectName: "chooseYamlServer_" + index; text: "Use server"; Accessible.name: "Use server value for " + modelData.path; onClicked: workspace.chooseYamlConflict(index, false) }
                 }
             }
-            Label { Layout.fillWidth: true; text: "Unrelated server changes are retained. Choose every overlap. Continue creates a new preview; it does not send a write."; wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            SelectableText { Layout.fillWidth: true; text: "Unrelated server changes are retained. Choose every overlap. Continue creates a new preview; it does not send a write."; wrapMode: Text.Wrap; textFormat: Text.PlainText }
         }
         footer: DialogButtonBox {
-            Button { id: reconcileCancel; objectName: "cancelYamlReconcile"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
-            Button { objectName: "continueYamlReconcile"; text: "Continue to preview"; enabled: workspace.yamlReconcileReady; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { id: reconcileCancel; objectName: "cancelYamlReconcile"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "continueYamlReconcile"; text: "Continue to preview"; enabled: workspace.yamlReconcileReady; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
         }
         onOpened: reconcileCancel.forceActiveFocus(Qt.TabFocusReason)
         onAccepted: workspace.finishYamlReconcile(true)
@@ -481,7 +476,7 @@ ApplicationWindow {
             contentWidth: availableWidth
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            Label {
+            SelectableText {
                 id: authenticationText
                 width: authenticationBody.availableWidth
                 text: authentication.prompt
@@ -490,8 +485,8 @@ ApplicationWindow {
             }
         }
         footer: DialogButtonBox {
-            Button { objectName: "authenticationAccept"; text: "Authenticate"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
-            Button { objectName: "authenticationCancel"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
+            FlatButton { objectName: "authenticationAccept"; text: "Authenticate"; DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole }
+            FlatButton { objectName: "authenticationCancel"; text: workspace.uiText["action.cancel"]; DialogButtonBox.buttonRole: DialogButtonBox.RejectRole }
         }
         onAccepted: { if (session === workspace.currentSession) workspace.refresh(true) }
     }
@@ -529,7 +524,7 @@ ApplicationWindow {
                     LayoutMirroring.enabled: workspace.uiRightToLeft
                     LayoutMirroring.childrenInherit: true
                     spacing: window.touchLayout ? 0 : 4
-                    readonly property var controls: [searchToggle, quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, musicControl]
+                    readonly property var controls: [quickOpenControl, mapControl, resourcesControl, eventsControl, connectionsControl, settingsControl, musicControl, searchToggle]
                     readonly property real fullWidth: controls.filter(control => control.available !== false)
                         .reduce((total, control) => total + control.implicitWidth + spacing, workspaceActionsButton.implicitWidth)
                     function fits(control) {
@@ -541,17 +536,7 @@ ApplicationWindow {
                         }
                         return false
                     }
-                    IconButton {
-                        id: searchToggle
-                        readonly property bool available: searchCommand.enabled
-                        objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
-                        action: searchCommand; visible: available && navigationRow.fits(this)
-                        activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
-                            : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
-                        Accessible.name: "Show or hide current search"
-                        Accessible.description: "Search this view. Hiding search keeps the filter."
-                    }
-                    IconButton { id: quickOpenControl; readonly property bool available: window.mapContexts.length > 0; objectName: "quickOpenDropdown"; glyph: "ConfigMap"; action: quickOpenCommand; visible: available && navigationRow.fits(this) }
+                    IconButton { id: quickOpenControl; readonly property bool available: true; objectName: "quickOpenDropdown"; glyph: "Add"; glyphColor: workspace.appearanceColors.success; action: quickOpenCommand; visible: navigationRow.fits(this) }
                     NavButton { id: mapControl; readonly property bool available: true; objectName: "mapWorkspaceButton"; glyph: "Cluster"; action: mapCommand; text: workspace.uiText["nav.map"]; visible: available && navigationRow.fits(this) }
                     NavButton { id: resourcesControl; readonly property bool available: window.hasResources; objectName: "resourcesWorkspaceButton"; glyph: "Pod"; action: resourcesCommand; text: workspace.uiText["nav.resources"]; visible: available && navigationRow.fits(this) }
                     NavButton { id: eventsControl; readonly property bool available: window.hasEvents; objectName: "eventsWorkspaceButton"; glyph: "Event"; action: eventsCommand; text: workspace.uiText["nav.events"]; visible: available && navigationRow.fits(this) }
@@ -564,6 +549,16 @@ ApplicationWindow {
                         action: musicCommand
                         activeIndicator: workspace.music.playing
                         visible: navigationRow.fits(this)
+                    }
+                    IconButton {
+                        id: searchToggle
+                        readonly property bool available: searchCommand.enabled
+                        objectName: "workspaceSearchButton"; glyph: "Search"; text: workspace.uiText["nav.search"]
+                        action: searchCommand; visible: available && navigationRow.fits(this)
+                        activeIndicator: workspace.workspacePage === "events" ? workspace.eventFilterText !== ""
+                            : workspace.workspacePage === "ports" ? workspace.portFilterText !== "" : workspace.filterText !== ""
+                        Accessible.name: "Show or hide current search"
+                        Accessible.description: "Search this view. Hiding search keeps the filter."
                     }
 
                 IconButton { id: workspaceActionsButton; objectName: "workspaceActionsButton"; glyph: "Menu"; text: workspace.uiText["action.more"]; visible: navigationRow.controls.some(control => control.available !== false && !control.visible) || headerMetrics.overflowMetrics.length > 0 || ["resources", "events"].includes(workspace.workspacePage); activeIndicator: navigationRow.controls.some(control => !control.visible && control.checkable && control.checked); onClicked: workspaceActions.popup(workspaceActionsButton, 0, workspaceActionsButton.height) }
@@ -629,90 +624,6 @@ ApplicationWindow {
             Accessible.name: "Columns for the current table"
             onTriggered: if (queryRow.activeGrid) queryRow.activeGrid.openColumns()
         }
-    }
-    Menu {
-        id: quickOpenMenu
-        objectName: "quickOpenMenu"
-        width: Math.min(360, window.width - 24)
-        height: Math.min(implicitHeight, window.height - 48)
-        MenuItem { objectName: "quickOpenFile"; text: workspace.uiText["context.openFile"]; implicitHeight: window.controlHeight; enabled: !workspace.busy; onTriggered: quickChooser.open() }
-        MenuSeparator {}
-        Instantiator {
-            active: quickOpenMenu.visible
-            model: window.quickOpenEntries
-            delegate: MenuItem {
-                required property var modelData
-                implicitHeight: window.controlHeight
-                objectName: modelData.header ? "" : "quickContext_" + modelData.id
-                text: modelData.name
-                enabled: !modelData.header && !workspace.busy
-                checkable: false
-                Accessible.name: modelData.header ? text : "Open context " + text
-                onTriggered: if (!modelData.header) workspace.openContext(modelData.id)
-            }
-            onObjectAdded: (index, object) => quickOpenMenu.insertItem(index + (workspace.windowActionsAvailable ? 4 : 3), object)
-            onObjectRemoved: (index, object) => quickOpenMenu.removeItem(object)
-        }
-        Instantiator {
-            model: 1
-            delegate: Menu {
-                id: quickTabMenu
-                objectName: "quickOpenTabMenu"
-                title: workspace.uiText["action.openInTab"]
-                width: Math.min(360, window.width - 24)
-                height: Math.min(implicitHeight, window.height - 48)
-                Instantiator {
-                    active: quickTabMenu.visible
-                    model: window.mapContexts
-                    delegate: MenuItem {
-                        required property var modelData
-                        objectName: "quickContextNewTab_" + modelData.id
-                        text: modelData.name
-                        implicitHeight: window.controlHeight
-                        enabled: !workspace.busy
-                        Accessible.name: text
-                        onTriggered: workspace.openContext(modelData.id, false, true)
-                    }
-                    onObjectAdded: (index, object) => quickTabMenu.insertItem(index, object)
-                    onObjectRemoved: (index, object) => quickTabMenu.removeItem(object)
-                }
-            }
-            onObjectAdded: (index, object) => {
-                quickOpenMenu.insertMenu(1, object)
-                quickOpenMenu.itemAt(1).objectName = "quickOpenTab"
-            }
-            onObjectRemoved: (index, object) => quickOpenMenu.removeMenu(object)
-        }
-    }
-    Instantiator {
-        model: workspace.windowActionsAvailable ? 1 : 0
-        delegate: Menu {
-            id: quickWindowMenu
-            objectName: "quickOpenWindowMenu"
-            title: workspace.uiText["action.openInWindow"]
-            width: Math.min(360, window.width - 24)
-            height: Math.min(implicitHeight, window.height - 48)
-        Instantiator {
-            active: quickWindowMenu.visible
-            model: window.quickOpenEntries
-            delegate: MenuItem {
-                required property var modelData
-                implicitHeight: window.controlHeight
-                objectName: modelData.header ? "" : "quickWindowContext_" + modelData.id
-                text: modelData.name
-                enabled: !modelData.header && workspace.sessionWindowActionsReady
-                Accessible.name: "Open " + text + " in a separate window"
-                onTriggered: if (!modelData.header) workspace.openContext(modelData.id, true)
-            }
-            onObjectAdded: (index, object) => quickWindowMenu.insertItem(index, object)
-            onObjectRemoved: (index, object) => quickWindowMenu.removeItem(object)
-        }
-        }
-        onObjectAdded: (index, object) => {
-            quickOpenMenu.insertMenu(1, object)
-            quickOpenMenu.itemAt(1).objectName = "quickOpenWindow"
-        }
-        onObjectRemoved: (index, object) => quickOpenMenu.removeMenu(object)
     }
     Drawer {
         id: sidebarDrawer
@@ -812,7 +723,7 @@ ApplicationWindow {
                                     anchors.verticalCenter: parent.verticalCenter
                                     IconButton {
                                         objectName: "detachSession_" + modelData.id
-                                        glyph: "OpenExternal"
+                                        glyph: "External"
                                         text: "Open " + modelData.name + " in a separate window"
                                         visible: workspace.windowActionsAvailable
                                         enabled: workspace.sessionWindowActionsReady
@@ -902,11 +813,11 @@ ApplicationWindow {
             }
             IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
             IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
-            Label { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
-            Button { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
-            Button { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
+            SelectableText { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
+            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
+            FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
         }
-        Label { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== "" && !workspace.authenticationChallenge.id; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; visible: text !== "" && !workspace.authenticationChallenge.id; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
         Loader {
             id: mfaForm
             Layout.fillWidth: true
@@ -915,12 +826,13 @@ ApplicationWindow {
             visible: active
             sourceComponent: ColumnLayout {
                 spacing: 4
-                Label {
+                SelectableText {
                     Layout.fillWidth: true
                     visible: !window.inputPriority
                     text: "AWS MFA: " + mfaForm.challenge.role + " / " + mfaForm.challenge.device
                     textFormat: Text.PlainText
-                    elide: Text.ElideMiddle
+                    wrapMode: TextEdit.NoWrap
+                    clip: true
                     Accessible.name: text
                 }
                 RowLayout {
@@ -948,24 +860,40 @@ ApplicationWindow {
                         onAccepted: if (acceptableInput && text.length === 6) submit()
                         Component.onCompleted: if (window.active) forceActiveFocus()
                     }
-                    Button { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
-                    Button { objectName: "cancelAuthenticationMfa"; text: workspace.uiText["action.cancel"]; onClicked: workspace.cancelAuthentication() }
+                    FlatButton { objectName: "submitAuthenticationMfa"; text: "Continue"; enabled: mfaCode.acceptableInput && mfaCode.text.length === 6; onClicked: mfaCode.submit() }
+                    FlatButton { objectName: "cancelAuthenticationMfa"; text: workspace.uiText["action.cancel"]; onClicked: workspace.cancelAuthentication() }
                 }
-                Label { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
             }
         }
-        Label { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
-        Label { objectName: "errorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.error || workspace.uiText[workspace.music.error] || ""; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
-        Label {
+        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap; Accessible.name: text }
+        RowLayout {
+            Layout.fillWidth: true; Layout.rightMargin: window.contentRightMargin
+            visible: workspace.error !== "" || !!workspace.uiText[workspace.music.error]
+            SelectableText {
+                objectName: "errorMessage"; Layout.fillWidth: true
+                text: workspace.error && workspace.error === workspace.incidentAiDiagnostic.original
+                    ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
+                    : (workspace.error || workspace.uiText[workspace.music.error] || "")
+                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap; Accessible.name: text
+            }
+            IconButton {
+                objectName: "errorAiInfo"; glyph: "Info"
+                visible: workspace.error !== "" && workspace.error === workspace.incidentAiDiagnostic.original
+                    && !!workspace.incidentAiDiagnostic.cause
+                text: workspace.incidentAiDiagnostic.cause + "\n" + workspace.incidentAiDiagnostic.action
+            }
+        }
+        SelectableText {
             objectName: "syncProblemMessage"; Layout.rightMargin: window.contentRightMargin
             Layout.fillWidth: true; Layout.minimumWidth: 0
             text: workspace.syncProblem; textFormat: Text.PlainText
-            visible: text !== ""; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight
+            visible: text !== ""; wrapMode: TextEdit.NoWrap; clip: true
             color: workspace.appearanceColors.danger; Accessible.name: text
             ToolTip.visible: problemHover.hovered; ToolTip.text: text
             HoverHandler { id: problemHover }
         }
-        Button { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
+        FlatButton { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
         SplitView {
             id: workspaceSplit
             objectName: "workspaceSplit"
@@ -1068,7 +996,7 @@ ApplicationWindow {
                     }
                     Item {
                         anchors.fill: parent
-                        Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts; onSourcesRequested: chooser.open() } }
+                        Loader { anchors.fill: parent; active: parent.visible && workspace.workspacePage === "map" && workspace.mapOverview; visible: active; sourceComponent: MapOverview { contexts: window.mapContexts } }
                         Item { id: resourceMapHost; objectName: "resourceMapHost"; anchors.fill: parent; visible: !workspace.mapOverview }
                     }
                 }
@@ -1122,7 +1050,6 @@ ApplicationWindow {
                     onVisibleChanged: if (visible) opened = true
                     sourceComponent: SettingsView {
                         onRenameContextRequested: context => sourceAliasDialog.edit(context)
-                        onFileRequested: chooser.open()
                         onFolderRequested: folderChooser.open()
                         onOciImportRequested: ociImportDialog.open()
                         onGkeImportRequested: gkeImportDialog.open()
@@ -1159,8 +1086,8 @@ ApplicationWindow {
                 && (workspace.totalResourceCount > 0 || (workspace.workspacePage === "map" && workspace.mapOverview && window.mapContexts.length > 0))
             Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            Label { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; elide: Text.ElideRight; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            Label { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; maximumLineCount: 1; wrapMode: Text.NoWrap; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; elide: Text.ElideRight; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
+            SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
+            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; Accessible.name: text; ToolTip.visible: syncHover.hovered; ToolTip.text: text; HoverHandler { id: syncHover } }
         }
     }
     ResourceSidebar {

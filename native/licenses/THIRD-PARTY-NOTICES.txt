@@ -36,6 +36,19 @@ Copyright Jesse Beder and contributors.
 MIT license. The original yaml-cpp-LICENSE.txt is included.
 Project and source: https://github.com/jbeder/yaml-cpp
 
+libsecret (Linux only)
+Copyright the GNOME libsecret contributors.
+LGPL version 2.1 or later. LGPL-2.1.txt is included. The Linux portable
+package includes the shared libsecret runtime for Secret Service access.
+Project and source: https://gitlab.gnome.org/GNOME/libsecret
+
+Libgcrypt and Libgpg-error (Linux only)
+Copyright the GnuPG Project contributors.
+LGPL version 2.1 or later. LGPL-2.1.txt is included. The Linux portable
+package includes these shared libraries for libsecret's crypto dependency.
+Projects and sources: https://www.gnupg.org/software/libgcrypt/
+https://www.gnupg.org/software/libgpg-error/
+
 Audio credits are listed separately in About alongside their original sources.
 
 AndroidX core 1.17.0 (Android only)

@@ -1,14 +1,13 @@
 #!/bin/sh
-# Desktop comparison shares window focus; run this lane on its own.
+# Run real native UI journeys against an owned local cluster.
 set -eu
 PATH="/opt/homebrew/bin:$PATH"
 export PATH
 umask 077
 BUILD=${PODLORD_NATIVE_BUILD_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/podlord/native-build}
-NATIVE=${PODLORD_NATIVE_APP:-$BUILD/podlord-native.app/Contents/MacOS/podlord-native}
-MODE=${1:-desktop}
-[ "$#" -le 1 ] || { printf 'Expected one mode: desktop, mobile, ios-themes, ios-input-e2e, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e, radar-parity or release-review.\n' >&2; exit 1; }
-case "$MODE" in desktop|mobile|ios-themes|ios-input-e2e|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e|radar-parity|release-review) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
+MODE=${1:-native-e2e}
+[ "$#" -le 1 ] || { printf 'Expected one mode: mobile, ios-themes, ios-input-e2e, native-e2e, native-terminal-e2e, native-window-e2e, native-forward-e2e, native-search-e2e, native-fields-e2e, native-health-e2e.\n' >&2; exit 1; }
+case "$MODE" in mobile|ios-themes|ios-input-e2e|native-e2e|native-terminal-e2e|native-window-e2e|native-forward-e2e|native-search-e2e|native-fields-e2e|native-health-e2e) ;; *) printf 'Unknown mode: %s\n' "$MODE" >&2; exit 1 ;; esac
 case "$MODE" in ios-themes) IOS_SCENARIO=real_themes ;; ios-input-e2e) IOS_SCENARIO=real_input ;; *) IOS_SCENARIO= ;; esac
 METADATA_AUDIT=${PODLORD_KUBERNETES_METADATA_AUDIT:-0}
 case "$METADATA_AUDIT" in 0|1) ;; *) printf 'Metadata audit must be 0 or 1.\n' >&2; exit 1 ;; esac
@@ -18,22 +17,21 @@ if [ -n "$IOS_SCENARIO" ]; then
     [ -x "$IOS_APP/workspace_ui_test" ] || { printf 'Required iOS simulator UI test application is missing; set PODLORD_IOS_BUILD_DIR.\n' >&2; exit 1; }
     [ "$(/usr/bin/plutil -extract CFBundleIdentifier raw -o - "$IOS_APP/Info.plist")" = berlin.yuna.podlord.tests ] || { printf 'The simulator driver has an unexpected application identity.\n' >&2; exit 1; }
 fi
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
+if [ "$MODE" = native-e2e ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
     unset GOROOT
     command -v go >/dev/null 2>&1 || { printf 'Missing tool: go\n' >&2; exit 1; }
     if [ "$MODE" != native-forward-e2e ]; then
         [ -x "$BUILD/window-host-test" ] || { printf 'Required native multiwindow test executable is missing.\n' >&2; exit 1; }
     fi
 fi
-DESKTOP_TIMEOUT=${PODLORD_DESKTOP_TIMEOUT_SECONDS:-3600}
-case "$DESKTOP_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
-[ "${#DESKTOP_TIMEOUT}" -le 5 ] && [ "$DESKTOP_TIMEOUT" -ge 60 ] && [ "$DESKTOP_TIMEOUT" -le 21600 ] || { printf 'Desktop timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
-LEGACY=${PODLORD_LEGACY_APP:-}
-if [ "$MODE" != mobile ] && [ -z "$IOS_SCENARIO" ] && [ "$MODE" != desktop ] && [ "$MODE" != radar-parity ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
+REVIEW_TIMEOUT=${PODLORD_REVIEW_TIMEOUT_SECONDS:-3600}
+case "$REVIEW_TIMEOUT" in ''|*[!0-9]*|0*) printf 'Review timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1 ;; esac
+[ "${#REVIEW_TIMEOUT}" -le 5 ] && [ "$REVIEW_TIMEOUT" -ge 60 ] && [ "$REVIEW_TIMEOUT" -le 21600 ] || { printf 'Review timeout must be a whole number from 60 to 21600 seconds.\n' >&2; exit 1; }
+if [ "$MODE" != mobile ] && [ -z "$IOS_SCENARIO" ] && [ "$MODE" != native-terminal-e2e ] && [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ] && [ "$MODE" != native-search-e2e ] && [ "$MODE" != native-health-e2e ] && [ ! -x "$BUILD/metric-filter-ui-test" ]; then
     printf 'Required native field filter UI test executable is missing.\n' >&2
     exit 1
 fi
-if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+if [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-e2e ]; then
     [ -x "$BUILD/container-terminal-ui-test" ] || { printf 'Required native terminal UI test executable is missing.\n' >&2; exit 1; }
 fi
 if [ "$MODE" = native-health-e2e ]; then
@@ -45,35 +43,7 @@ fi
 if [ "$MODE" = native-search-e2e ]; then
     [ -x "$BUILD/workspace_ui_test" ] || { printf 'Required native discovery/search UI test executable is missing.\n' >&2; exit 1; }
 fi
-if [ "$MODE" = radar-parity ]; then
-    [ -x "$BUILD/radar_reference_test" ] && [ -f "${PODLORD_RADAR_REFERENCE_DLL:-}" ] && [ -x "${PODLORD_DOTNET:-}" ] || { printf 'Built native and C# radar reference tools are required.\n' >&2; exit 1; }
-fi
-if [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; then
-    [ -x "$NATIVE" ] && [ -n "$LEGACY" ] && [ -x "$LEGACY" ] || { printf 'Both application builds are required.\n' >&2; exit 1; }
-    if [ "$(uname -s)" = Darwin ]; then
-        [ -d "${NATIVE%/MacOS/*}/Frameworks/QtCore.framework" ] || { printf 'Desktop evidence requires a deployed native app; an unbundled build does not prove its runtime dependencies.\n' >&2; exit 1; }
-        case "$LEGACY" in *.app/Contents/MacOS/*) ;; *) printf 'Desktop evidence requires the packaged reference app for isolated application identity.\n' >&2; exit 1 ;; esac
-        for executable in "$NATIVE" "$LEGACY"; do
-            declared=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${executable%/Contents/MacOS/*}/Contents/Info.plist")
-            [ "$(basename -- "$executable")" = "$declared" ] || {
-                printf 'Comparison input %s does not match its declared bundle executable %s.\n' "$executable" "$declared" >&2
-                exit 1
-            }
-            bundle=${executable%/Contents/MacOS/*}
-            if /usr/bin/xattr -p com.apple.quarantine "$bundle" >/dev/null 2>&1 ||
-                /usr/bin/xattr -p com.apple.quarantine "$executable" >/dev/null 2>&1; then
-                printf 'Comparison input %s is quarantined. Use an already-approved local bundle; the runner will not remove macOS quarantine.\n' "$bundle" >&2
-                exit 1
-            fi
-        done
-    fi
-fi
-if [ "$(uname -s)" = Darwin ] && { [ "$MODE" = desktop ] || [ "$MODE" = release-review ]; }; then
-    VISUAL_SIGN_IDENTITY=${PODLORD_VISUAL_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | awk '/^[[:space:]]*[0-9]+\) [0-9A-F]+ / { count++; identity=$2 } END { if (count == 1) print identity }')}
-    [ -n "$VISUAL_SIGN_IDENTITY" ] || { printf 'Desktop comparison needs PODLORD_VISUAL_SIGN_IDENTITY or exactly one valid local code-signing identity.\n' >&2; exit 1; }
-    security find-identity -v -p codesigning | rg -F -- "$VISUAL_SIGN_IDENTITY" >/dev/null || { printf 'Desktop comparison signing identity is not available.\n' >&2; exit 1; }
-fi
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+if [ "$MODE" = native-e2e ]; then
     for executable in "$BUILD/alert_ui_test" "$BUILD/workspace_ui_test" "$BUILD/resource-delete-ui-test" "$BUILD/inspector-navigation-ui-test" "$BUILD/port-forward-ui-test"; do
         [ -x "$executable" ] || { printf 'Required native UI test executable is missing: %s\n' "$executable" >&2; exit 1; }
     done
@@ -107,13 +77,12 @@ EVIDENCE=${PODLORD_VISUAL_EVIDENCE_DIR:-$BUILD/e2e/visual-evidence}
 mkdir -p "$EVIDENCE"
 CREATED=0
 NATIVE_PID=
-LEGACY_PID=
 IOS_DEVICE=
 IOS_DATA=
 cleanup() {
     status=$?
     trap - 0
-    for pid in "$NATIVE_PID" "$LEGACY_PID"; do
+    for pid in "$NATIVE_PID"; do
         if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || :; wait "$pid" 2>/dev/null || :; fi
     done
     if [ -n "$IOS_DATA" ]; then
@@ -173,7 +142,7 @@ AUDIT
             done
         fi
     fi
-    for application in native legacy ios ios-stderr ios-boot; do
+    for application in native ios ios-stderr ios-boot; do
         log="$RUN/$application.log"
         [ -f "$log" ] && [ ! -L "$log" ] || continue
         if ! cp "$log" "$EVIDENCE/$NAME-$application.log"; then
@@ -222,14 +191,14 @@ wait_for_native_process() {
 wait_for_review() {
     attempt=0
     while [ ! -f "$RUN/complete" ]; do
-        for pid in "$NATIVE_PID" "$LEGACY_PID"; do
+        for pid in "$NATIVE_PID"; do
             if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-                printf 'A comparison application exited; refusing to relaunch outside its isolated profile.\n' >&2
+                printf 'The native application exited during review.\n' >&2
                 return 1
             fi
         done
         attempt=$((attempt + 1))
-        [ "$attempt" -lt "$((DESKTOP_TIMEOUT / 2))" ] || { printf 'Visual review exceeded %s seconds; cleaning up.\n' "$DESKTOP_TIMEOUT" >&2; return 1; }
+        [ "$attempt" -lt "$((REVIEW_TIMEOUT / 2))" ] || { printf 'Visual review exceeded %s seconds; cleaning up.\n' "$REVIEW_TIMEOUT" >&2; return 1; }
         sleep 2
     done
 }
@@ -251,7 +220,7 @@ run_terminal_tests() {
             run_native_test "$RUN/container-terminal-ui-test" "$terminal_scenario" "$RUN/kubeconfig" > "$EVIDENCE/$NAME-terminal-$terminal_scenario.log" 2>&1
     done
 }
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-forward-e2e ]; then
+if [ "$MODE" = native-e2e ] || [ "$MODE" = native-forward-e2e ]; then
     mkdir "$RUN/bin"
     executables='alert_ui_test workspace_ui_test resource-delete-ui-test inspector-navigation-ui-test port-forward-ui-test'
     if [ "$MODE" = native-forward-e2e ]; then executables=port-forward-ui-test; fi
@@ -397,7 +366,7 @@ if [ -n "$IOS_SCENARIO" ]; then
         SIMCTL_CHILD_QT_QUICK_CONTROLS_STYLE=Basic SIMCTL_CHILD_QT_QPA_PLATFORM=ios \
         xcrun simctl launch --console "$IOS_DEVICE" berlin.yuna.podlord.tests "$IOS_SCENARIO" "$IOS_DATA/Documents/kubeconfig" > "$RUN/ios.log" 2> "$RUN/ios-stderr.log" &
     NATIVE_PID=$!
-    wait_for_native_process "$DESKTOP_TIMEOUT"
+    wait_for_native_process "$REVIEW_TIMEOUT"
     if [ "$IOS_SCENARIO" = real_themes ] && [ ! -f "$IOS_DATA/Documents/theme-matrix/matrix.json" ]; then
         cat "$RUN/ios.log" "$RUN/ios-stderr.log" >&2
         printf 'iOS view matrix did not complete. Its application log and partial captures are retained.\n' >&2
@@ -438,25 +407,7 @@ if [ "$MODE" = mobile ]; then
     printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\n' "$RUN" "$RUN/kubeconfig" "$NAME"
     printf 'Complete public mobile checks, then create %s/complete.\n' "$RUN"
     wait_for_review
-    printf 'Mobile comparison completed; cleaning up owned cluster and profiles.\n'
-    exit 0
-fi
-if [ "$MODE" = radar-parity ]; then
-    mkdir -p "$RUN/reference-config"
-    PODLORD_CONFIG_HOME="$RUN/reference-config" PODLORD_DISABLE_AUDIO=1 PODLORD_DISABLE_UPDATE_CHECK=1 \
-        "$PODLORD_DOTNET" "$PODLORD_RADAR_REFERENCE_DLL" "$RUN/kubeconfig" "$EVIDENCE"
-    if [ -n "${PODLORD_RADAR_BEFORE_BINARY:-}" ]; then
-        before_status=0
-        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software "$PODLORD_RADAR_BEFORE_BINARY" reference "$EVIDENCE/reference.json" > "$EVIDENCE/before.log" 2>&1 || before_status=$?
-        [ "$before_status" = 1 ] && rg -q '^Radar mismatch ' "$EVIDENCE/before.log" || { printf 'Expected an explicit original-geometry mismatch, not a crash or setup failure.\n' >&2; exit 1; }
-    fi
-    for scenario in reference reordered filtered namespaces pose; do
-        QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
-            run_native_test "$BUILD/radar_reference_test" "$scenario" "$EVIDENCE/reference.json"
-    done
-    QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_STYLE=Basic \
-        run_native_test "$BUILD/radar_reference_test" render "$EVIDENCE/reference.json" "$EVIDENCE/cpp-radar.png"
-    printf 'Real-cache radar reference comparison passed; cleaning up owned cluster.\n'
+    printf 'Mobile review completed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
 if [ "$MODE" = native-fields-e2e ]; then
@@ -482,9 +433,9 @@ if [ "$MODE" = native-search-e2e ]; then
     printf 'Native Kubernetes discovery/search, Radar and persisted context Map scenarios passed; cleaning up owned cluster and profiles.\n'
     exit 0
 fi
-if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
+if [ "$MODE" = native-e2e ] || [ "$MODE" = native-terminal-e2e ] || [ "$MODE" = native-window-e2e ] || [ "$MODE" = native-forward-e2e ]; then
     if [ "$MODE" != native-window-e2e ] && [ "$MODE" != native-forward-e2e ]; then run_terminal_tests; fi
-    if [ "$MODE" = native-e2e ] || [ "$MODE" = release-review ]; then
+    if [ "$MODE" = native-e2e ]; then
         kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-e2e -n visual-a --from-literal="owner=$NAME"
         kubectl --kubeconfig "$RUN/kubeconfig" create configmap podlord-delete-race-e2e -n visual-a --from-literal="owner=$NAME"
     fi
@@ -583,32 +534,5 @@ YAML
     done
     run_cached_field_test
     printf 'Native Kubernetes UI scenarios passed.\n'
-    if [ "$MODE" = native-e2e ]; then exit 0; fi
+    exit 0
 fi
-mkdir -p "$RUN/legacy/home/.kube" "$RUN/legacy/config/podlord"
-cp "$RUN/kubeconfig" "$RUN/legacy/home/.kube/config"
-if [ "$(uname -s)" = Darwin ]; then
-    # Stable signed identities retain macOS desktop permissions across comparison runs.
-    cp -R "${LEGACY%/Contents/MacOS/*}" "$RUN/PodlordReference.app"
-    /usr/bin/plutil -replace CFBundleIdentifier -string 'dev.podlord.visual.reference' "$RUN/PodlordReference.app/Contents/Info.plist"
-    /usr/bin/plutil -replace CFBundleName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
-    /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Reference' "$RUN/PodlordReference.app/Contents/Info.plist"
-    /usr/bin/codesign --force --deep --sign "$VISUAL_SIGN_IDENTITY" "$RUN/PodlordReference.app"
-    LEGACY="$RUN/PodlordReference.app/Contents/MacOS/$(basename -- "$LEGACY")"
-    cp -R "${NATIVE%/Contents/MacOS/*}" "$RUN/PodlordNative.app"
-    /usr/bin/plutil -replace CFBundleIdentifier -string 'dev.podlord.visual.native' "$RUN/PodlordNative.app/Contents/Info.plist"
-    /usr/bin/plutil -replace CFBundleName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
-    /usr/bin/plutil -replace CFBundleDisplayName -string 'Podlord Native Comparison' "$RUN/PodlordNative.app/Contents/Info.plist"
-    /usr/bin/codesign --force --deep --sign "$VISUAL_SIGN_IDENTITY" "$RUN/PodlordNative.app"
-    NATIVE="$RUN/PodlordNative.app/Contents/MacOS/$(basename -- "$NATIVE")"
-fi
-(unset QT_QPA_PLATFORM QT_QUICK_BACKEND QT_QUICK_CONTROLS_STYLE QT_PLUGIN_PATH QT_QPA_PLATFORM_PLUGIN_PATH QML_IMPORT_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FALLBACK_LIBRARY_PATH DYLD_FRAMEWORK_PATH KUBECONFIG; exec "$NATIVE" --profile "$RUN/native" --kubeconfig "$RUN/kubeconfig") > "$RUN/native.log" 2>&1 &
-NATIVE_PID=$!
-(export HOME="$RUN/legacy/home" PODLORD_HOME="$RUN/legacy/home" PODLORD_CONFIG_HOME="$RUN/legacy/config/podlord" PODLORD_DISABLE_UPDATE_CHECK=1 PODLORD_DISABLE_AUDIO=1 KUBECONFIG="$RUN/kubeconfig"; exec "$LEGACY") > "$RUN/legacy.log" 2>&1 &
-LEGACY_PID=$!
-printf 'VISUAL_RUN=%s\nKUBECONFIG_FILE=%s\nCLUSTER=%s\nNATIVE_PID=%s\nLEGACY_PID=%s\n' "$RUN" "$RUN/kubeconfig" "$NAME" "$NATIVE_PID" "$LEGACY_PID"
-printf 'REFERENCE_APP=%s\n' "${LEGACY%/Contents/MacOS/*}"
-printf 'NATIVE_APP=%s\n' "${NATIVE%/Contents/MacOS/*}"
-printf 'Capture and assert public desktop behavior, then create %s/complete.\n' "$RUN"
-wait_for_review
-printf 'Desktop comparison completed; cleaning up owned apps, cluster and profiles.\n'

@@ -6,7 +6,7 @@ Status: accepted, 2026-10-08.
 
 Check the repository's latest stable release anonymously at startup when due,
 then once per seven days while running and on application activation when due.
-The user confirmed weekly checks; the existing C# implementation uses the same
+The user confirmed weekly checks; the app uses the same
 interval. An explicit About action may bypass that interval. There is no
 automatic installation, authentication, browser launch, or redirect following.
 `PODLORD_DISABLE_UPDATE_CHECK=1` disables both scheduled and manual checks.
@@ -27,7 +27,7 @@ stable three-part version, and the native distribution name for this build:
 - `podlord-native-win-{arm64|x64}.zip`
 - `podlord-native-linux-{arm64|x64}.tar.gz`
 
-Other targets do not guess a standalone installer. Existing `podlord-*` C#
+Other targets do not guess a standalone installer. Older `podlord-*`
 packages are incompatible and never offered. These native asset names must
 exist before publishing an update; the current private package's filename alone
 does not constitute a compatible published asset.
@@ -44,7 +44,7 @@ copied into an update error.
 
 ## Alternatives rejected
 
-Reusing legacy asset names could replace the native app with C#. Reusing the
+Reusing legacy asset names could replace the native app with an unrelated package. Reusing the
 settings file for release metadata would couple network completion to user
 preference writes. An updater framework or installer is unnecessary for a
 deliberate verified browser handoff.

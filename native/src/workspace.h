@@ -2,6 +2,7 @@
 #include <QImage>
 #include "resource_client.h"
 #include "container_terminal.h"
+#include "container_files.h"
 #include "credential_process.h"
 #include "yaml_apply.h"
 #include "appearance.h"
@@ -19,6 +20,7 @@
 #include <QAbstractTableModel>
 #include <QSortFilterProxyModel>
 #include <QVariantList>
+#include <QUrl>
 #include <QPointer>
 #include <memory>
 #include <optional>
@@ -134,6 +136,7 @@ private:
 class Workspace final : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool appStore READ appStore CONSTANT)
+    Q_PROPERTY(QVariantList donationLinks READ donationLinks CONSTANT)
     Q_PROPERTY(QVariantList contexts READ contexts NOTIFY catalogsChanged)
     Q_PROPERTY(podlord::Alerts* alerts READ alerts CONSTANT)
     Q_PROPERTY(podlord::Music* music READ music CONSTANT)
@@ -173,9 +176,27 @@ class Workspace final : public QObject {
     Q_PROPERTY(QString currentSession READ currentSession NOTIFY changed)
     Q_PROPERTY(QString title READ title NOTIFY changed)
     Q_PROPERTY(QVariantList resourceGuidance READ resourceGuidance NOTIFY inspectorPresentationChanged)
+    Q_PROPERTY(bool incidentAiEnabled READ incidentAiEnabled NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool incidentAiSupported READ incidentAiSupported CONSTANT)
+    Q_PROPERTY(bool incidentAiConfigured READ incidentAiConfigured NOTIFY incidentAiChanged)
+    Q_PROPERTY(QStringList incidentAiModels READ incidentAiModels NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantList incidentAiModelChoices READ incidentAiModelChoices NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantList incidentAiAccounts READ incidentAiAccounts NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiModel READ incidentAiModel NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiProvider READ incidentAiProvider NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString chatgptAccount READ chatgptAccount NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool chatgptConnected READ chatgptConnected NOTIFY incidentAiChanged)
+    Q_PROPERTY(QStringList incidentAiReasoningOptions READ incidentAiReasoningOptions NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiReasoning READ incidentAiReasoning NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiStatus READ incidentAiStatus NOTIFY incidentAiChanged)
+    Q_PROPERTY(bool incidentAiReady READ incidentAiReady NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantMap incidentAiResult READ incidentAiResult NOTIFY incidentAiChanged)
+    Q_PROPERTY(QString incidentAiRequest READ incidentAiRequest NOTIFY incidentAiChanged)
+    Q_PROPERTY(QVariantMap incidentAiDiagnostic READ incidentAiDiagnostic NOTIFY incidentAiChanged)
     Q_PROPERTY(QString sourceImportError READ sourceImportError NOTIFY changed)
     Q_PROPERTY(QVariantMap sourceRemoval READ sourceRemoval NOTIFY sourceRemovalChanged)
     Q_PROPERTY(QString defaultSourceOrigin READ defaultSourceOrigin CONSTANT)
+    Q_PROPERTY(QUrl defaultKubeconfigFolder READ defaultKubeconfigFolder CONSTANT)
     Q_PROPERTY(QString filterText READ filterText NOTIFY changed)
     Q_PROPERTY(QVariantList filterFields READ filterFields CONSTANT)
     Q_PROPERTY(QVariantMap resourceFieldFilters READ resourceFieldFilters NOTIFY fieldFiltersChanged)
@@ -219,6 +240,7 @@ class Workspace final : public QObject {
     Q_PROPERTY(QAbstractItemModel* overviewFieldModel READ overviewFieldModel CONSTANT)
     Q_PROPERTY(QVariantList inspectorEvents READ inspectorEvents NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QVariantList inspectorLinks READ inspectorLinks NOTIFY inspectorRelatedChanged)
+    Q_PROPERTY(QVariantMap connectedResourceDepths READ connectedResourceDepths NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QAbstractItemModel* inspectorEventTable READ inspectorEventTable CONSTANT)
     Q_PROPERTY(QAbstractItemModel* inspectorLinkTable READ inspectorLinkTable CONSTANT)
     Q_PROPERTY(QVariantList inspectorEventColumns READ inspectorEventColumns NOTIFY tableLayoutChanged)
@@ -236,6 +258,9 @@ class Workspace final : public QObject {
     Q_PROPERTY(bool canPortForward READ canPortForward NOTIFY changed)
     Q_PROPERTY(bool canStartTerminal READ canStartTerminal NOTIFY changed)
     Q_PROPERTY(podlord::ContainerTerminal* containerTerminal READ containerTerminal NOTIFY changed)
+    Q_PROPERTY(podlord::ContainerFiles* containerFiles READ containerFiles NOTIFY changed)
+    Q_PROPERTY(bool filesSupported READ filesSupported NOTIFY changed)
+    Q_PROPERTY(QVariantList filePods READ filePods NOTIFY inspectorRelatedChanged)
     Q_PROPERTY(QString terminalError READ terminalError NOTIFY changed)
     Q_PROPERTY(QVariantMap terminalConnection READ terminalConnection NOTIFY changed)
     Q_PROPERTY(QStringList terminalContainers READ terminalContainers NOTIFY inspectorPresentationChanged)
@@ -322,6 +347,11 @@ class Workspace final : public QObject {
 public:
     bool canStartTerminal() const;
     ContainerTerminal* containerTerminal() const { return client_.terminal(active_); }
+    ContainerFiles* containerFiles() const { return files_; }
+    bool filesSupported() const;
+    QVariantList filePods() const { return filePods_; }
+    Q_INVOKABLE QStringList fileContainers(const QString& podPath) const;
+    Q_INVOKABLE bool openContainerFiles(const QString& podPath, const QString& container);
     QString terminalError() const;
     QVariantMap terminalConnection() const { return client_.terminalConnection(active_); }
     QStringList terminalContainers() const;
@@ -415,8 +445,40 @@ public:
     QString currentSession() const;
     QString title() const;
     QVariantList resourceGuidance() const;
+    bool incidentAiEnabled() const;
+    bool incidentAiSupported() const;
+    bool incidentAiConfigured() const;
+    QStringList incidentAiModels() const;
+    QVariantList incidentAiModelChoices() const;
+    QVariantList incidentAiAccounts() const;
+    QString incidentAiModel() const;
+    QString incidentAiProvider() const;
+    QString chatgptAccount() const;
+    bool chatgptConnected() const;
+    QStringList incidentAiReasoningOptions() const;
+    QString incidentAiReasoning() const;
+    QString incidentAiStatus() const;
+    bool incidentAiReady() const;
+    QVariantMap incidentAiResult() const;
+    QString incidentAiRequest() const;
+    QVariantMap incidentAiDiagnostic() const;
+    Q_INVOKABLE bool setIncidentAiEnabled(bool enabled);
+    Q_INVOKABLE bool setIncidentAiModel(const QString& model);
+    Q_INVOKABLE bool selectIncidentAiModel(const QString& provider, const QString& model);
+    Q_INVOKABLE bool setIncidentAiProvider(const QString& provider);
+    Q_INVOKABLE bool signInChatGpt();
+    Q_INVOKABLE bool signInOpenRouter();
+    Q_INVOKABLE void signOutChatGpt();
+    Q_INVOKABLE bool setClaudeAiKey(const QString& key);
+    Q_INVOKABLE void clearClaudeAiKey();
+    Q_INVOKABLE void signOutOpenRouter();
+    Q_INVOKABLE void refreshIncidentAiUsage();
+    Q_INVOKABLE bool setIncidentAiReasoning(const QString& reasoning);
+    Q_INVOKABLE void ensureIncidentAiModels();
+    Q_INVOKABLE bool refreshIncidentAiAnalysis();
     QString sourceImportError() const { return sourceImportError_; }
     QString defaultSourceOrigin() const;
+    QUrl defaultKubeconfigFolder() const;
     Q_INVOKABLE bool importText(QString originPath, const QString& yaml);
     Q_INVOKABLE bool importHome();
     Q_INVOKABLE bool refreshSources();
@@ -464,6 +526,18 @@ public:
         return false;
 #endif
     }
+    QVariantList donationLinks() const {
+#if defined(PODLORD_MAC_APP_STORE) || defined(Q_OS_IOS)
+        return {};
+#else
+        return {
+            QVariantMap{{"id", "Sponsors"}, {"text", "GitHub Sponsors"}, {"url", "https://github.com/sponsors/YunaBraska"}},
+            QVariantMap{{"id", "Coffee"}, {"text", "Buy Me a Coffee"}, {"url", "https://buymeacoffee.com/YunaBraska"}},
+            QVariantMap{{"id", "Kofi"}, {"text", "Ko-fi"}, {"url", "https://ko-fi.com/YunaBraska"}},
+            QVariantMap{{"id", "Liberapay"}, {"text", "Liberapay"}, {"url", "https://liberapay.com/YunaBraska"}}
+        };
+#endif
+    }
     int totalResourceCount() const { return rows_.rowCount(); }
     QAbstractItemModel* dashboardTable() { return &dashboardRows_; }
     QString dashboardSummary() const { return dashboardSummary_; }
@@ -489,6 +563,7 @@ public:
     QAbstractItemModel* overviewFieldModel() { return &overviewFields_; }
     QVariantList inspectorEvents() const { return inspectorEvents_; }
     QVariantList inspectorLinks() const { return inspectorLinks_; }
+    QVariantMap connectedResourceDepths() const { return connectedResourceDepths_; }
     QAbstractItemModel* inspectorEventTable() { return &inspectorEventsTable_; }
     QAbstractItemModel* inspectorLinkTable() { return &inspectorLinksTable_; }
     QVariantList inspectorEventColumns() const { return tableColumns("inspectorEvent", inspectorEventRows_); }
@@ -709,6 +784,7 @@ signals:
     void catalogsChanged();
     void mapContextsChanged();
     void resourcePresentationChanged();
+    void incidentAiChanged();
     void fieldFiltersChanged();
     void filterPresetsChanged();
     void filterPickerChanged();
@@ -883,6 +959,9 @@ private:
     QJsonObject inspectorDocument_, inspectorSummary_;
     InspectorFields overviewFields_;
     QVariantList inspectorEvents_, inspectorLinks_;
+    QVariantMap connectedResourceDepths_;
+    QVariantList filePods_;
+    ContainerFiles* files_ = nullptr;
     QSortFilterProxyModel dashboardRows_;
     QString dashboardSummary_;
     QVariantList pulseMetrics_;

@@ -25,7 +25,10 @@ Pane {
         Component.onCompleted: if (selected && inspectorOpen) active = true
     }
 
-    component InspectorTab: WorkspaceTab {}
+    component InspectorTab: WorkspaceTab {
+        width: Math.max(44, Math.floor(inspector.width /
+            (inspector.width < 600 ? Math.min(4, inspector.visibleTabCount) : inspector.visibleTabCount)))
+    }
     background: Rectangle {
         color: workspace.appearanceColors.panel
         border.width: 1
@@ -40,7 +43,11 @@ Pane {
     ColumnLayout {
     id: inspector
     width: inspectorScroll.availableWidth
-    height: Math.max(Layout.minimumHeight, inspectorScroll.availableHeight)
+    height: workspace.inspectorPage === "ai" ? implicitHeight : Math.max(implicitHeight, inspectorScroll.availableHeight)
+    readonly property int visibleTabCount: 4 + (workspace.incidentAiConfigured ? 1 : 0)
+        + (workspace.valuesAvailable ? 1 : 0) + (workspace.podInspected ? 1 : 0)
+        + (workspace.filesSupported ? 1 : 0)
+        + (workspace.podInspected || workspace.containerTerminal !== null ? 1 : 0)
     property real yamlPosition: 0
     property real overviewPosition: 0
     property real valuesPosition: 0
@@ -77,24 +84,24 @@ Pane {
         spacing: 4
         IconButton { objectName: "inspectorBack"; glyph: "Previous"; text: workspace.uiText["tooltip.previousResource"]; enabled: workspace.canInspectBack; onClicked: workspace.navigateInspector(-1) }
         IconButton { objectName: "inspectorForward"; glyph: "Next"; text: workspace.uiText["tooltip.nextResource"]; enabled: workspace.canInspectForward; onClicked: workspace.navigateInspector(1) }
-        Label { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; elide: Text.ElideMiddle; Accessible.name: "Inspecting " + text }
+        SelectableText { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; wrapMode: TextEdit.NoWrap; clip: true; Accessible.name: "Inspecting " + text }
         IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
-        IconButton { objectName: "deleteResource"; glyph: "Trash"; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
+        IconButton { objectName: "deleteResource"; glyph: "Trash"; destructive: true; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
         IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
         IconButton { objectName: "closeInspector"; glyph: "Close"; text: "Close inspector"; onClicked: workspace.closeInspector() }
     }
-    TabBar {
+    Flow {
         spacing: 0
-        implicitWidth: 0
         Layout.fillWidth: true
-        currentIndex: ["overview", "yaml", "events", "links", "values", "logs", "terminal"].indexOf(workspace.inspectorPage)
-        InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; onClicked: workspace.setInspectorPage("overview") }
-        InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; onClicked: workspace.setInspectorPage("yaml") }
-        InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; onClicked: workspace.setInspectorPage("events") }
-        InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; onClicked: workspace.setInspectorPage("links") }
-        InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
-        InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
-        InspectorTab { objectName: "terminalButton"; text: "Terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
+        InspectorTab { objectName: "overviewButton"; text: workspace.uiText["inspector.overview"]; checked: workspace.inspectorPage === "overview"; onClicked: workspace.setInspectorPage("overview") }
+        InspectorTab { objectName: "inspectorAiButton"; text: workspace.uiText["settings.ai"]; checked: workspace.inspectorPage === "ai"; visible: workspace.incidentAiConfigured; onClicked: workspace.setInspectorPage("ai") }
+        InspectorTab { objectName: "yamlButton"; text: workspace.uiText["inspector.yaml"]; checked: workspace.inspectorPage === "yaml"; onClicked: workspace.setInspectorPage("yaml") }
+        InspectorTab { objectName: "inspectorEventsButton"; text: workspace.uiText["inspector.events"]; checked: workspace.inspectorPage === "events"; onClicked: workspace.setInspectorPage("events") }
+        InspectorTab { objectName: "inspectorLinksButton"; text: workspace.uiText["inspector.links"]; checked: workspace.inspectorPage === "links"; onClicked: workspace.setInspectorPage("links") }
+        InspectorTab { objectName: "valuesButton"; text: workspace.uiText["inspector.values"]; checked: workspace.inspectorPage === "values"; visible: workspace.valuesAvailable; onClicked: workspace.setInspectorPage("values") }
+        InspectorTab { objectName: "logsButton"; text: workspace.uiText["inspector.logs"]; checked: workspace.inspectorPage === "logs"; visible: workspace.podInspected; onClicked: workspace.setLogsVisible(true) }
+        InspectorTab { objectName: "filesButton"; text: workspace.uiText["files.tab"]; checked: workspace.inspectorPage === "files"; visible: workspace.filesSupported; onClicked: workspace.setInspectorPage("files") }
+        InspectorTab { objectName: "terminalButton"; text: "Terminal"; checked: workspace.inspectorPage === "terminal"; visible: workspace.podInspected || workspace.containerTerminal !== null; onClicked: workspace.setInspectorPage("terminal") }
     }
     Flow {
         Layout.fillWidth: true
@@ -104,23 +111,139 @@ Pane {
         IconButton { objectName: "expandTerminal"; glyph: "Sidebar"; text: "Expand terminal"; visible: workspace.inspectorPage === "terminal"; onClicked: inspectorRoot.hostWindow.openContainerTerminal(true) }
         IconButton { objectName: "readBackResourceDelete"; glyph: "Reset"; text: "Read back deletion target"; visible: workspace.canReadBackDeletion; onClicked: workspace.readBackDeletion() }
     }
-    Label {
+    SelectableText {
         objectName: "inspectorReadStatus"
         Layout.fillWidth: true
         visible: workspace.inspectorPage === "overview" || workspace.inspectorPage === "yaml"
             || workspace.inspectorPage === "values"
         text: workspace.inspectorStatus
-        textFormat: Text.PlainText
-        wrapMode: Text.Wrap
-        Accessible.name: text
         color: workspace.appearanceColors.muted
     }
-    Label { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
-    Label { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "resourceDeleteStatus"; Layout.fillWidth: true; text: workspace.deletionStatus; visible: text !== "" }
+    SelectableText { Layout.fillWidth: true; text: workspace.portForwardError; visible: text !== "" }
+    ColumnLayout {
+        id: aiPanel
+        Layout.fillWidth: true
+        visible: workspace.incidentAiConfigured && workspace.inspectorPage === "ai" && workspace.inspectorPath !== ""
+        spacing: 5
+        property bool showRequest: false
+        readonly property var liveResult: reportState.update.result
+        readonly property var report: reportState.shown
+        property string requestPath: workspace.inspectorPath
+        onRequestPathChanged: showRequest = false
+        onVisibleChanged: if (visible) { showRequest = false; workspace.ensureIncidentAiModels() }
+        Component.onCompleted: if (visible) workspace.ensureIncidentAiModels()
+        AiReportState {
+            id: reportState
+            update: ({
+                scope: JSON.stringify([workspace.currentSession, workspace.inspectorPath,
+                    workspace.incidentAiProvider, workspace.incidentAiModel, workspace.chatgptAccount,
+                    workspace.incidentAiReasoning, workspace.uiLanguage]),
+                result: workspace.incidentAiResult
+            })
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            FlatButton {
+                objectName: "incidentAiResponseTab"
+                text: workspace.uiText["ai.response"]
+                checkable: true
+                checked: !aiPanel.showRequest
+                onClicked: { aiPanel.showRequest = false; inspectorScroll.contentItem.contentY = 0 }
+            }
+            FlatButton {
+                objectName: "incidentAiRequestTab"
+                text: workspace.uiText["ai.request"]
+                checkable: true
+                checked: aiPanel.showRequest
+                onClicked: { aiPanel.showRequest = true; inspectorScroll.contentItem.contentY = 0 }
+            }
+            Item { Layout.fillWidth: true }
+            IconButton {
+                objectName: "incidentAiReanalyze"
+                glyph: "Reset"
+                text: aiPanel.report.summary === undefined ? workspace.uiText["ai.analyze"] : workspace.uiText["ai.reanalyze"]
+                enabled: workspace.incidentAiModel !== "" && workspace.incidentAiReady && aiPanel.liveResult.pending !== true
+                    && !workspace.authenticationRequired
+                onClicked: workspace.refreshIncidentAiAnalysis()
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: workspace.incidentAiModel === ""
+            SelectableText { objectName: "incidentAiModelMissing"; text: workspace.uiText["ai.modelMissing"]; color: workspace.appearanceColors.warning }
+            IconButton { objectName: "incidentAiOpenSettings"; glyph: "Settings"; text: workspace.uiText["ai.chooseModel"]; onClicked: inspectorRoot.hostWindow.openAiSettings() }
+            Item { Layout.fillWidth: true }
+        }
+        SelectableText {
+            objectName: "incidentAiStatus"
+            Layout.fillWidth: true
+            text: workspace.incidentAiStatus
+            color: workspace.appearanceColors.muted
+            visible: !aiPanel.showRequest && workspace.incidentAiModel !== "" && aiPanel.liveResult.pending !== true && text !== ""
+        }
+        SelectableText {
+            objectName: "incidentAiRequest"
+            Layout.fillWidth: true
+            visible: aiPanel.showRequest && text !== ""
+            text: aiPanel.showRequest ? workspace.incidentAiRequest : ""
+            font.family: workspace.monospaceFamily
+        }
+        SelectableText {
+            objectName: "incidentAiPending"
+            Layout.fillWidth: true
+            visible: !aiPanel.showRequest && aiPanel.liveResult.pending === true
+            text: workspace.uiText["ai.pending"]
+            color: workspace.appearanceColors.muted
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 10
+            visible: !aiPanel.showRequest && aiPanel.report.summary !== undefined
+            spacing: 4
+            SelectableText { objectName: "incidentAiObservation"; Layout.fillWidth: true; text: workspace.uiText["ai.observation"]; font.bold: true; color: workspace.appearanceColors.accent }
+            AiLinkedText { objectName: "incidentAiSummary"; Layout.fillWidth: true; richText: aiPanel.report.summaryHtml || ""; references: aiPanel.report.references || [] }
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 14
+            visible: !aiPanel.showRequest && (aiPanel.report.cause || "") !== ""
+            spacing: 4
+            SelectableText { objectName: "incidentAiCauseHeading"; Layout.fillWidth: true; text: workspace.uiText["ai.possibleCause"]; font.bold: true; color: workspace.appearanceColors.accent }
+            AiLinkedText { objectName: "incidentAiCause"; Layout.fillWidth: true; richText: aiPanel.report.causeHtml || ""; references: aiPanel.report.references || [] }
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 14
+            visible: !aiPanel.showRequest && aiPanel.report.action !== undefined
+            spacing: 4
+            SelectableText { objectName: "incidentAiNextCheck"; Layout.fillWidth: true; text: workspace.uiText["ai.nextCheck"]; font.bold: true; color: workspace.appearanceColors.accent }
+            AiLinkedText { objectName: "incidentAiAction"; Layout.fillWidth: true; richText: aiPanel.report.actionHtml || ""; references: aiPanel.report.references || [] }
+            Rectangle {
+                Layout.fillWidth: true
+                visible: (aiPanel.report.command || "") !== ""
+                implicitHeight: commandRow.implicitHeight + 12
+                color: workspace.appearanceColors.inset
+                border.color: workspace.appearanceColors.border
+                RowLayout {
+                    id: commandRow
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    SelectableText { id: incidentAiCommand; objectName: "incidentAiCommand"; Layout.fillWidth: true; text: aiPanel.report.command || ""; font.family: workspace.monospaceFamily }
+                    IconButton {
+                        objectName: "incidentAiCopyCommand"
+                        glyph: "Copy"
+                        text: workspace.uiText["copy.value"]
+                        onClicked: { incidentAiCommand.selectAll(); incidentAiCommand.copy(); incidentAiCommand.deselect() }
+                    }
+                }
+            }
+        }
+    }
     ColumnLayout {
             Layout.fillWidth: true
             visible: workspace.inspectorPage === "overview" && workspace.resourceGuidance.length > 0
-            ToolButton {
+            FlatButton {
                 id: guidanceToggle
                 objectName: "resourceGuidanceToggle"
                 Layout.fillWidth: true
@@ -148,23 +271,24 @@ Pane {
                         required property int index
                         property string linkError: ""
                         Layout.fillWidth: true
-                        Label { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
-                        Label { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-                        TextArea { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; padding: 0; background: null; Accessible.name: modelData.title + ": " + modelData.detail }
+                        SelectableText { objectName: "guidanceTitle_" + index; Layout.fillWidth: true; text: modelData.title; font.bold: true; color: workspace.appearanceColors[modelData.tone] }
+                        SelectableText { objectName: "guidanceEvidence_" + index; Layout.fillWidth: true; text: modelData.scope + " / " + modelData.code; color: workspace.appearanceColors.muted }
+                        SelectableText { objectName: "guidanceDetail_" + index; Layout.fillWidth: true; text: modelData.detail; Accessible.name: modelData.title + ": " + modelData.detail }
                         Flow {
                             Layout.fillWidth: true
                             spacing: 6
-                            Button { objectName: "guidanceEvents_" + index; text: workspace.uiText["inspector.events"]; Accessible.name: "Open events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
-                            Button { objectName: "guidanceYaml_" + index; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
-                            Button { objectName: "guidanceLogs_" + index; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
+                            IconButton { objectName: "guidanceEvents_" + index; glyph: "Event"; text: workspace.uiText["inspector.events"]; Accessible.name: "Open events for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("events") }
+                            IconButton { objectName: "guidanceYaml_" + index; glyph: "ConfigMap"; text: workspace.uiText["inspector.yaml"]; Accessible.name: "Open YAML for " + workspace.inspectorName; onClicked: workspace.setInspectorPage("yaml") }
+                            IconButton { objectName: "guidanceLogs_" + index; glyph: "Menu"; text: workspace.uiText["inspector.logs"]; visible: workspace.podInspected; Accessible.name: "Open logs for " + workspace.inspectorName; onClicked: workspace.setLogsVisible(true) }
                         }
-                        Button {
+                        IconButton {
                             objectName: "guidanceDocs_" + index
+                            glyph: "External"
                             text: "Kubernetes documentation"
                             Accessible.name: "Open official documentation for " + modelData.code
                             onClicked: parent.linkError = Qt.openUrlExternally(modelData.documentation) ? "" : "Could not open documentation. Check your browser and retry explicitly."
                         }
-                        Label { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+                        SelectableText { objectName: "guidanceLinkError_" + index; Layout.fillWidth: true; text: parent.linkError; visible: text !== ""; color: workspace.appearanceColors.danger }
                         Rectangle { Layout.fillWidth: true; height: 1; color: workspace.appearanceColors.border }
                     }
                   }
@@ -181,9 +305,9 @@ Pane {
         RowLayout {
             anchors.fill: parent; anchors.margins: 6
             spacing: 12
-                Label { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
-            Label { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
+                SelectableText { objectName: "overviewFieldHeader"; Layout.preferredWidth: inspector.width < 600 ? 100 : 260; text: "Field"; color: workspace.appearanceColors.accent; font.bold: true }
+            SelectableText { Layout.fillWidth: true; text: "Value"; color: workspace.appearanceColors.accent; font.bold: true }
+            SelectableText { objectName: "overviewMetricHeader"; visible: workspace.overviewFields.some(field => field.readiness !== undefined); Layout.preferredWidth: Math.min(150, overviewScroll.width * 0.28); text: "Metric"; color: workspace.appearanceColors.accent; font.bold: true }
         }
     }
     ListView {
@@ -192,6 +316,7 @@ Pane {
         objectName: "overviewScroll"
         Layout.fillWidth: true
         Layout.fillHeight: true
+        Layout.minimumHeight: Math.min(250, contentHeight)
         visible: workspace.inspectorPage === "overview"
         clip: true
         reuseItems: false
@@ -200,6 +325,17 @@ Pane {
         Accessible.description: workspace.inspected
         ScrollBar.vertical: ScrollBar {}
         activeFocusOnTab: true
+        onCurrentIndexChanged: if (activeFocus && currentItem) Qt.callLater(function() {
+            if (!overviewScroll.visible || !overviewScroll.currentItem) return
+            const rowTop = overviewScroll.currentItem.mapToItem(inspectorScroll, 0, 0).y
+            const rowBottom = rowTop + overviewScroll.currentItem.height
+            const scroll = inspectorScroll.contentItem
+            const limit = Math.max(0, scroll.contentHeight - scroll.height)
+            if (rowBottom > inspectorScroll.height)
+                scroll.contentY = Math.min(limit, scroll.contentY + rowBottom - inspectorScroll.height)
+            else if (rowTop < 0)
+                scroll.contentY = Math.max(0, scroll.contentY + rowTop)
+        })
         Keys.onPressed: function(event) { if (event.key===Qt.Key_End) { positionViewAtIndex(count-1,ListView.End); event.accepted=true } else if (event.key===Qt.Key_Home) { positionViewAtIndex(0,ListView.Beginning); event.accepted=true } }
         delegate: Rectangle {
             required property var modelData
@@ -212,14 +348,11 @@ Pane {
             anchors.fill: parent; anchors.margins: 4
             RowLayout {
                 Layout.fillWidth: true; visible: modelData.metric===undefined; spacing: 12
-                        Label { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
-                        TextArea {
+                        SelectableText { Layout.preferredWidth: inspector.width < 600 ? 100 : 260; Layout.alignment: Qt.AlignTop; text: modelData.label; textFormat: Text.PlainText; color: workspace.appearanceColors.muted; wrapMode: Text.Wrap }
+                        SelectableText {
                             objectName: "overview_" + modelData.id
                             Layout.fillWidth: true
-                            readOnly: true; selectByMouse: true
                             text: modelData.value
-                            textFormat: TextEdit.PlainText; wrapMode: TextArea.Wrap
-                            padding: 0; background: null
                             color: { const palette = workspace.appearanceColors; return workspace.inspectorFieldColor(modelData.id) }
                             Accessible.name: modelData.label + ": " + modelData.value
                         }
@@ -228,7 +361,7 @@ Pane {
                             Layout.preferredHeight: inspector.width < 600 ? 44 : 24
                             visible: modelData.filterable === true
                             enabled: !workspace.busy
-                            glyph: "Filter"
+                            glyph: "Filters"
                             text: workspace.uiText["filters.title"] + ": " + modelData.label + " = " + modelData.value
                             onClicked: workspace.filterInspectorField(modelData.id)
                         }
@@ -345,20 +478,20 @@ Pane {
         visible: workspace.yamlVisible
         columns: inspector.width < 600 ? 1 : 2
         RowLayout {
-            Button { objectName: "editYaml"; text: "Edit YAML"; visible: !workspace.yamlEditing; enabled: workspace.canEditYaml && !workspace.busy && !workspace.authenticationRequired && !workspace.authenticationRunning && !workspace.deletionPending && !workspace.deletionRunning; onClicked: workspace.beginYamlEdit() }
-            Button { objectName: "leaveYamlEdit"; text: workspace.yamlDirty ? "Discard draft" : "Leave editing"; visible: workspace.yamlEditing; onClicked: workspace.leaveYamlEdit() }
-            Button { objectName: "checkYaml"; text: workspace.yamlChecking ? "Checking..." : "Check YAML"; visible: workspace.yamlEditing; enabled: !workspace.busy && !workspace.discardPending && !workspace.yamlApplyLocked && !workspace.yamlChecking; Accessible.name: "Check local YAML syntax and resource identity"; onClicked: workspace.checkYamlDraft() }
+            FlatButton { objectName: "editYaml"; text: "Edit YAML"; visible: !workspace.yamlEditing; enabled: workspace.canEditYaml && !workspace.busy && !workspace.authenticationRequired && !workspace.authenticationRunning && !workspace.deletionPending && !workspace.deletionRunning; onClicked: workspace.beginYamlEdit() }
+            FlatButton { objectName: "leaveYamlEdit"; destructive: workspace.yamlDirty; text: workspace.yamlDirty ? "Discard draft" : "Leave editing"; visible: workspace.yamlEditing; onClicked: workspace.leaveYamlEdit() }
+            FlatButton { objectName: "checkYaml"; text: workspace.yamlChecking ? "Checking..." : "Check YAML"; visible: workspace.yamlEditing; enabled: !workspace.busy && !workspace.discardPending && !workspace.yamlApplyLocked && !workspace.yamlChecking; Accessible.name: "Check local YAML syntax and resource identity"; onClicked: workspace.checkYamlDraft() }
         }
-        Label { objectName: "yamlDraftStatus"; Layout.fillWidth: true; visible: text !== ""; text: workspace.yamlDraftStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+        SelectableText { objectName: "yamlDraftStatus"; Layout.fillWidth: true; visible: text !== ""; text: workspace.yamlDraftStatus }
     }
-    Label { objectName: "yamlCheckStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlCheckStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "yamlCheckStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlCheckStatus }
     RowLayout {
         visible: workspace.yamlVisible && workspace.yamlEditing
-        Button { objectName: "previewYaml"; text: "Preview apply"; enabled: workspace.yamlDraftCredentialsCurrent && !workspace.busy && !workspace.yamlApplyLocked && !workspace.yamlChecking && !workspace.discardPending && !workspace.authenticationRequired && !workspace.authenticationRunning; onClicked: workspace.previewYamlApply() }
-        Button { objectName: "readBackYaml"; text: "Read back"; visible: workspace.canReadBackYaml; enabled: !workspace.discardPending && !workspace.authenticationRequired; onClicked: workspace.readBackYaml() }
-        Button { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
+        FlatButton { objectName: "previewYaml"; text: "Preview apply"; enabled: workspace.yamlDraftCredentialsCurrent && !workspace.busy && !workspace.yamlApplyLocked && !workspace.yamlChecking && !workspace.discardPending && !workspace.authenticationRequired && !workspace.authenticationRunning; onClicked: workspace.previewYamlApply() }
+        FlatButton { objectName: "readBackYaml"; text: "Read back"; visible: workspace.canReadBackYaml; enabled: !workspace.discardPending && !workspace.authenticationRequired; onClicked: workspace.readBackYaml() }
+        FlatButton { objectName: "reconcileYaml"; text: "Compare / reconcile"; visible: workspace.canReconcileYaml; enabled: !workspace.discardPending; onClicked: workspace.reconcileYaml() }
     }
-    Label { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus; textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: text }
+    SelectableText { objectName: "yamlApplyStatus"; Layout.fillWidth: true; visible: workspace.yamlVisible && text !== ""; text: workspace.yamlApplyStatus }
     InspectorPage {
         id: valuesPage
         Layout.fillWidth: true
@@ -372,6 +505,11 @@ Pane {
         id: logsPage
         selected: workspace.logsVisible
         sourceComponent: PodLogsView { Layout.fillWidth: true; Layout.fillHeight: true; visible: workspace.logsVisible }
+    }
+    InspectorPage {
+        id: filesPage
+        selected: workspace.inspectorPage === "files"
+        sourceComponent: ContainerFilesView { Layout.fillWidth: true; Layout.fillHeight: true }
     }
     Loader {
         Layout.fillWidth: true; Layout.fillHeight: true

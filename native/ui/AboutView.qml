@@ -9,7 +9,7 @@ ColumnLayout {
     spacing: 10
     property string linkError: ""
     property int quoteIndex: -1
-    readonly property var quotes: [
+    readonly property var directQuotes: [
         "kubectl shouts. etcd whispers. Podlord listens.\nBuilt with heart, not equity.\nStar the repo if it survived your Monday. Fuel me if it survived your week.",
         "Pods come and go. Your sanity should not.\nOne human built this between deploys and despair.\nStar it. Donate when it spares you another describe.",
         "YAML stands for Yet Another Misindented Line.\nPodlord stands for whatever you needed it to.\nHit the star if we agree. Coffee link is right there.",
@@ -43,6 +43,15 @@ ColumnLayout {
         "OOMKilled: out of memory, killed.\nMaintainer of Podlord: out of money, still alive.\nA donation keeps the second statement true.",
         "If Kubernetes were easy, you would not be reading this.\nThis console makes hard things visible.\nStar it. Fuel it. Send it to a friend."
     ]
+    readonly property var storeQuotes: [
+        "kubectl shouts. etcd whispers. Podlord listens.",
+        "Pods come and go. Your sanity should not.",
+        "YAML stands for Yet Another Misindented Line.\nPodlord makes it visible.",
+        "The control plane is fine. It said so itself.\nPodlord checks anyway.",
+        "Kubernetes has no developer experience.\nPodlord helps make it usable.",
+        "Logs are mostly noise. Podlord helps find the truth."
+    ]
+    readonly property var quotes: workspace.appStore ? storeQuotes : directQuotes
     function rotateQuote() {
         let next = Math.floor(Math.random() * quotes.length)
         if (next === quoteIndex) next = (next + 1) % quotes.length
@@ -67,9 +76,9 @@ ColumnLayout {
         Image { objectName: "aboutLogo"; Layout.preferredWidth: 96; Layout.preferredHeight: 96; source: "qrc:/podlord/brand-logo.png"; sourceSize.width: 192; sourceSize.height: 192; fillMode: Image.PreserveAspectFit; asynchronous: true; Accessible.ignored: true }
         ColumnLayout {
             Layout.fillWidth: true; Layout.minimumWidth: 0
-            Label { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "PODLORD"; font.pixelSize: workspace.textSizes.title; font.bold: true; color: workspace.appearanceColors.accent; elide: Text.ElideRight }
-            Label { objectName: "aboutTagline"; Layout.fillWidth: true; text: workspace.uiText["about.tagline"]; font.italic: true; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-            Label { objectName: "settingsVersion"; Layout.fillWidth: true; text: workspace.uiText["about.version"].replace("{0}", Qt.application.version); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+            SelectableText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: "PODLORD"; font.pixelSize: workspace.textSizes.title; font.bold: true; color: workspace.appearanceColors.accent }
+            SelectableText { objectName: "aboutTagline"; Layout.fillWidth: true; text: workspace.uiText["about.tagline"]; font.italic: true; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+            SelectableText { objectName: "settingsVersion"; Layout.fillWidth: true; text: workspace.uiText["about.version"].replace("{0}", Qt.application.version); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
         }
     }
     Rectangle {
@@ -80,7 +89,7 @@ ColumnLayout {
         border.color: workspace.appearanceColors.border
         border.width: 1
         radius: 2
-        Label {
+        SelectableText {
             id: aboutQuote
             objectName: "aboutQuote"
             x: 12
@@ -93,30 +102,26 @@ ColumnLayout {
             Accessible.name: text
         }
     }
-    Label { objectName: "aboutUpdateStatus"; Layout.fillWidth: true; text: workspace.releaseUpdates.state.status; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.releaseUpdates.state.error ? workspace.appearanceColors.danger : workspace.appearanceColors.muted; Accessible.name: text }
+    SelectableText { objectName: "aboutUpdateStatus"; Layout.fillWidth: true; text: workspace.releaseUpdates.state.status; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.releaseUpdates.state.error ? workspace.appearanceColors.danger : workspace.appearanceColors.muted; Accessible.name: text }
     Flow {
         Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutCheckUpdates"; text: "Check for updates"; enabled: workspace.releaseUpdates.state.enabled && !workspace.releaseUpdates.state.busy; Accessible.description: "Explicit anonymous release check; automatic checks run once a week"; onClicked: workspace.releaseUpdates.checkNow() }
-        IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutDownloadUpdate"; visible: workspace.releaseUpdates.state.available; text: workspace.uiText["update.availableStatus"].replace("{0}", workspace.releaseUpdates.state.latestVersion); Accessible.name: "Download compatible native update"; onClicked: workspace.releaseUpdates.openDownload(); ToolTip.visible: hovered || activeFocus; ToolTip.text: workspace.uiText["update.downloadTip"].replace("{0}", workspace.releaseUpdates.state.latestVersion).replace("{1}", Qt.application.version) }
+        IconButton { glyph: "Download"; showText: true; font.bold: true; objectName: "aboutDownloadUpdate"; visible: workspace.releaseUpdates.state.available; text: workspace.uiText["update.availableStatus"].replace("{0}", workspace.releaseUpdates.state.latestVersion); Accessible.name: "Download compatible native update"; onClicked: workspace.releaseUpdates.openDownload(); ToolTip.visible: hovered || activeFocus; ToolTip.text: workspace.uiText["update.downloadTip"].replace("{0}", workspace.releaseUpdates.state.latestVersion).replace("{1}", Qt.application.version) }
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutReleasePage"; visible: workspace.releaseUpdates.state.releaseUrl !== ""; text: "Release notes"; Accessible.description: "Open the verified project release page; does not install software"; onClicked: workspace.releaseUpdates.openRelease() }
     }
-    Label { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: workspace.uiText["update.lastChecked"] + ": " + workspace.displayDateTime(workspace.releaseUpdates.state.lastCheckedAt); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
-    Label { text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
+    SelectableText { objectName: "aboutUpdateCheckedAt"; Layout.fillWidth: true; visible: workspace.releaseUpdates.state.lastCheckedAt !== ""; text: workspace.uiText["update.lastChecked"] + ": " + workspace.displayDateTime(workspace.releaseUpdates.state.lastCheckedAt); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+    SelectableText { visible: workspace.donationLinks.length > 0; text: workspace.uiText["about.supportHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
     Flow {
+        visible: workspace.donationLinks.length > 0
         Layout.fillWidth: true
         Layout.minimumWidth: 0
         spacing: 6
         Repeater {
-            model: about.visible ? [
-                {id: "Sponsors", text: workspace.uiText["about.sponsors"], url: "https://github.com/sponsors/YunaBraska"},
-                {id: "Coffee", text: workspace.uiText["about.bmc"], url: "https://buymeacoffee.com/YunaBraska"},
-                {id: "Kofi", text: workspace.uiText["about.kofi"], url: "https://ko-fi.com/YunaBraska"},
-                {id: "Liberapay", text: workspace.uiText["about.liberapay"], url: "https://liberapay.com/YunaBraska"}
-            ] : []
+            model: about.visible ? workspace.donationLinks : []
             LinkButton {}
         }
     }
-    Label { text: workspace.uiText["about.projectHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
+    SelectableText { text: workspace.uiText["about.projectHeading"]; font.bold: true; color: workspace.appearanceColors.accent }
     Flow {
         Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 6
         Repeater {
@@ -134,9 +139,9 @@ ColumnLayout {
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutLicense"; text: "License"; Accessible.name: "Podlord MIT license"; onClicked: { licenseDialog.title = "Podlord license"; licenseText.text = workspace.applicationLicense(); licenseDialog.open() } }
         IconButton { glyph: ""; showText: true; font.bold: true; objectName: "aboutDependencyNotices"; text: "Third-party notices"; Accessible.name: "Read complete bundled dependency license texts"; onClicked: { licenseDialog.title = "Third-party notices"; licenseText.text = workspace.dependencyNotices(); licenseDialog.open() } }
     }
-    Label { Layout.fillWidth: true; text: "Qt, FFmpeg, OpenSSL, yaml-cpp and libvterm retain their own licenses. Podlord's license does not replace their distribution obligations."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
+    SelectableText { Layout.fillWidth: true; text: "Qt, FFmpeg, OpenSSL, yaml-cpp and libvterm retain their own licenses. Podlord's license does not replace their distribution obligations."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted }
 
-    Label { objectName: "aboutLinkError"; Layout.fillWidth: true; visible: text !== ""; text: about.linkError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+    SelectableText { objectName: "aboutLinkError"; Layout.fillWidth: true; visible: text !== ""; text: about.linkError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
     ModalDialog {
         id: licenseDialog
         objectName: "aboutLicenseDialog"

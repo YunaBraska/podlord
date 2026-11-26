@@ -58,7 +58,7 @@ different order produces the same positions. Kubernetes UID remains an identity
 input, including when an object is replaced at the same API path.
 
 All discovered listable kinds participate in the same layout. When native
-discovery includes kinds absent from C#'s fixed catalog, common resource tiles
+discovery includes kinds outside the built-in catalog, common resource tiles
 may move as the island is redistributed. A frozen reference-only skeleton or
 separate layout for additional kinds would contradict the confirmed product
 behavior; parity comparisons must use the same resource set.
@@ -220,14 +220,14 @@ alive. A second custom glyph/effect implementation would duplicate behavior.
 All three were rejected. Cluster and namespace markers are non-interactive
 context derived from observed groups, not synthetic Kubernetes resources.
 
-The C# reference paints solid resource tiles, not filled corridors between them.
+The radar paints solid resource tiles, without filled corridors between them.
 Remove native corridor cells and their index rather than retaining invented land.
 The retained terrain palette distinguishes shallow network water and deep Event
 water. Glyphs appear only at a tile width of at least 9 pixels, with dark fill and
 terrain/alert-colored strokes; smaller tiles remain inexpensive solid marks.
 
 The user clarified that only background water is required, not Event waves.
-One independent painted water surface follows the C# 18-pixel pattern, drift,
+One independent painted water surface uses an 18-pixel pattern, drift,
 translucent colors and activity/speed interval. Its bounded request timestamps
 come from the existing scheduler admission signal, never from a new request.
 Event tiles retain their terrain/alert colors without local water effects.

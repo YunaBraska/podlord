@@ -34,15 +34,12 @@ ResourceGrid {
         target: workspace
         function onInspectorPresentationChanged() { values.copyError = "" }
     }
-    Label {
+    SelectableText {
         objectName: "copyValueError"
         Layout.fillWidth: true
         text: values.copyError
-        textFormat: Text.PlainText
         visible: text !== ""
-        wrapMode: Text.Wrap
         color: workspace.appearanceColors.danger
-        Accessible.name: text
     }
     cellAccessory: Component {
         RowLayout {
@@ -50,10 +47,10 @@ ResourceGrid {
             readonly property string identity: parent.identity
             readonly property bool encoded: parent.encodedValue
             spacing: 2
-            ToolButton { objectName: "copyKey_" + copyActions.identity; text: "KEY"; padding: 2; Accessible.name: workspace.uiText["copy.key"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "key") }
-            ToolButton { objectName: "copy_" + copyActions.identity; text: "VALUE"; padding: 2; Accessible.name: workspace.uiText["copy.value"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "preferred") }
-            ToolButton { objectName: "copyRaw_" + copyActions.identity; text: "RAW"; padding: 2; visible: copyActions.encoded; Accessible.name: workspace.uiText["copy.rawBase64"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "raw") }
-            ToolButton { objectName: "copyDecoded_" + copyActions.identity; text: "DEC"; padding: 2; visible: copyActions.encoded; Accessible.name: workspace.uiText["copy.decodedValue"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "decoded") }
+            FlatButton { objectName: "copyKey_" + copyActions.identity; text: "KEY"; padding: 2; Accessible.name: workspace.uiText["copy.key"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "key") }
+            FlatButton { objectName: "copy_" + copyActions.identity; text: "VALUE"; padding: 2; Accessible.name: workspace.uiText["copy.value"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "preferred") }
+            FlatButton { objectName: "copyRaw_" + copyActions.identity; text: "RAW"; padding: 2; visible: copyActions.encoded; Accessible.name: workspace.uiText["copy.rawBase64"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "raw") }
+            FlatButton { objectName: "copyDecoded_" + copyActions.identity; text: "DEC"; padding: 2; visible: copyActions.encoded; Accessible.name: workspace.uiText["copy.decodedValue"] + " " + copyActions.identity; onClicked: values.copy(copyActions.identity, "decoded") }
         }
     }
 }

@@ -16,7 +16,7 @@
 namespace podlord {
 namespace {
 constexpr int ResourceIndex = Qt::UserRole + 20, WorldX = ResourceIndex + 1, WorldY = ResourceIndex + 2;
-constexpr int TerrainColor = ResourceIndex + 3;
+constexpr int TerrainColor = ResourceIndex + 3, RenderColor = ResourceIndex + 5;
 constexpr int AnimationScale = RadarTiles::animationScaleRole;
 constexpr double step = 7;
 constexpr double minimumZoom = .01, maximumZoom = 3.4;
@@ -95,7 +95,7 @@ int RadarTiles::rowCount(const QModelIndex& parent) const { return parent.isVali
 QHash<int,QByteArray> RadarTiles::roleNames() const {
     static const QHash<int,QByteArray> names{{Qt::UserRole,"resourcePath"},{Qt::UserRole+1,"resourceName"},{Qt::UserRole+2,"resourceKind"},
         {Qt::UserRole+3,"resourceNamespace"},{Qt::UserRole+4,"resourceStatus"},{Qt::UserRole+5,"statusColor"},{Qt::UserRole+15,"resourceDetails"},
-        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"}};
+        {Qt::UserRole+7,"resourceMetrics"},{Qt::UserRole+9,"resourceHealth"},{ResourceIndex,"resourceIndex"},{WorldX,"worldX"},{WorldY,"worldY"},{TerrainColor,"terrainColor"},{AnimationScale,"animationScale"},{RenderColor,"renderColor"}};
     return names;
 }
 QVariant RadarTiles::data(const QModelIndex& index, int role) const {
@@ -105,6 +105,7 @@ QVariant RadarTiles::data(const QModelIndex& index, int role) const {
     if (role==WorldY) return entry.world.y();
     if (role==AnimationScale) return entry.animation==Animation::Pulse ? oscillation(frameTime_-entry.started,400,.8) : 1.;
     if (role==TerrainColor) return terrainColor(entry.kind);
+    if (role==RenderColor) return entry.color;
     QModelIndex source;
     if (view_ && entry.source.isValid()) {
         const auto* proxy=qobject_cast<QSortFilterProxyModel*>(view_.data());
@@ -233,6 +234,10 @@ void RadarIsland::setGlyphFill(const QColor& color) {
 void RadarIsland::setInspectedPath(const QString& path) {
     if (inspectedPath_==path) return;
     inspectedPath_=path; update(); emit inspectedPathChanged();
+}
+void RadarIsland::setLinkedDepths(const QVariantMap& depths) {
+    if (linkedDepths_ == depths) return;
+    linkedDepths_ = depths; update(); emit linkedDepthsChanged();
 }
 void RadarIsland::setHoveredPath(const QString& path) {
     if (hoveredPath_==path) return;
@@ -700,7 +705,8 @@ void RadarIsland::paint(QPainter* painter) {
         if (!entry.source.isValid()) continue;
         const bool highlighted=entry.path==hoveredPath_ || entry.path==focusedPath_ || entry.path==inspectedPath_
             || (hasActiveFocus() && entry.path==currentPath_);
-        if (entry.animation==RadarTiles::Animation::None && !entry.glow && !highlighted && side<9) {
+        const int linkedDepth = linkedDepths_.value(entry.path).toInt();
+        if (entry.animation==RadarTiles::Animation::None && !entry.glow && !highlighted && linkedDepth == 0 && side<9) {
             // Ordinary pixels need no per-resource painter state or transform.
             tile(entry.world,entry.color);
             continue;
@@ -719,8 +725,18 @@ void RadarIsland::paint(QPainter* painter) {
         painter->translate(screen(entry.world)); painter->scale(scale,scale);
         if (entry.glow) { painter->setOpacity(opacity*.35); outline(box.adjusted(-1.5,-1.5,1.5,1.5),entry.color,2); }
         painter->setOpacity(opacity); painter->fillRect(box,entry.color);
-        if (highlighted)
+        if (highlighted) {
+            auto color = QColor("#7DFFC3");
+            color.setAlpha(205);
+            painter->fillRect(box, color);
             outline(box,QColor("#7DFFC3"),1.2);
+        }
+        else if (linkedDepth > 0 && linkedDepth <= 6) {
+            auto color = QColor("#72B8FF");
+            color.setAlpha(std::max(12, 190 / (1 << (linkedDepth - 1))));
+            painter->fillRect(box, color);
+            outline(box.adjusted(-1.5,-1.5,1.5,1.5),color,1.2);
+        }
         if (side>=9) KindGlyph::draw(painter,box,entry.kind,glyphFill_,entry.color);
         if (entry.animation==RadarTiles::Animation::Outline) outline(box.adjusted(-1,-1,1,1),entry.announce,2);
         else if (entry.animation==RadarTiles::Animation::Sweep) {

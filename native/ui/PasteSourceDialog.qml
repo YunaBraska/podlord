@@ -33,7 +33,7 @@ ModalDialog {
         }
     }
     contentItem: ColumnLayout {
-        Label { Layout.fillWidth: true; visible: !workspace.appStore; text: workspace.uiText["context.pasteOrigin"]; wrapMode: Text.Wrap }
+        SelectableText { Layout.fillWidth: true; visible: !workspace.appStore; text: workspace.uiText["context.pasteOrigin"]; wrapMode: Text.Wrap }
         TextField {
             id: origin
             objectName: "pasteSourceOrigin"
@@ -71,7 +71,7 @@ ModalDialog {
         }
     }
     footer: DialogButtonBox {
-        Button {
+        FlatButton {
             objectName: "importPastedSource"
             text: surfaceDialog.awaitingImport ? "Importing..." : workspace.uiText["action.import"]
             Accessible.description: "Imports privately without connecting or signing in. Maximum 16 MiB."

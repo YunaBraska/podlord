@@ -57,7 +57,7 @@ New table defaults use reference order and widths, while saved layouts remain au
 ### Deterministic reference geometry and selectable namespaces
 
 Native uses the reference session/UID identity and virtual decoration keys for
-jitter and stable collision ordering. The real C# pipeline exports a single
+jitter and stable collision ordering. The resource pipeline exports a single
 immutable resource projection and its public radar blocks; native compares its
 public cache-model geometry and rendered centers against that output. No copied
 reference algorithm or private helper is used as the oracle.

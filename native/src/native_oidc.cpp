@@ -124,7 +124,10 @@ bool verifyRs256(const QJsonObject& key, const QByteArray& message, const QByteA
         && EVP_DigestVerifyFinal(context.get(), reinterpret_cast<const unsigned char*>(signature.constData()), size_t(signature.size())) == 1;
 #endif
 }
-std::optional<QDateTime> verifiedIdExpiry(const QString& token, const OidcLogin& oidc, const QJsonObject& jwks, const QString& expectedNonce) {
+} // namespace
+
+std::optional<QJsonObject> verifiedOidcIdClaims(const QString& token, const QString& issuer,
+    const QString& clientId, const QJsonObject& jwks, const QString& expectedNonce) {
     const auto parts = token.toLatin1().split('.');
     if (parts.size() != 3 || parts[0].isEmpty() || parts[1].isEmpty() || parts[2].isEmpty()) return {};
     const auto headerBytes = QByteArray::fromBase64Encoding(parts[0], QByteArray::Base64UrlEncoding | QByteArray::AbortOnBase64DecodingErrors);
@@ -152,26 +155,25 @@ std::optional<QDateTime> verifiedIdExpiry(const QString& token, const OidcLogin&
         || (selected.contains("key_ops") && !selected.value("key_ops").toArray().contains("verify"))) return {};
     if (!verifyRs256(selected, parts[0] + '.' + parts[1], signature.decoded)) return {};
     const auto subject = claims.value("sub").toString();
-    if (claims.value("iss").toString() != oidc.issuer.toString() || subject.isEmpty() || subject.size() > 255
+    if (claims.value("iss").toString() != issuer || subject.isEmpty() || subject.size() > 255
         || std::any_of(subject.cbegin(), subject.cend(), [](QChar c) { return c.unicode() > 127; })) return {};
     if (!expectedNonce.isEmpty() && claims.value("nonce").toString() != expectedNonce) return {};
     const auto audience = claims.value("aud");
-    bool intended = audience.isString() && audience.toString() == oidc.clientId;
+    bool intended = audience.isString() && audience.toString() == clientId;
     if (audience.isArray()) {
         const auto values = audience.toArray();
         if (values.isEmpty() || std::any_of(values.cbegin(), values.cend(), [](const QJsonValue& v) { return !v.isString(); })) return {};
-        intended = values.contains(oidc.clientId);
-        if (values.size() > 1 && claims.value("azp").toString() != oidc.clientId) return {};
+        intended = values.contains(clientId);
+        if (values.size() > 1 && claims.value("azp").toString() != clientId) return {};
     }
-    if (!intended || (claims.contains("azp") && claims.value("azp").toString() != oidc.clientId)) return {};
+    if (!intended || (claims.contains("azp") && claims.value("azp").toString() != clientId)) return {};
     const auto now = QDateTime::currentSecsSinceEpoch();
     const auto exp = claims.value("exp").toInteger(-1);
     const auto iat = claims.value("iat").toInteger(-1);
     if (exp <= now + 30 || iat <= 0 || iat > now + 60
         || (claims.contains("nbf") && (claims.value("nbf").toInteger(-1) < 0 || claims.value("nbf").toInteger(-1) > now + 60))) return {};
-    return QDateTime::fromSecsSinceEpoch(exp, QTimeZone::utc());
+    return claims;
 }
-} // namespace
 
 Result<std::optional<OidcLogin>> nativeOidc(const ExecCommand& command) {
     const auto name = QFileInfo(command.program).fileName().toLower();
@@ -434,9 +436,10 @@ void NativeOidcLogin::acceptToken(int status, const QJsonObject& object) {
             finish(invalidLogin()); return;
         }
         send(jwksEndpoint_, {}, [this, token, idToken, seconds](int keyStatus, const QJsonObject& keys) {
-            const auto expiry = keyStatus == 200 ? verifiedIdExpiry(idToken, *connection_.exec->oidc, keys, nonce_) : std::optional<QDateTime>{};
-            if (!expiry) { finish(invalidLogin()); return; }
-            auto validUntil = *expiry;
+            const auto claims = keyStatus == 200 ? verifiedOidcIdClaims(idToken, connection_.exec->oidc->issuer.toString(),
+                connection_.exec->oidc->clientId, keys, nonce_) : std::optional<QJsonObject>{};
+            if (!claims) { finish(invalidLogin()); return; }
+            auto validUntil = QDateTime::fromSecsSinceEpoch(claims->value("exp").toInteger(), QTimeZone::utc());
             if (flow_ == Flow::Browser && connection_.exec->oidc->useAccessToken)
                 validUntil = std::min(validUntil, QDateTime::currentDateTimeUtc().addSecs(seconds));
             if (validUntil <= QDateTime::currentDateTimeUtc().addSecs(30)) { finish(invalidLogin()); return; }

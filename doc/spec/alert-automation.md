@@ -53,7 +53,7 @@ Radar preview remains unavailable while synchronization is in progress.
 | Recent change color | `recentlyChanged=true` | fresh color |
 | Active view pulse | `newInView=true` AND `activity=true` | bounded pulse |
 
-The release catalog retains the three shipped C# definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal; there is no additional default restart-spike or CPU-p95 rule. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins stay enabled and locked by default.
+The release catalog retains the three shipped definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal; there is no additional default restart-spike or CPU-p95 rule. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins stay enabled and locked by default.
 
 Descriptions explain each action rather than showing a generic built-in marker:
 problem resources receive yellow/red, recent changes receive the agreed green
@@ -77,9 +77,9 @@ The release bundles 20 original short cues and 20 independently composed instrum
 
 Existing sound IDs resolve to appropriate original cues without changing rule identity, matcher, activation or mute preferences. Reading never rewrites configuration. The next explicit successful save persists the canonical sound choice through the existing conflict-safe atomic writer. Unknown IDs remain errors.
 
-Music uses one application-owned player shared across tabs and windows. Play is explicit. It never resumes after application restart. It continues when minimized or another app is active. A single icon-only Play/Pause action lives in the main navigation. It uses that navigation's overflow menu on narrow screens. There is no track chooser, music menu or separate in-app music mute control. Tracks shuffle in complete 20-piece cycles, with no immediate repeat across cycle boundaries. Pause retains the current track and position. Native media focus/background lifetime remains active when advancing to the next piece. Playback interruption or output removal pauses music without automatic restart. Mobile wrappers own only OS audio focus, media controls and background lifetime. No download or external runtime is required.
+Music uses one application-owned player shared across tabs and windows. Play is explicit. It never resumes after application restart. It continues when minimized or another app is active. A single icon-only Play/Pause action lives in the main navigation. It uses that navigation's overflow menu on narrow screens. There is no track chooser, music menu or separate in-app music mute control. Tracks shuffle in complete 10-piece cycles, with no immediate repeat across cycle boundaries. Playback fades in for one second and fades out over the last two seconds of a track. A manual skip fades out over 250 ms. Pause retains the current track and position. Native media focus/background lifetime remains active when advancing to the next piece. Playback interruption or output removal pauses music without automatic restart. Mobile wrappers own only OS audio focus, media controls and background lifetime. No download or external runtime is required.
 
-The original score/renderer sources are maintained with the assets. The 20 pieces must differ in composition, rhythm, arrangement and instrumentation, not merely pitch, speed or distortion. Complete silent decoding, cue migration, controls, restart behavior, native player lifecycle and mobile background playback need executable evidence. Imported user sounds remain deferred.
+The original score/renderer sources are maintained with the assets. The ten pieces differ in composition, rhythm, arrangement and instrumentation, not merely pitch, speed or distortion. Background chords sustain across beats. Sparse, recognizable phrases carry the foreground without runs of short keyboard-like notes. Complete silent decoding, cue migration, controls, restart behavior, native player lifecycle and mobile background playback need executable evidence. Imported user sounds remain deferred.
 
 ## What Has The Native Implementation Proven?
 
@@ -89,17 +89,17 @@ Evaluation consumes immutable session snapshots off the UI thread. Changes are c
 
 Public QML tests exercise CRUD, invalid input, locking, restart persistence, whole-session evaluation despite filters, grouped AND/OR criteria, numeric ranges, bounded effects, tab non-replay and regex exhaustion. A separate local Kubernetes UI run exercises a real CrashLoop Pod and filtered-out alarm matching. Exact scenarios and remaining coverage belong to [the test map](k3d-test-map.md).
 
-The previous 117-entry C# audio-catalog comparison is superseded by the user-approved original pack. It remains useful only as a legacy-ID inventory, not a requirement to ship third-party audio or credits. New pack qualification is recorded in the test map.
+The previous 117-entry audio-catalog comparison is superseded by the user-approved original pack. It remains useful only as a legacy-ID inventory, not a requirement to ship third-party audio or credits. New pack qualification is recorded in the test map.
 
 Public lifecycle regressions now cover once/duration/view-entry effects, hidden
 and repeated membership, rejected paths and session closure. Imported sounds,
 complete camera/action semantics, audible physical-device comparison and full
 theme/device/accessibility comparison remain open. These are release gaps, not
 accepted removals; lifecycle and component tests do not establish whole-product
-parity. The preserved C# sound catalog contains bundled sounds only: importing
+parity. The previous sound catalog contains bundled sounds only: importing
 user sounds is a specification capability, not an already shipped reference
 implementation to copy.
 
-On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. No manual track-selection UI ships. Each full cycle visits all 20 pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
+On 2026-11-10 the user replaced the planned music chooser with one Play/Pause toggle and automatic shuffle. On 2026-11-20 the catalog was reduced to ten distinct pieces. No manual track-selection UI ships. Each full cycle visits all ten pieces once, and the boundary never repeats the previous piece. Music never auto-starts after launching the app.
 
 When the radar button is hidden, the same Play/Pause action follows the existing responsive navigation rule: show an icon in the header when it fits, otherwise use the ordinary navigation overflow. There is no dedicated music menu.

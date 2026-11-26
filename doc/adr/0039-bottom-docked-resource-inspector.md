@@ -4,7 +4,7 @@ Status: accepted
 
 ## Context
 
-Actual populated C#/C++ desktop comparisons show that a side-by-side native
+Populated desktop reviews show that a side-by-side native
 inspector consumes the table's column width. The reference instead docks its
 inspector below the workspace and leaves Radar and filters at the right.
 This visible difference is not resolved by passing resource transport tests.
@@ -64,7 +64,7 @@ No earlier screenshot or package is relabeled as this implementation.
 ## Rollback
 
 The change does not modify user resource data or create a profile schema.
-The isolated C# baseline remains available. Reverting presentation must preserve
+The current baseline remains available. Reverting presentation must preserve
 the inspector's current security and ownership behavior.
 
 ## Corrected Public Evidence
@@ -75,4 +75,4 @@ HUD cards at wide width. Long/narrow alarm forms pass four real wheel-navigation
 cases; this does not establish a fix for the transient blank area observed on the
 physical desktop. Open/closed dock frames and the current scoped package identity
 are linked in the existing test map. Window geometry persistence and installed
-C#/C++ paired visual parity remain separate gates.
+Platform visual parity remain separate gates.

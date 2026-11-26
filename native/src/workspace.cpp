@@ -1,8 +1,10 @@
 #include "workspace.h"
+#include "resource_graph.h"
 #include "workspace_runtime.h"
 #include "window_host.h"
 #include <QQuickWindow>
 #include "resource_guidance.h"
+#include "ui_language.h"
 #include "runtime_diagnostics.h"
 #include <QDir>
 #include "resource_metrics.h"
@@ -129,7 +131,8 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     switch (role) {
     case Qt::UserRole + 5: return appearanceStatus(appearance_, metadata(index.row(), Qt::UserRole + 4));
     case Qt::UserRole + 7: return resourceMetricPresentation(row);
-    case Qt::UserRole + 8: return row.contains("metricReferences"_L1);
+    case Qt::UserRole + 8: return row.contains("metricReferences"_L1)
+        && (row["cpu"_L1].isDouble() || row["memory"_L1].isDouble() || row["storage"_L1].isDouble());
     case Qt::UserRole + 9: return row["problemSeverity"_L1].toInt();
     case Qt::UserRole + 10: return row["activity"_L1].toBool();
     case Qt::UserRole + 13: return row["value"_L1].toString();
@@ -137,6 +140,7 @@ QVariant ResourceTable::data(const QModelIndex& index, int role) const {
     case Qt::UserRole + 15: return QVariantMap{{"issue", row["issue"_L1].toVariant()}, {"ready", row["ready"_L1].toVariant()},
         {"restarts", row["restarts"_L1].toVariant()}, {"node", row["node"_L1].toVariant()},
         {"image", row["image"_L1].toVariant()}, {"owner", row["owner"_L1].toVariant()}};
+    case Qt::UserRole + 16: return appearanceIdentity(appearance_, row["kind"_L1].toString());
     default: break;
     }
     const auto& field = fields_[index.column()];
@@ -206,7 +210,7 @@ QVariant ResourceTable::headerData(int section, Qt::Orientation orientation, int
 QHash<int, QByteArray> ResourceTable::roleNames() const {
     return {{Qt::DisplayRole, "display"}, {Qt::ToolTipRole, "tooltip"}, {Qt::ForegroundRole, "identityColor"}, {Qt::UserRole, "resourcePath"},
         {Qt::UserRole + 1, "resourceName"}, {Qt::UserRole + 2, "resourceKind"}, {Qt::UserRole + 3, "resourceNamespace"},
-        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}};
+        {Qt::UserRole + 4, "resourceStatus"}, {Qt::UserRole + 5, "statusColor"}, {Qt::UserRole + 6, "sortValue"}, {Qt::UserRole + 7, "resourceMetrics"}, {Qt::UserRole + 8, "hasResourceMetrics"}, {Qt::UserRole + 9, "resourceHealth"}, {Qt::UserRole + 12, "endpointPath"}, {Qt::UserRole + 13, "valueDetail"}, {Qt::UserRole + 14, "encodedValue"}, {Qt::UserRole + 15, "resourceDetails"}, {Qt::UserRole + 16, "resourceKindColor"}};
 }
 QJsonObject ResourceTable::row(int index) const { return index >= 0 && index < rows_.size() ? rows_[index].document : QJsonObject{}; }
 quint64 ResourceTable::populatedColumns(int row) const {
@@ -234,7 +238,8 @@ QString ResourceTable::metadata(int row, int role) const {
 bool ResourceTable::setAppearance(const Appearance& appearance) {
     if (appearance_ == appearance) return true;
     appearance_ = appearance;
-    if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1), {Qt::ForegroundRole, Qt::UserRole + 5});
+    if (!rows_.isEmpty()) emit dataChanged(index(0, 0), index(rowCount() - 1, columnCount() - 1),
+        {Qt::ForegroundRole, Qt::UserRole + 5, Qt::UserRole + 16});
     return true;
 }
 bool ResourceTable::publish(const QJsonArray& rows, const QString& cluster, bool replace) {
@@ -366,6 +371,30 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     connect(&runtime_->typography, &SystemTypography::changed, this, &Workspace::typographyChanged);
     connect(this, &Workspace::changed, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::catalogsChanged, this, [this] { refreshMapContexts(mapContexts_.isEmpty()); });
+    connect(&runtime_->incidentAi, &IncidentAi::changed, this, &Workspace::incidentAiChanged);
+    connect(&runtime_->incidentAi, &IncidentAi::analysisCompleted, this, [this](const QString& context, const QString& path) {
+        if (runtime_->owners.value(active_) == this && inspectorPage() == "ai" && inspectorPath() == path
+            && sessionConfiguration(active_).value("contextId").toString() == context)
+            alerts_.previewSound("complete");
+    });
+    connect(this, &Workspace::changed, this, [this] {
+        runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
+    });
+    connect(this, &Workspace::incidentAiChanged, this, [this] {
+        runtime_->incidentAi.observeDiagnostic(error().isEmpty() ? sourceImportError_ : error(), resolvedUiLanguage(settings_.language));
+        if (inspectorPage() == "ai" && !incidentAiConfigured()) setInspectorPage("overview");
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        if (!context.isEmpty() && !inspectorPath().isEmpty())
+            runtime_->incidentAi.prepareManual(context, inspectorPath());
+    });
+    connect(this, &Workspace::inspectorPresentationChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::catalogsChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::languageChanged, this, &Workspace::incidentAiChanged);
+    connect(this, &Workspace::languageChanged, this, [this] {
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        if (!context.isEmpty() && runtime_->owners.value(active_) == this)
+            runtime_->incidentAi.observe(context, client_.rows(active_), resolvedUiLanguage(settings_.language));
+    });
     connect(this, &Workspace::filterPresetsChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     connect(this, &Workspace::tableLayoutStatusChanged, this, &Workspace::sessionWindowActionsReadyChanged);
     diagnosticTable_.setSourceModel(&diagnosticRows_); diagnosticTable_.setSortRole(Qt::UserRole + 6);
@@ -402,6 +431,9 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
     });
     if (restore) client_.enableRequests(false);
     connect(&client_, &ResourceClient::requestStarted, this, &Workspace::requestStarted);
+    connect(&client_, &ResourceClient::transientFailureStarted, this, [this](const QString& id, const QString&) {
+        alerts_.notifyRequestFailure(id);
+    });
     const auto connectionsChanged = [this](const QString& id) {
         if (id == active_) publishPorts();
         if (id == active_ || runtime_->owners.value(id) == this) emit changed();
@@ -449,6 +481,10 @@ Workspace::Workspace(std::shared_ptr<WorkspaceRuntime> runtime, QObject* parent,
         if (mapPreviewNeeded()) emit mapPreviewRequested(id);
     } });
     connect(&client_, &ResourceClient::rowsChanged, this, [this](const QString& id) {
+        if (runtime_->owners.value(id) == this) {
+            const auto context = sessionConfiguration(id).value("contextId").toString();
+            runtime_->incidentAi.observe(context, client_.rows(id), resolvedUiLanguage(settings_.language));
+        }
         preparedSnapshots_.remove(id);
         if (snapshotPreparation_ && snapshotPreparation_->session == id) snapshotPreparation_->watcher->cancel();
         if (id == active_ && windowVisible_) publish();
@@ -613,6 +649,8 @@ bool Workspace::setYamlDraft(const QString& text) {
     if (!yamlDraft_ || pendingLeave_ || yamlDraft_->session != active_ || yamlDraft_->path != inspectorPath()) return false;
     if (yamlDraft_->text == text) return true;
     const bool dirty = yamlDirty(); yamlDraft_->text = text;
+    clearYamlCheck();
+    runtime_->incidentAi.setDraftError({}, {}, {});
     emit yamlTextChanged(); if (dirty != yamlDirty()) emit yamlEditChanged(); return true;
 }
 bool Workspace::clearYamlDraft() {
@@ -630,6 +668,8 @@ bool Workspace::clearYamlDraft() {
         emit yamlApplyChanged();
     }
     if (!yamlDraft_) return true;
+    clearYamlCheck();
+    runtime_->incidentAi.setDraftError({}, {}, {});
     yamlDraft_.reset(); emit yamlTextChanged(); emit yamlEditChanged(); return true;
 }
 bool Workspace::allowLeave(Leave action, const QString& target, int historyIndex) {
@@ -709,6 +749,7 @@ QVariantMap Workspace::settingsDiagnostics() const {
         QVariantMap{{"label","Cached Events"},{"value",eventRows_.rowCount()},{"description","Canonical Events, without duplicate API aliases"}},
         QVariantMap{{"label","Open tabs"},{"value",tabs().size()},{"description","Closed tabs do not refresh"}},
         QVariantMap{{"label","Sync progress"},{"value",QString::number(loadingProgress()*100,'f',0)+"%"},{"description",status()}},
+        QVariantMap{{"label","API calls / min"},{"value",client_.requestCountLastMinute(active_)},{"description","Requests started for this context in the past 60 seconds"}},
         QVariantMap{{"label","Request limit"},{"value",settings_.requestHardLimitPerMinute},{"description","Per minute. 0 disables the extra limit. Reads are spaced at least 400 ms apart."}},
         QVariantMap{{"label","Retained logs"},{"value",QString::number(settings_.logLimitMb)+" MB / Pod"},{"description","Bounded in-memory log retention"}}};
     metrics = runtimeDiagnostics() + metrics;
@@ -732,7 +773,10 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
         return true;
     }
     emit inspectorPresentationChanging();
-    if (scopeChanged) yamlFresh_ = false;
+    if (scopeChanged) {
+        yamlFresh_ = false;
+        auto* previousFiles = files_; files_ = nullptr; delete previousFiles;
+    }
     if (yamlDraft_ && (yamlDraft_->session != active_ || yamlDraft_->path != path)) clearYamlDraft();
     if (scopeChanged || document.isEmpty()) revealedValues_.clear();
     inspectorScope_ = scope; inspectorSummary_ = summary;
@@ -792,8 +836,39 @@ bool Workspace::publishInspector(bool revealChanged, bool resourcesChanged) {
     return true;
 }
 bool Workspace::publishRelated() {
-    if (!inspectorPath().isEmpty() && inspectorPage() != "events" && inspectorPage() != "links") return true;
-    QVariantList events, links;
+    const ResourceGraph graph(client_.rows(active_));
+    const auto depths = graph.depths(inspectorPath());
+    const bool depthsChanged = depths != connectedResourceDepths_;
+    if (depthsChanged) connectedResourceDepths_ = depths;
+    QVariantList pods;
+    if (filesSupported()) {
+        for (const auto& reached : graph.reach(inspectorPath(), 2)) {
+            const auto row = client_.resource(active_, reached.path);
+            if (row["apiVersion"] == "v1" && row["kind"] == "Pod" && row["status"] == "Running"
+                && !row["containers"].toArray().isEmpty())
+                pods.append(QVariantMap{{"path", reached.path}, {"name", row["name"].toString()},
+                    {"namespace", row["namespace"].toString()}, {"uid", row["uid"].toString()}});
+        }
+    }
+    const bool podsChanged = pods != filePods_;
+    if (podsChanged) filePods_ = std::move(pods);
+    if (files_ && (inspectorPage() != "files" || !std::any_of(filePods_.cbegin(), filePods_.cend(), [&](const QVariant& value) {
+        const auto pod = value.toMap();
+        return pod.value("path") == files_->podPath() && pod.value("uid") == files_->podUid();
+    }))) {
+        auto* previousFiles = files_; files_ = nullptr; delete previousFiles;
+        if (inspectorPage() == "files" && !filePods_.isEmpty()) {
+            const auto path = filePods_.first().toMap().value("path").toString();
+            const auto containers = fileContainers(path);
+            if (!containers.isEmpty()) openContainerFiles(path, containers.first());
+        }
+    }
+    if (!inspectorPath().isEmpty() && inspectorPage() != "events" && inspectorPage() != "links") {
+        if (depthsChanged || podsChanged) emit inspectorRelatedChanged();
+        return true;
+    }
+    QVariantList events;
+    const auto links = graph.links(inspectorPath()).toVariantList();
     const auto selected = client_.resource(active_, inspectorPath());
     const auto uid = selected["uid"].toString();
     if (!uid.isEmpty()) for (int index = 0; index < rows_.rowCount(); ++index) {
@@ -801,33 +876,14 @@ bool Workspace::publishRelated() {
         if (row["kubernetesEvent"].toBool() && row["eventTargetUid"] == uid)
             events.append(QVariantMap{{"path", row["path"].toString()}, {"type", row["eventType"].toString()}, {"reason", row["eventReason"].toString()},
                 {"message", row["eventMessage"].toString()}, {"count", row["eventCount"].toDouble()}, {"time", row["eventTime"].toString()}});
-        if (row["path"] == selected["path"] || row["uid"].toString().isEmpty()) continue;
-        QString relation;
-        const auto references = [](const QJsonObject& child, const QJsonObject& parent) {
-            if (!parent["namespace"].toString().isEmpty() && child["namespace"] != parent["namespace"]) return false;
-            for (const auto& value : child["owners"].toArray()) {
-                const auto owner = value.toObject();
-                if (owner["uid"] == parent["uid"] && owner["kind"] == parent["kind"] && owner["apiVersion"] == parent["apiVersion"]) return true;
-            }
-            return false;
-        };
-        if (references(selected, row)) relation = "Owner";
-        else if (references(row, selected)) relation = "Dependent";
-        else if (row["apiVersion"] == "v1" && row["kind"] == "Node" && selected["apiVersion"] == "v1" && selected["kind"] == "Pod" && row["name"] == selected["node"]) relation = "Node";
-        else if (row["apiVersion"] == "v1" && row["kind"] == "Namespace" && row["name"] == selected["namespace"]) relation = "Namespace";
-        if (!relation.isEmpty()) {
-            const bool parent = relation != "Dependent";
-            links.append(QVariantMap{{"path", row["path"].toString()}, {"relation", relation}, {"name", row["name"].toString()},
-                {"kind", row["kind"].toString()}, {"namespace", row["namespace"].toString()},
-                {"from", (parent ? row : selected)["name"].toString()}, {"to", (parent ? selected : row)["name"].toString()},
-                {"fromPath", (parent ? row : selected)["path"].toString()}, {"toPath", (parent ? selected : row)["path"].toString()},
-                {"status", (parent ? selected : row)["status"].toString()}});
-        }
     }
     const auto nav = currentNavigation();
     inspectorEventsTable_.sort(nav.inspectorEventColumn, nav.inspectorEventOrder);
     inspectorLinksTable_.sort(nav.inspectorLinkColumn, nav.inspectorLinkOrder);
-    if (events == inspectorEvents_ && links == inspectorLinks_) return true;
+    if (events == inspectorEvents_ && links == inspectorLinks_) {
+        if (depthsChanged || podsChanged) emit inspectorRelatedChanged();
+        return true;
+    }
     inspectorEvents_ = std::move(events); inspectorLinks_ = std::move(links);
     inspectorEventRows_.publish(QJsonArray::fromVariantList(inspectorEvents_));
     inspectorLinkRows_.publish(QJsonArray::fromVariantList(inspectorLinks_));
@@ -836,18 +892,27 @@ bool Workspace::publishRelated() {
 bool Workspace::setInspectorPage(const QString& page) {
     if (inspectorPath().isEmpty()) return false;
     if (page == "logs") return setLogsVisible(true);
-    if (page != "overview" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal") return false;
+    if (page != "overview" && page != "ai" && page != "yaml" && page != "values" && page != "events" && page != "links" && page != "terminal" && page != "files") return false;
+    if (page == "ai" && !incidentAiConfigured()) return false;
     if (page == "terminal" && !podInspected() && !containerTerminal()) return false;
+    if (page == "files" && !filesSupported()) return false;
     if (page == "values" && !valuesAvailable()) return false;
     if (currentNavigation().page == page) return true;
+    if (page != "files") { auto* previousFiles = files_; files_ = nullptr; delete previousFiles; }
     client_.hideLogs(viewId_); navigation_[active_].page = page;
     publishRelated(); publishLogs(); emit changed();
+    if (page == "files" && !filePods_.isEmpty()) {
+        const auto path = filePods_.first().toMap().value("path").toString();
+        const auto containers = fileContainers(path);
+        if (!containers.isEmpty()) openContainerFiles(path, containers.first());
+    }
     if (page == "yaml" && !yamlDraft_ && inspectorDocument_.isEmpty()) refreshInspector();
     return true;
 }
 bool Workspace::closeInspector() {
     if (!allowLeave(Leave::Inspector)) return false;
     clearSourceInspection();
+    auto* previousFiles = files_; files_ = nullptr; delete previousFiles;
     client_.dismissInspector(active_); client_.hideLogs(viewId_);
     navigation_[active_].terminalError.clear();
     navigation_[active_].inspected.clear(); navigation_[active_].page = "overview";
@@ -952,6 +1017,28 @@ bool Workspace::saveWorkspaceRestore(bool enabled) {
     return savePolicy(desired);
 }
 bool Workspace::podInspected() const { return client_.resource(active_, currentNavigation().inspected)["kind"] == "Pod"; }
+bool Workspace::filesSupported() const {
+    static const QStringList kinds{"Pod", "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job", "CronJob"};
+    return kinds.contains(client_.resource(active_, inspectorPath())["kind"].toString());
+}
+QStringList Workspace::fileContainers(const QString& podPath) const {
+    for (const auto& choice : filePods_) if (choice.toMap().value("path") == podPath) {
+        QStringList result;
+        for (const auto& value : client_.resource(active_, podPath)["containers"].toArray()) result.append(value.toString());
+        return result;
+    }
+    return {};
+}
+bool Workspace::openContainerFiles(const QString& podPath, const QString& container) {
+    if (inspectorPage() != "files" || !fileContainers(podPath).contains(container)) return false;
+    if (files_ && files_->podPath() == podPath && files_->container() == container
+        && files_->podUid() == client_.resource(active_, podPath)["uid"]) return true;
+    auto* previousFiles = files_; files_ = nullptr; delete previousFiles;
+    files_ = new ContainerFiles(client_, active_, podPath, container, this);
+    connect(files_, &ContainerFiles::changed, this, &Workspace::changed);
+    emit changed();
+    return files_->refresh();
+}
 bool Workspace::logsVisible() const { return windowVisible_ && currentNavigation().page == "logs" && podInspected(); }
 bool Workspace::logsPaused() const { return client_.logsPaused(active_, currentNavigation().inspected); }
 QVariantList Workspace::logContainers() const {
@@ -1042,6 +1129,10 @@ bool Workspace::publish() {
     alerts_.showSession(active_);
     const auto snapshot = client_.rows(active_);
     const auto cluster = activeCluster();
+    if (sessionChanged && runtime_->owners.value(active_) == this) {
+        const auto context = sessionConfiguration(active_).value("contextId").toString();
+        runtime_->incidentAi.observe(context, snapshot, resolvedUiLanguage(settings_.language));
+    }
     const auto nav = currentNavigation();
     visibleTable_.setLimit(nav.limit);
     const auto prepared = preparedSnapshots_.constFind(active_);
@@ -1273,6 +1364,11 @@ bool Workspace::quickImportFile(const QString& path) {
     }, true);
 }
 QString Workspace::defaultSourceOrigin() const { return appStore() ? QDir(profile_).filePath("pasted-kubeconfig") : QDir::home().filePath(".kube/pasted-kubeconfig"); }
+QUrl Workspace::defaultKubeconfigFolder() const {
+    const auto home = QDir::home();
+    const auto kube = home.filePath(".kube");
+    return QUrl::fromLocalFile(QDir(kube).exists() ? kube : home.absolutePath());
+}
 bool Workspace::importHome() { return !appStore() && importFile(QDir::home().filePath(".kube/config")); }
 bool Workspace::importText(QString originPath, const QString& yaml) {
     return importSource([originPath = std::move(originPath), yaml](const KubeconfigStore& store) -> Result<SourceImportReport> {

@@ -55,7 +55,7 @@ ModalDialog {
                 enabled: !surfaceDialog.awaitingImport
                 Accessible.name: "AWS EKS context"
             }
-            Label { Layout.fillWidth: true; text: "Uses the profile selected by this kubeconfig. Import does not sign in or contact a cluster."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: "Uses the profile selected by this kubeconfig. Import does not sign in or contact a cluster."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             RowLayout {
                 Layout.fillWidth: true
                 TextField { id: config; objectName: "awsProfileConfig"; Layout.fillWidth: true; placeholderText: "AWS config (optional)"; readOnly: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !surfaceDialog.awaitingImport; Accessible.name: "Selected AWS config file" }
@@ -66,7 +66,7 @@ ModalDialog {
                 TextField { id: credentials; objectName: "awsProfileCredentials"; Layout.fillWidth: true; placeholderText: "AWS credentials (optional)"; readOnly: workspace.appStore || Qt.platform.os === "android" || Qt.platform.os === "ios"; enabled: !surfaceDialog.awaitingImport; Accessible.name: "Selected AWS credentials file" }
                 IconButton { objectName: "browseAwsCredentials"; glyph: ""; showText: true; text: "Browse"; Accessible.name: "Select AWS credentials"; enabled: !surfaceDialog.awaitingImport; onClicked: { surfaceDialog.choosingCredentials = true; filePicker.open() } }
             }
-            Label { Layout.fillWidth: true; visible: surfaceDialog.errorText !== ""; text: surfaceDialog.errorText; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
+            SelectableText { Layout.fillWidth: true; visible: surfaceDialog.errorText !== ""; text: surfaceDialog.errorText; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger; Accessible.name: text }
         }
     }
     footer: DialogButtonBox {

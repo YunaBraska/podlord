@@ -486,7 +486,7 @@ bool Alerts::setVisibleResources(const QString& session, const QStringList& path
     }
     return true;
 }
-bool Alerts::closeSession(const QString& session) { closed_.insert(session); pending_.remove(session); states_.remove(session); if (session == shown_) ++zoomPreviewGeneration_; return true; }
+bool Alerts::closeSession(const QString& session) { closed_.insert(session); pending_.remove(session); states_.remove(session); requestFailureSounds_.remove(session); if (session == shown_) ++zoomPreviewGeneration_; return true; }
 bool Alerts::setSessionOwnership(std::function<bool(const QString&)> owns) {
     if (!owns) return false;
     owns_ = std::move(owns); return true;
@@ -504,6 +504,7 @@ bool Alerts::transferSession(const QString& session, Alerts& target) {
         auto state = states_.take(session); ++state.generation;
         target.states_.insert(session, std::move(state));
     }
+    if (requestFailureSounds_.contains(session)) target.requestFailureSounds_.insert(session, requestFailureSounds_.take(session));
     pending_.remove(session); closed_.insert(session); ++zoomPreviewGeneration_;
     target.closed_.remove(session); target.queue(session);
     if (states_.isEmpty()) expiry_.stop();
@@ -597,7 +598,7 @@ bool Alerts::dispatch() {
                 if (animation != "none") startHold(animationMode, animationSeconds, baseline, state.animationUntil);
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
-            if (!baseline && changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
+            if (changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") { emit soundRequested(session, id, rule.value["sound"].toString()); play(rule.value["sound"].toString()); }
             if (!baseline && !focusPath.isEmpty() && rule.value["zoom"].toInt()>0) emit focusRequested(session, focusPath, rule.value["zoom"].toInt());
             if (!rule.value["enabled"].toBool()) continue;
             const bool hasColor=color!="none" && (colorMode=="no-match" ? count>0 : !state.colorUntil.isEmpty());
@@ -666,6 +667,15 @@ bool Alerts::play(const QString& id, int previewPercent) {
     } return false;
 }
 bool Alerts::previewSound(const QString& id) { return !muted() && play(id); }
+bool Alerts::notifyRequestFailure(const QString& session) {
+    if (session.isEmpty() || muted() || !owns_(session) || closed_.contains(session)) return false;
+    auto& last = requestFailureSounds_[session];
+    if (last.isValid() && last.elapsed() < 30000) return false;
+    if (!play("attention")) return false;
+    last.start();
+    emit soundRequested(session, "request-failure", "attention");
+    return true;
+}
 bool Alerts::setVolumePercent(int percent) {
     if (percent < 0 || percent > 100) return false;
     if (volumePercent_ == percent) return true;

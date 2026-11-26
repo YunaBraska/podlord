@@ -2,10 +2,10 @@
 layout: default
 help: true
 title: Podlord help
-description: Open contexts, find resources and work with container shells.
+description: Open contexts, follow resource problems, use AI and browse container files.
 ---
 
-# Podlord help
+# PodLord help
 
 ## Open a context
 
@@ -31,13 +31,33 @@ Click Map again to return to All Contexts. Context settings are shared when you 
 
 ## Inspect and act
 
-<a id="inspect-and-act"></a>
-
 Select a resource to inspect its details, events, YAML, logs and supported actions. ConfigMap and Secret keys are listed separately. Secret values stay hidden until you explicitly reveal or copy them.
+
+The map highlights linked resources when the inspector is open. The highlight fades with each relationship. Use Links to open a related resource.
 
 Wait for current YAML before editing. Applying YAML and deleting resources require confirmation. Changing a filter or column does not change the cluster.
 
 ![YAML inspector for the selected resource]({{ '/assets/screenshots/native-inspector-yaml.png' | relative_url }})
+
+## AI analysis
+
+On desktop, choose a model in **Settings → AI**. The list groups models under connected ChatGPT, Claude API and OpenRouter accounts or local Ollama. PodLord never changes your selected model when you connect another provider. Enable **Auto** for a context if you want new problems analyzed automatically. The AI tab appears only when a provider is available.
+
+The report separates **Observation**, **Possible cause** and **Next check**. Known resource names in the answer open those resources in the inspector. **Request** shows the instructions and resource facts that would be sent. The refresh icon asks for a new answer, including when a warning was not analyzed automatically. Otherwise, unchanged problems reuse a cached answer for up to 90 days. The copyable `kubectl` command is a read-only suggestion. PodLord does not run it or require `kubectl` locally.
+
+The model can receive names, statuses, selected Warning Events and linked Pod, Node, volume and other resource facts. Secret values, kubeconfigs, full logs, file contents and full YAML are not included. Event and status messages are masked on a best-effort basis. Review **Request** before enabling AI for sensitive clusters. [Privacy details]({{ '/privacy.html' | relative_url }}) explain the data flow.
+
+![Illustrative AI report for a fictional Pod, claim, Node and warning Event]({{ '/assets/screenshots/demo-ai.svg' | relative_url }})
+
+*Illustrative UI example. All resource names and values above are fictional.*
+
+## Container files
+
+Open **Files** on a supported Pod or workload. Choose the Pod and container, open a directory, then select a file to save a local copy. PodLord talks directly to Kubernetes. Listing and download require Pod exec permission and `/bin/sh` or `cat` inside the container. Downloads are limited to 32 MiB. If those requirements are missing, the browser cannot read the container.
+
+![Illustrative file browser for a fictional checkout container]({{ '/assets/screenshots/demo-files.svg' | relative_url }})
+
+*Illustrative UI example. The paths and filenames above are fictional.*
 
 ## Open a container shell
 
@@ -49,6 +69,14 @@ Use Connections to return to an open shell or stop a port forward. Closing its t
 
 ![Connected container terminal with colored shell output]({{ '/assets/screenshots/native-terminal.png' | relative_url }})
 
+## Alerts and audio
+
+Use **Settings → Alerts** for built-in or custom resource warnings. Focus a matching resource on the map or play an alert sound when a new problem appears. Music is optional and has its own volume control. Muting alerts does not remove the visual warning.
+
+Temporary connection failures play one alert sound per short burst. The sound obeys the alert mute and volume settings.
+
 ## Resolve a connection problem
 
 Errors identify the affected context or resource. Authentication failures do not trigger automatic sign-in attempts. Choose Sign in when you want to retry. Access to resources, logs and metrics depends on the cluster's permissions and installed APIs. Missing measurements are not reported as zero usage.
+
+PodLord slows refreshes for unchanged resource kinds and checks related resources when a new problem appears. Temporary read failures are retried without restarting the app. **Settings → Diagnostics** shows request times, results and calls in the past minute. Manual refresh skips the passive interval but still respects server backoff.

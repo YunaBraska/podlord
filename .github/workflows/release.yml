@@ -231,7 +231,7 @@ jobs:
   app_store_upload:
     needs: [mode, app_store_package]
     if: needs.mode.outputs.release == 'true' && needs.app_store_package.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@3ad4cf3c1827b30d89bc13a0f331bc998fe31c46
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@c50354ba274461b06a13b961d219629d3bb57ae2
     with:
       app_name: Podlord
     secrets: inherit
@@ -239,7 +239,7 @@ jobs:
   ios_store_upload:
     needs: [mode, ios_store_package]
     if: needs.mode.outputs.release == 'true' && needs.ios_store_package.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@3ad4cf3c1827b30d89bc13a0f331bc998fe31c46
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_macos_app_store_upload.yml@c50354ba274461b06a13b961d219629d3bb57ae2
     with:
       app_name: Podlord
       artifact_name: ios-app-store-package
@@ -249,19 +249,33 @@ jobs:
   release:
     needs: [version, mode, direct_macos, app_store_package, ios_store_package, app_store_upload, ios_store_upload]
     if: needs.mode.outputs.release == 'true' && needs.direct_macos.result == 'success' && needs.app_store_package.result == 'success' && needs.ios_store_package.result == 'success' && needs.app_store_upload.result == 'success' && needs.ios_store_upload.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: write
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_dotnet_create_github_release.yml@0c16fe69a5b69ad9da903c444f855b19d4d555fc
-    with:
-      run_id: ${{ github.run_id }}
-      commit_sha: ${{ github.sha }}
-      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-assets-podlord-${{ github.sha }}
+          path: release-assets
+      - name: Publish qualified native release
+        shell: sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -eu
+          test -n "$VERSION"
+          for asset in podlord-native-win-x64.zip podlord-native-linux-x64.tar.gz podlord-native-linux-arm64.tar.gz podlord-native-macos-arm64.zip podlord-native-macos-x64.zip podlord-native-macos-arm64.dmg podlord-native-macos-x64.dmg; do
+            test -s "release-assets/$asset"
+          done
+          gh release create "$VERSION" release-assets/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
 
   chocolatey:
     needs: [version, release]
     if: needs.release.result == 'success'
-    uses: YunaBraska/YunaBraska/.github/workflows/wc_chocolatey_publish.yml@97f62c478daba54a57f8f0150fb45170b4ad5b59
+    uses: YunaBraska/YunaBraska/.github/workflows/wc_chocolatey_publish.yml@c50354ba274461b06a13b961d219629d3bb57ae2
     with:
       package_id: podlord
       display_name: PodLord

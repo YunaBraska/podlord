@@ -45,4 +45,4 @@ Public workspace/UI tests cover confirmation, cancel, active/background tabs,
 empty membership, stale confirmation, writer locks, corrupt stores, restart and
 explicit reimport. Older native binaries reject version 3 rather than silently
 losing exclusions; rollback requires a separately retained pre-upgrade profile.
-The independently isolated C# reference profile is unchanged.
+Other profiles are unchanged.

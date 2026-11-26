@@ -31,7 +31,12 @@ WorkspaceRuntime::WorkspaceRuntime(QString selectedProfile, std::function<QDateT
 
 bool WorkspaceRuntime::publishCatalog(const SessionCatalog& catalog, Workspace* source) {
     QSet<QString> open;
-    for (const auto& session : catalog.sessions) if (session.open) open.insert(session.id.toString(QUuid::WithoutBraces));
+    QSet<QString> openContexts;
+    for (const auto& session : catalog.sessions) if (session.open) {
+        open.insert(session.id.toString(QUuid::WithoutBraces));
+        openContexts.insert(session.config.contextId);
+    }
+    incidentAi.retainContexts(openContexts);
     for (auto it = owners.begin(); it != owners.end();) {
         if (open.contains(it.key())) { ++it; continue; }
         it.value()->alerts_.closeSession(it.key());

@@ -87,7 +87,7 @@ Podlord uses date-based release tags in the form `YYYY.M.D`.
 
 ### Added
 
-- Native Avalonia desktop shell.
+- Native desktop shell.
 - App-owned kubeconfig source import and snapshot storage.
 - Flat resource explorer with filters, sorting, column resizing, column ordering, and saved filters.
 - Deterministic radar view with zoom, pan, selection, and optional water animation.

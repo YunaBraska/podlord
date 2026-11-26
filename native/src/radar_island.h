@@ -61,6 +61,7 @@ class RadarIsland : public QQuickPaintedItem {
     Q_PROPERTY(bool effectsEnabled READ effectsEnabled WRITE setEffectsEnabled NOTIFY effectsEnabledChanged)
     Q_PROPERTY(QColor glyphFill READ glyphFill WRITE setGlyphFill NOTIFY glyphFillChanged)
     Q_PROPERTY(QString inspectedPath READ inspectedPath WRITE setInspectedPath NOTIFY inspectedPathChanged)
+    Q_PROPERTY(QVariantMap linkedDepths READ linkedDepths WRITE setLinkedDepths NOTIFY linkedDepthsChanged)
     Q_PROPERTY(QString hoveredPath READ hoveredPath WRITE setHoveredPath NOTIFY hoveredPathChanged)
     Q_PROPERTY(QString focusedPath READ focusedPath WRITE setFocusedPath NOTIFY focusedPathChanged)
 public:
@@ -79,6 +80,7 @@ public:
     bool effectsEnabled() const { return effectsEnabled_; }
     QColor glyphFill() const { return glyphFill_; }
     QString inspectedPath() const { return inspectedPath_; }
+    QVariantMap linkedDepths() const { return linkedDepths_; }
     QString hoveredPath() const { return hoveredPath_; }
     QString focusedPath() const { return focusedPath_; }
     static bool validPose(const QVariantMap& pose);
@@ -90,6 +92,7 @@ public:
     void setEffectsEnabled(bool enabled);
     void setGlyphFill(const QColor& color);
     void setInspectedPath(const QString& path);
+    void setLinkedDepths(const QVariantMap& depths);
     void setHoveredPath(const QString& path);
     void setFocusedPath(const QString& path);
     Q_INVOKABLE bool pan(double dx, double dy);
@@ -113,6 +116,7 @@ signals:
     void effectsEnabledChanged();
     void glyphFillChanged();
     void inspectedPathChanged();
+    void linkedDepthsChanged();
     void hoveredPathChanged();
     void focusedPathChanged();
 private:
@@ -140,6 +144,7 @@ private:
     QTimer animationTimer_;
     QColor glyphFill_{QStringLiteral("#050806")};
     QString inspectedPath_, hoveredPath_, focusedPath_;
+    QVariantMap linkedDepths_;
     bool effectsEnabled_ = true;
     QList<Row> signature_;
     QHash<QString, QPointF> positions_;

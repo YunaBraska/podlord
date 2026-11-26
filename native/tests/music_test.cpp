@@ -35,7 +35,7 @@ bool click(QQuickWindow* window, const QString& name) {
 bool run(const QString& scenario) {
     podlord::Music music;
     const auto tracks = podlord::bundledTracks();
-    if (tracks.size() != 20 || music.playing() || music.currentId().isEmpty()) return false;
+    if (tracks.size() != 10 || music.playing() || music.currentId().isEmpty()) return false;
     if (scenario == "startup") { QTest::qWait(100); podlord::Music restarted; return !restarted.playing() && !restarted.currentId().isEmpty(); }
     if (scenario == "shuffle") {
         QSet<QString> expected;
@@ -184,7 +184,13 @@ bool run(const QString& scenario) {
         if (!music.playing() || !music.error().isEmpty() || !music.next()) return false;
         if (!music.setVolumePercent(22) || music.volumePercent() != 22) return false;
         QTest::qWait(300);
-        if (!music.playing() || !music.error().isEmpty() || !music.pause() || music.playing() || !music.play()) return false;
+        const auto beforeSkip = music.currentId();
+        if (!music.next() || music.currentId() == beforeSkip) return false;
+        const auto firstSkip = music.currentId();
+        if (!music.next() || music.currentId() == firstSkip || !music.pause() || music.playing()) return false;
+        const auto selected = music.currentId();
+        QTest::qWait(350);
+        if (music.playing() || music.currentId() != selected || !music.play()) return false;
         QTest::qWait(300);
         return music.playing() && music.error().isEmpty() && music.pause() && !music.playing();
     }

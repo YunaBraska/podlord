@@ -4,16 +4,15 @@ Status: accepted for the native appearance implementation.
 
 ## Decision
 
-Preserve all 19 named palettes from the C# theme catalog, their dark/light
+Preserve all 19 named palettes in the native theme catalog, their dark/light
 variants and the Sirocco Command/dark defaults. On 2026-10-08 the user explicitly
 approved removing theme intensity because its visual difference does not justify
-the control. This is an accepted parity exception, not an unimplemented feature. The native runtime reads one compiled JSON catalog; the migration
-tests compare every semantic color against the C# source catalog.
+the control. This is an accepted parity exception, not an unimplemented feature. The native runtime reads one compiled JSON catalog; the UI tests compare every semantic color against the native JSON catalog.
 
 Use Qt's standard Fusion controls for the desktop application. Apply semantic
 palette roles to the application, its window, and inherited controls, including
 placeholder and disabled text. Tests can retain their explicit Basic style.
-Do not build a second control toolkit to reproduce Avalonia internals.
+Do not build a second control toolkit to reproduce another toolkit's internals.
 
 A single restrained static texture and glow strength remain. There is no intensity
 selector, runtime state, API parameter, translation key or adjustable render branch.
@@ -30,8 +29,8 @@ Read-policy saves preserve appearance and appearance saves preserve policy.
 
 ## Consequences
 
-The runtime does not need C#, a theme plugin, or a network connection to apply
-a theme. The preserved C# catalog remains a migration test reference, not a
+The runtime does not need a theme plugin or a network connection to apply
+a theme. The native JSON catalog is the test reference and
 runtime dependency. Palette-only changes bypass resource scheduler
 reconfiguration when the read-policy values did not change.
 

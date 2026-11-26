@@ -10,8 +10,8 @@ ColumnLayout {
     spacing: 4
     RowLayout {
         Layout.fillWidth: true
-        Label { text: gauge.metric.label; font.bold: true }
-        Label { objectName: "metric_" + gauge.metric.id + "_usage"; visible: !gauge.omitMissing || gauge.metric.available; Layout.minimumWidth: 0; Layout.fillWidth: true; text: gauge.metric.usage; textFormat: Text.PlainText; elide: Text.ElideRight; horizontalAlignment: Text.AlignRight; Accessible.name: gauge.metric.label + " observed usage: " + text }
+        SelectableText { text: gauge.metric.label; font.bold: true }
+        SelectableText { objectName: "metric_" + gauge.metric.id + "_usage"; visible: !gauge.omitMissing || gauge.metric.available; Layout.minimumWidth: 0; Layout.fillWidth: true; text: gauge.metric.usage; wrapMode: TextEdit.NoWrap; clip: true; horizontalAlignment: Text.AlignRight; Accessible.name: gauge.metric.label + " observed usage: " + text }
     }
     ProgressBar {
         id: bar
@@ -40,8 +40,8 @@ ColumnLayout {
             }
         }
     }
-    Label { objectName: "metric_" + gauge.metric.id + "_references"; Layout.fillWidth: true; visible: text !== ""; text: gauge.omitMissing ? gauge.metric.presentReferences : gauge.metric.references; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted; Accessible.name: text }
-    Label {
+    SelectableText { objectName: "metric_" + gauge.metric.id + "_references"; Layout.fillWidth: true; visible: text !== ""; text: gauge.omitMissing ? gauge.metric.presentReferences : gauge.metric.references; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.muted; Accessible.name: text }
+    SelectableText {
         objectName: "metric_" + gauge.metric.id + "_measurement"
         Layout.fillWidth: true
         visible: gauge.showMeasurement && (!gauge.omitMissing || gauge.metric.available) && text !== ""

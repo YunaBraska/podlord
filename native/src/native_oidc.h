@@ -1,6 +1,7 @@
 #pragma once
 #include "kubeconfig_store.h"
 #include "background_http.h"
+#include <QJsonObject>
 #include <QPointer>
 #include <QTimer>
 #include <functional>
@@ -10,6 +11,9 @@ namespace podlord {
 Result<std::optional<OidcLogin>> nativeOidc(const ExecCommand& command);
 /** Interprets an AKS kubelogin configuration without invoking Azure tooling. */
 Result<std::optional<OidcLogin>> nativeAks(const ExecCommand& command);
+/** Verifies an RS256 ID token against the issuer's JWKS and returns its trusted claims. */
+std::optional<QJsonObject> verifiedOidcIdClaims(const QString& token, const QString& issuer,
+    const QString& clientId, const QJsonObject& jwks, const QString& expectedNonce);
 
 /** One explicitly confirmed, in-memory OIDC authorization attempt. */
 class NativeOidcLogin final : public QObject {

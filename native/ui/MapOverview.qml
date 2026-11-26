@@ -4,27 +4,23 @@ import QtQuick.Layouts
 
 Pane {
     id: overview
-    signal sourcesRequested()
     property var contexts: []
     padding: 4
     background: Rectangle { color: workspace.appearanceColors.inset }
     SourceAliasDialog { id: aliases }
     Menu {
         id: contextOpenMenu
+        objectName: "contextOpenMenu"
         property string contextId: ""
-        readonly property var selectedContext: overview.contexts.find(context => context.id === contextId)
-        MenuItem { objectName: "openMapContextInTab"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInTab"]; onTriggered: workspace.openContext(contextOpenMenu.contextId) }
+        MenuItem { objectName: "openMapContextInTab"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInTab"]; onTriggered: workspace.openContext(contextOpenMenu.contextId, false, true) }
         MenuItem { objectName: "openMapContextInWindow"; enabled: !workspace.busy && overview.contexts.some(context => context.id === contextOpenMenu.contextId); text: workspace.uiText["action.openInWindow"]; visible: workspace.windowActionsAvailable; height: visible ? implicitHeight : 0; onTriggered: workspace.openContext(contextOpenMenu.contextId, true) }
-        MenuSeparator {}
-        MenuItem { objectName: "renameMapContextMenu"; enabled: !workspace.busy && !!contextOpenMenu.selectedContext; text: workspace.uiText["context.rename"]; onTriggered: aliases.edit(contextOpenMenu.selectedContext) }
-        MenuItem { objectName: "removeMapContextMenu"; enabled: !workspace.busy && !!contextOpenMenu.selectedContext; text: workspace.uiText["settings.remove"]; onTriggered: workspace.requestSourceRemoval(contextOpenMenu.contextId) }
     }
     ColumnLayout {
         anchors.fill: parent
-        Label {
+        SelectableText {
             objectName: "mapPreviewError"
             Layout.fillWidth: true
-            text: workspace.mapPreviewError; textFormat: Text.PlainText; wrapMode: Text.Wrap
+            text: workspace.mapPreviewError
             visible: text !== ""; color: workspace.appearanceColors.warning
         }
         GridView {
@@ -77,7 +73,13 @@ Pane {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1
-                        Label { objectName: "contextMapName_" + card.modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; text: card.modelData.name; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; font.bold: true }
+                        SelectableText {
+                            objectName: "contextMapName_" + card.modelData.id
+                            Layout.fillWidth: true; Layout.minimumWidth: 0
+                            text: card.modelData.name; font.bold: true
+                            wrapMode: TextEdit.NoWrap; clip: true
+                            TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: card.clicked() }
+                        }
                         IconButton {
                             id: openContextOptions
                             objectName: "openMapContextOptions_" + card.modelData.id
@@ -89,17 +91,29 @@ Pane {
                             glyph: "Pencil"; text: workspace.uiText["context.rename"]
                             onClicked: aliases.edit(card.modelData)
                         }
+                        IconButton {
+                            objectName: "removeMapContext_" + card.modelData.id
+                            glyph: "Trash"; destructive: true; text: workspace.uiText["settings.remove"]
+                            onClicked: workspace.requestSourceRemoval(card.modelData.id)
+                        }
                     }
-                    Label { objectName: "contextMapCluster_" + card.modelData.id; Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1; text: "Cluster: " + card.modelData.cluster; textFormat: Text.PlainText; elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap; color: workspace.appearanceColors.muted }
+                    SelectableText {
+                        objectName: "contextMapCluster_" + card.modelData.id
+                        Layout.fillWidth: true; Layout.minimumWidth: 0
+                        Layout.preferredWidth: parent.horizontal ? card.availableWidth * 0.6 : -1
+                        text: "Cluster: " + card.modelData.cluster
+                        wrapMode: TextEdit.NoWrap; clip: true; color: workspace.appearanceColors.muted
+                        TapHandler { gesturePolicy: TapHandler.DragThreshold; onTapped: card.clicked() }
+                    }
                 }
             }
         }
     }
     ColumnLayout {
         anchors.centerIn: parent; width: Math.min(360, parent.width - 24)
-        visible: cards.count === 0
+        visible: cards.count === 0 && !workspace.busy
         Image { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 140; Layout.preferredHeight: 120; source: "qrc:/podlord/brand-logo.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
-        Label { Layout.fillWidth: true; text: workspace.uiText["context.emptyTitle"]; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
-        Button { objectName: "mapImportSource"; Layout.alignment: Qt.AlignHCenter; text: workspace.uiText["context.openFile"]; onClicked: overview.sourcesRequested() }
+        SelectableText { Layout.fillWidth: true; text: workspace.uiText["context.emptyTitle"]; font.pixelSize: workspace.textSizes.emptyTitle; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
     }
+    BusyIndicator { anchors.centerIn: parent; running: visible; visible: cards.count === 0 && workspace.busy }
 }

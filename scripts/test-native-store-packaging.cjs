@@ -388,7 +388,7 @@ test('snapshots never create a GitHub release or release assets', async () => {
     const workflow = await fs.readFile(path.join(root, '.github/workflows/build-merge.yml'), 'utf8');
     assert.match(workflow, /push:\n    branches:\n      - main/);
     assert.match(ciJob(workflow, 'build'), /uses: \.\/\.github\/workflows\/ci\.yml/);
-    assert.doesNotMatch(workflow, /contents: write|wc_dotnet_create_github_release|release-assets|SNAPSHOT|semver-info-action/);
+    assert.doesNotMatch(workflow, /contents: write|release-assets|SNAPSHOT|semver-info-action/);
 });
 
 test('stable releases qualify once, sign direct macOS assets and upload both Store packages', async () => {
@@ -405,7 +405,8 @@ test('stable releases qualify once, sign direct macOS assets and upload both Sto
     assert.match(ciJob(release, 'app_store_upload'), /wc_macos_app_store_upload\.yml@[a-f0-9]{40}/);
     assert.match(ciJob(release, 'ios_store_upload'), /artifact_name: ios-app-store-package/);
     assert.match(ciJob(release, 'ios_store_upload'), /artifact_extension: ipa/);
-    assert.match(ciJob(release, 'release'), /wc_dotnet_create_github_release\.yml@[a-f0-9]{40}/);
+    assert.match(ciJob(release, 'release'), /gh release create "\$VERSION" release-assets\/\*/);
+    assert.match(ciJob(release, 'release'), /name: release-assets-podlord-\$\{\{ github\.sha \}\}/);
     assert.match(ciJob(release, 'release'), /app_store_upload\.result == 'success'/);
     assert.match(ciJob(release, 'release'), /ios_store_upload\.result == 'success'/);
     await assert.rejects(fs.access(path.join(root, '.github/workflows/app-store-upload.yml')), {code: 'ENOENT'});
@@ -597,6 +598,8 @@ test('iOS Store package signs and validates final embedded frameworks', async ()
     assert.match(workflow, /TeamIdentifier=\$SIGNING_TEAM/);
     assert.match(workflow, /--preserve-metadata=identifier,entitlements,flags,runtime/);
     assert.match(workflow, /codesign --verify --deep --strict "\$app"/);
+    assert.match(workflow, /for forbidden_domain in github\.com\/sponsors buymeacoffee\.com ko-fi\.com liberapay\.com; do/);
+    assert.match(workflow, /Store app must not contain %s/);
     assert.match(privacyInstaller, /Run before\n# embedding frameworks so their final contents can be signed without mutation/);
 });
 
@@ -609,6 +612,11 @@ test('Store entitlement grants only client networking and selected-file access',
     ]) assert.match(entitlements, new RegExp(`<key>${key}</key>\\s*<true/>`));
     assert.doesNotMatch(entitlements, /com\.apple\.security\.network\.server/);
     assert.doesNotMatch(entitlements, /com\.apple\.security\.files\.user-selected\.read-write/);
+});
+
+test('Apple Store channels compile donation links out of the application', async () => {
+    const workspace = await fs.readFile(path.join(root, 'native/src/workspace.h'), 'utf8');
+    assert.match(workspace, /#if defined\(PODLORD_MAC_APP_STORE\) \|\| defined\(Q_OS_IOS\)\s+return \{\};/);
 });
 
 test('Android release packaging derives one valid code from the shared release version', async () => {

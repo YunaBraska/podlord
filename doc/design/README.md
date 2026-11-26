@@ -1,16 +1,7 @@
-# Podlord Design Assets
+# PodLord design assets
 
-Runtime assets:
+The native runtime logo and icons are in `native/assets/brand/`. The semantic
+palettes are in `native/ui/theme-palettes.json`. The Qt interface reads these
+through `workspace.appearanceColors`.
 
-- `src/Podlord.App/Assets/Brand/Logo/podlord-logo-transparent.png`
-- `src/Podlord.App/Assets/Brand/Logo/podlord-logo-preview.png`
-- `src/Podlord.App/Assets/Brand/Logo/podlord-logo-source.png`
-- `src/Podlord.App/Assets/Brand/Icons/podlord-icon-*.png`
-- `src/Podlord.App/Assets/Theme/podlord-tokens.json`
-
-Design reference:
-
-- `doc/design/podlord-style-guide.md`
-- `doc/design/podlord-theme.css`
-
-The Avalonia shell uses the `256px` app icon as the native window icon target and uses the transparent logo as a compact command mark. Keep new runtime images under `src/Podlord.App/Assets` so Avalonia can package them as resources.
+See [podlord-style-guide.md](podlord-style-guide.md) for the visual language.
