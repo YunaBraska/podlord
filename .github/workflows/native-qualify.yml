@@ -35,23 +35,23 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       # Only package inputs, not the Store bundles, SDKs or full preflight evidence.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-package-direct-macos-15-${{ github.sha }}
           path: native-input/native-package-direct-macos-15-${{ github.sha }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-package-direct-macos-15-intel-${{ github.sha }}
           path: native-input/native-package-direct-macos-15-intel-${{ github.sha }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-windows-x64-${{ github.sha }}
           path: native-input/native-windows-x64-${{ github.sha }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-linux-trial-x64-${{ github.sha }}
           path: native-input/native-linux-trial-x64-${{ github.sha }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: native-linux-trial-arm64-${{ github.sha }}
           path: native-input/native-linux-trial-arm64-${{ github.sha }}
