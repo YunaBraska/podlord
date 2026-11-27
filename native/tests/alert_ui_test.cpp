@@ -1047,7 +1047,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     QLockFile lock(profile + "/alert-rules.json.lock");
     if (scenario == "busy" && (!QDir().mkpath(profile) || !lock.tryLock(0))) return false;
     if (!click(window, "saveAlert")) return false;
-    if (scenario == "busy") return waitFor([&] { return !item(window, "alertError")->property("text").toString().isEmpty(); });
+    if (scenario == "busy") return waitFor([&] {
+        auto* message = item(window, "alertError");
+        const auto* footer = item(window, "workspaceFooter");
+        for (auto* parent = message; parent; parent = parent->parentItem())
+            if (parent == footer) return !message->property("text").toString().isEmpty();
+        return false;
+    });
     if (!waitFor([&] { return item(window, "alertRule_3") != nullptr; })) return false;
     if (scenario == "create") return QFile::exists(profile + "/alert-rules.json") && server.requests == 0;
     if (scenario == "delete") {
@@ -1152,7 +1158,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
     };
     const auto alphaMatch=[&] { return activeCount("Alpha rule") == "1"; };
     if (scenario=="and" || scenario=="missing_metric") return !alphaMatch();
-    if (scenario=="regex_limit") return waitFor([&] { return item(window, "alertEvaluationError")->property("text").toString().contains("exceeded"); }) && !alphaMatch();
+    if (scenario=="regex_limit") return waitFor([&] {
+        auto* message = item(window, "alertEvaluationError");
+        const auto* footer = item(window, "workspaceFooter");
+        for (auto* parent = message; parent; parent = parent->parentItem())
+            if (parent == footer) return message->property("text").toString().contains("exceeded");
+        return false;
+    }) && !alphaMatch();
     if (!waitFor(alphaMatch, realConfig.isEmpty() ? 9000 : 60000)) {
         std::fprintf(stderr, "Cache: %d resources; status: %s; error: %s; alert rules: %s; alert matches: %s\n", workspace.totalResourceCount(), qPrintable(workspace.status()), qPrintable(workspace.error()), QJsonDocument::fromVariant(workspace.alerts()->rules()).toJson(QJsonDocument::Compact).constData(), QJsonDocument::fromVariant(workspace.alerts()->matches()).toJson(QJsonDocument::Compact).constData());
         return false;

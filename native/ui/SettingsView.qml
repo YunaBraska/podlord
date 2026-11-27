@@ -490,6 +490,26 @@ Pane {
                         SelectableText { Layout.fillWidth: true; text: workspace.sourceImportNotice; textFormat: Text.PlainText; wrapMode: Text.Wrap }
                         IconButton { objectName: "settingsSourceImportDetails"; glyph: "Event"; text: workspace.uiText["settings.viewImportFailures"]; visible: workspace.sourceImportIssues.length > 0; onClicked: settings.sourceFailuresRequested() }
                     }
+                    ListView {
+                        objectName: "sourceCatalogIssues"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.min(200 * workspace.textScale, 64 * workspace.textScale * count)
+                        visible: count > 0
+                        clip: true
+                        model: workspace.sourceCatalogIssues
+                        ScrollBar.vertical: ScrollBar {}
+                        delegate: SelectableText {
+                            required property var modelData
+                            width: ListView.view.width
+                            height: Math.max(64 * workspace.textScale, implicitHeight + 8)
+                            text: modelData.message + "\n"
+                                + (modelData.sourcePath ? workspace.uiText["settings.sourceOrigin"] + ": " + modelData.sourcePath + "\n" : "")
+                                + workspace.uiText["settings.savedCopy"] + ": " + modelData.ownedPath
+                            textFormat: Text.PlainText
+                            wrapMode: Text.WrapAnywhere
+                            color: workspace.appearanceColors.danger
+                        }
+                    }
                     ResourceGrid {
                         objectName: "settingsSourceList"
                         Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredHeight: 400

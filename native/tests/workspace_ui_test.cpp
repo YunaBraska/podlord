@@ -1589,8 +1589,15 @@ bool execute(const QString& requestedScenario) {
                     });
             }, 15000)) return false;
             const auto restored = podlord::KubeconfigStore(profile).connection(original);
+            const auto remaining = podlord::KubeconfigStore(profile).list();
+            const auto membership = podlord::readContextCatalog(profile);
             return std::holds_alternative<podlord::ClusterConnection>(restored)
-                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token";
+                && std::get<podlord::ClusterConnection>(restored).authorization == "Bearer local-workload-token"
+                && std::holds_alternative<podlord::SourceCatalog>(remaining)
+                && std::get<podlord::SourceCatalog>(remaining).errors.isEmpty()
+                && std::holds_alternative<podlord::ContextCatalog>(membership)
+                && std::all_of(std::get<podlord::ContextCatalog>(membership).sources.cbegin(),
+                    std::get<podlord::ContextCatalog>(membership).sources.cend(), [](const auto& ids) { return !ids.isEmpty(); });
         }
         server.managedSecretVersion = 2;
         reference = reference.addSecs(901);
@@ -2064,7 +2071,7 @@ bool execute(const QString& requestedScenario) {
             }
             return server.requests.size()==requests && saveShellFrame(window,scenario);
         }
-        if (scenario=="map_current_versions" || scenario=="map_current_removed" || scenario=="map_catalog_warning" || scenario=="map_catalog_unreadable") {
+        if (scenario=="map_current_versions" || scenario=="map_current_removed" || scenario=="map_catalog_warning" || scenario=="map_catalog_corrupt" || scenario=="map_catalog_unreadable") {
             const podlord::KubeconfigStore store(profile);
             auto catalog=store.list();
             if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
@@ -2083,17 +2090,23 @@ bool execute(const QString& requestedScenario) {
             catalog=store.list();
             if (!std::holds_alternative<podlord::SourceCatalog>(catalog)) return false;
             const auto latest=std::get<podlord::SourceCatalog>(catalog).sources.first();
-            if (scenario=="map_catalog_warning" || scenario=="map_catalog_unreadable") {
+            if (scenario=="map_catalog_warning" || scenario=="map_catalog_corrupt" || scenario=="map_catalog_unreadable") {
                 QFile previewFile(path);
                 if (!previewFile.open(QIODevice::ReadOnly)) return false;
                 const auto previewBytes=previewFile.readAll(); previewFile.close();
                 const auto directory=QFileInfo(latest.ownedPath).absolutePath(), backup=directory+"-retained";
                 QByteArray record;
                 QFile owned(latest.ownedPath);
-                if (scenario=="map_catalog_warning") {
+                if (scenario=="map_catalog_warning" || scenario=="map_catalog_corrupt") {
                     if (!owned.open(QIODevice::ReadOnly)) return false;
                     record=owned.readAll(); owned.close();
-                    if (!owned.open(QIODevice::WriteOnly|QIODevice::Truncate) || owned.write("broken source snapshot")<0) return false;
+                    auto damaged = QByteArray("broken source snapshot");
+                    if (scenario=="map_catalog_warning") {
+                        auto metadata = QJsonDocument::fromJson(record).object();
+                        metadata["importedAt"] = "invalid";
+                        damaged = QJsonDocument(metadata).toJson();
+                    }
+                    if (!owned.open(QIODevice::WriteOnly|QIODevice::Truncate) || owned.write(damaged)!=damaged.size()) return false;
                     owned.close();
                 } else {
                     if (!QDir().rename(directory,backup)) return false;
@@ -2101,22 +2114,31 @@ bool execute(const QString& requestedScenario) {
                     if (!blocked.open(QIODevice::WriteOnly) || blocked.write("not a directory")<0) return false;
                 }
                 if (!workspace.reload() || !waitFor([&] { return !workspace.busy(); })
-                    || workspace.property("mapCatalogWarning").toString().isEmpty() || text(window,"mapTitle") != "Contexts"
-                    || !item(window,"mapSourceWarning")->isVisible()
-                    || (scenario == "map_catalog_warning" && item(window,"errorMessage")->isVisible())
+                    || text(window,"mapTitle") != "Contexts"
                     || item(window,"contextMapCards")->property("count").toInt()!=3) return false;
+                if (scenario == "map_catalog_warning" || scenario == "map_catalog_corrupt") {
+                    if (workspace.sourceCatalogIssues().size() != 1
+                        || workspace.sourceCatalogIssues().first().toMap().value("ownedPath") != latest.ownedPath
+                        || workspace.sourceCatalogIssues().first().toMap().value("sourcePath") != (scenario == "map_catalog_warning" ? source : QString{})
+                        || !item(window,"sourceCatalogWarning")->isVisible()
+                        || item(window,"errorMessage")->isVisible()) return false;
+                } else if (!item(window,"errorMessage")->isVisible()
+                    || item(window,"sourceCatalogWarning")->isVisible()) return false;
                 const auto rows=window->property("mapContexts").toList();
                 if (rows.size()!=3 || !click(window,item(window,"contextMapCard_"+rows.first().toMap()["id"].toString()))
                     || !waitFor([&] { return !workspace.busy() && !workspace.mapOverview(); })
-                    || workspace.property("mapCatalogWarning").toString().isEmpty() || !workspace.showMapOverview()) return false;
-                if (!click(window,item(window,"mapSourceWarning"))
-                    || !waitFor([&] { auto* list=item(window,"settingsSourceList"); return workspace.workspacePage()=="settings" && list && list->isVisible(); })
+                    || ((scenario == "map_catalog_warning" || scenario == "map_catalog_corrupt") && !item(window,"sourceCatalogWarning")->isVisible())
                     || !workspace.showMapOverview()) return false;
-                if (scenario=="map_catalog_warning") {
+                if ((scenario == "map_catalog_warning" || scenario == "map_catalog_corrupt")
+                    && (!click(window,item(window,"sourceCatalogWarning"))
+                        || !waitFor([&] { auto* list=item(window,"settingsSourceList"); return workspace.workspacePage()=="settings" && list && list->isVisible(); })
+                        || item(window,"sourceCatalogIssues")->property("count").toInt() != 1
+                        || !workspace.showMapOverview())) return false;
+                if (scenario=="map_catalog_warning" || scenario=="map_catalog_corrupt") {
                     if (!owned.open(QIODevice::WriteOnly|QIODevice::Truncate) || owned.write(record)!=record.size()) return false;
                     owned.close();
                 } else if (!QFile::remove(directory) || !QDir().rename(backup,directory)) return false;
-                if (!workspace.reload() || !waitFor([&] { return !workspace.busy() && workspace.property("mapCatalogWarning").toString().isEmpty(); })) return false;
+                if (!workspace.reload() || !waitFor([&] { return !workspace.busy() && workspace.sourceCatalogWarning().isEmpty(); })) return false;
                 return previewFile.open(QIODevice::ReadOnly) && previewFile.readAll()==previewBytes
                     && item(window,"contextMapCards")->property("count").toInt()==3;
             }

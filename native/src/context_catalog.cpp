@@ -97,6 +97,7 @@ Result<bool> writeContextCatalog(const QString& profile, const ContextCatalog& c
     QJsonObject sources;
     QSet<QString> members;
     for (auto source = catalog.sources.begin(); source != catalog.sources.end(); ++source) {
+        if (source.value().isEmpty()) continue;
         sources.insert(source.key(), QJsonArray::fromStringList(source.value()));
         for (const auto& id : source.value()) members.insert(id);
     }

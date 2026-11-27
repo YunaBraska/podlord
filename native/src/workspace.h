@@ -226,7 +226,8 @@ class Workspace final : public QObject {
     Q_PROPERTY(QVariantList mapContexts READ mapContexts NOTIFY mapContextsChanged)
     Q_PROPERTY(QString mapContextCaption READ mapContextCaption NOTIFY changed)
     Q_PROPERTY(QVariantMap mapContextIdentity READ mapContextIdentity NOTIFY changed)
-    Q_PROPERTY(QString mapCatalogWarning READ mapCatalogWarning NOTIFY changed)
+    Q_PROPERTY(QString sourceCatalogWarning READ sourceCatalogWarning NOTIFY changed)
+    Q_PROPERTY(QVariantList sourceCatalogIssues READ sourceCatalogIssues NOTIFY changed)
     Q_PROPERTY(quint64 mapPreviewRevision READ mapPreviewRevision NOTIFY mapPreviewsChanged)
     Q_PROPERTY(QString mapPreviewError READ mapPreviewError NOTIFY mapPreviewsChanged)
     Q_PROPERTY(bool mapPreviewNeeded READ mapPreviewNeeded NOTIFY changed)
@@ -553,7 +554,8 @@ public:
     bool mapOverview() const;
     QVariantList mapContexts() const { return mapContexts_; }
     QString mapContextCaption() const;
-    QString mapCatalogWarning() const;
+    QString sourceCatalogWarning() const;
+    QVariantList sourceCatalogIssues() const;
     quint64 mapPreviewRevision() const;
     QString mapPreviewError() const;
     bool mapPreviewNeeded() const;

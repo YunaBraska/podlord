@@ -27,7 +27,7 @@ struct SourceSnapshot final {
     QStringList warnings;
     bool current = true;
 };
-struct SourceIssue final { QString ownedPath; Failure failure; };
+struct SourceIssue final { QString ownedPath; Failure failure; QString sourcePath; };
 struct SourceCatalog final {
     QList<SourceSnapshot> sources;
     QList<SourceIssue> errors;

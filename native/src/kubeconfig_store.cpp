@@ -185,7 +185,8 @@ Result<SourceSnapshot> parse(QString path, const QByteArray& bytes, QDateTime im
         return Failure{StoreError::InvalidData, "Invalid kubeconfig YAML or field types."};
     }
 }
-Result<SourceSnapshot> readOwned(const QString& filePath, QByteArray* originalOut = nullptr) {
+Result<SourceSnapshot> readOwned(const QString& filePath, QByteArray* originalOut = nullptr, QString* sourcePathOut = nullptr) {
+    if (sourcePathOut) sourcePathOut->clear();
     if (QFileInfo(filePath).isSymLink()) return Failure{StoreError::InvalidData, "Owned snapshot cannot be a symlink."};
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) return Failure{StoreError::ReadFailed, "Cannot read owned snapshot."};
@@ -212,6 +213,8 @@ Result<SourceSnapshot> readOwned(const QString& filePath, QByteArray* originalOu
     const QString path = row["sourcePath"].toString();
     const QDateTime time = QDateTime::fromString(row["importedAt"].toString(), Qt::ISODateWithMs);
     const auto canonical = sourcePath(path);
+    if (sourcePathOut && std::holds_alternative<QString>(canonical) && std::get<QString>(canonical) == path
+        && QFileInfo(filePath).fileName().startsWith(hash(path.toUtf8()) + '-')) *sourcePathOut = path;
     if (!std::holds_alternative<QString>(canonical) || std::get<QString>(canonical) != path || !time.isValid())
         return Failure{StoreError::InvalidData, "Invalid owned source identity or import time."};
     const auto encoded = row["yamlBase64"].toString();
@@ -1133,10 +1136,12 @@ Result<SourceCatalog> KubeconfigStore::list() const {
     if (owned.exists() && !readableDirectory(owned.absolutePath()))
         return Failure{StoreError::ReadFailed, "Cannot read owned kubeconfig directory."};
     for (auto entry = entries.begin(); entry != entries.end(); ++entry) {
+        if (entry.value().isEmpty()) continue;
         const QFileInfo path(owned.filePath(entry.key() + ".json"));
-        const auto source = readOwned(path.absoluteFilePath());
+        QString sourcePath;
+        const auto source = readOwned(path.absoluteFilePath(), nullptr, &sourcePath);
         if (std::holds_alternative<Failure>(source)) {
-            catalog.errors.append({path.absoluteFilePath(), std::get<Failure>(source)});
+            catalog.errors.append({path.absoluteFilePath(), std::get<Failure>(source), sourcePath});
             continue;
         }
         const auto& snapshot = std::get<SourceSnapshot>(source);
@@ -1144,7 +1149,7 @@ Result<SourceCatalog> KubeconfigStore::list() const {
         if (std::any_of(wanted.begin(), wanted.end(), [&](const auto& id) {
             return std::none_of(snapshot.contexts.begin(), snapshot.contexts.end(), [&](const auto& context) { return context.id == id; });
         })) {
-            catalog.errors.append({path.absoluteFilePath(), {StoreError::InvalidData, "A catalog context does not belong to its source."}});
+            catalog.errors.append({path.absoluteFilePath(), {StoreError::InvalidData, "A catalog context does not belong to its source."}, snapshot.sourcePath});
             continue;
         }
         snapshots.append(snapshot);

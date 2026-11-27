@@ -9,6 +9,18 @@
 #include <QStandardPaths>
 
 namespace podlord {
+QString Workspace::sourceCatalogWarning() const {
+    return sourceCatalogFailed_ || sources_.errors.isEmpty() ? QString{}
+        : uiText().value(sources_.errors.size() == 1 ? "settings.sourceRepairOne" : "settings.sourceRepairMany")
+            .toString().arg(sources_.errors.size());
+}
+QVariantList Workspace::sourceCatalogIssues() const {
+    QVariantList issues;
+    if (sourceCatalogFailed_) return issues;
+    for (const auto& issue : sources_.errors)
+        issues.append(QVariantMap{{"ownedPath", issue.ownedPath}, {"sourcePath", issue.sourcePath}, {"message", issue.failure.message}});
+    return issues;
+}
 QUrl Workspace::suggestedKubeconfigExportUrl(const QString& contextId) const {
     QString name;
     for (const auto& entry : contexts()) if (entry.toMap().value("id").toString() == contextId) {

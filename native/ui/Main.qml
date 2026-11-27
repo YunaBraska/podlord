@@ -1095,14 +1095,6 @@ ApplicationWindow {
                                 MenuItem { objectName: "copyMapClusterName"; text: workspace.uiText["context.copyCluster"]; onTriggered: workspace.copyMapIdentity("cluster") }
                             }
                         }
-                        IconButton {
-                            objectName: "mapSourceWarning"
-                            visible: workspace.mapOverview && workspace.mapCatalogWarning !== ""
-                            glyph: "Info"
-                            glyphColor: workspace.appearanceColors.accent
-                            text: workspace.mapCatalogWarning
-                            onClicked: sourcesCommand.trigger()
-                        }
                     }
                     Item {
                         anchors.fill: parent
@@ -1205,6 +1197,7 @@ ApplicationWindow {
                 Layout.fillWidth: true; Layout.minimumHeight: 24; spacing: 6
                 SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" ? "contexts: " + workspace.contexts.length : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.mapOverview || workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" ? text : text + ", " + workspace.resourceCount + " matching resources" }
                 SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.syncSummary; textFormat: Text.PlainText; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
+                FlatButton { objectName: "sourceCatalogWarning"; text: workspace.sourceCatalogWarning; visible: text !== ""; enabled: !workspace.busy; onClicked: sourcesCommand.trigger() }
                 FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy; onClicked: authentication.open() }
                 FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
                 IconButton { objectName: "retryConnection"; glyph: "Reset"; text: "Retry connection"; visible: workspace.currentSession !== "" && workspace.syncProblem !== "" && !workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy; onClicked: workspace.refresh() }
@@ -1240,6 +1233,8 @@ ApplicationWindow {
                 visible: text !== ""; wrapMode: Text.Wrap
                 color: workspace.appearanceColors.danger
             }
+            SelectableText { objectName: "alertError"; Layout.fillWidth: true; text: workspace.alerts.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
+            SelectableText { objectName: "alertEvaluationError"; Layout.fillWidth: true; text: workspace.alerts.evaluationError; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
         }
     }
     ResourceSidebar {
