@@ -865,12 +865,26 @@ bool IncidentAi::setEnabled(bool value) {
         const auto snapshots = snapshots_;
         const auto rawSnapshots = rawSnapshots_;
         const auto pending = pendingObservations_;
+        const auto preparations = preparations_;
+        auto visible = visible_;
+        auto manualVisible = manualVisible_;
+        for (auto item = visible.begin(); item != visible.end();)
+            item = records_.contains(item->key) && records_.value(item->key).answer["attempted"] != true
+                ? ++item : visible.erase(item);
+        for (auto item = manualVisible.begin(); item != manualVisible.end();)
+            item = records_.contains(item->key) && records_.value(item->key).answer["attempted"] != true
+                ? ++item : manualVisible.erase(item);
+        const auto activeKeys = activeKeys_;
         QStringList contexts = snapshots_.keys();
         for (const auto& context : pendingObservations_.keys()) if (!contexts.contains(context)) contexts.append(context);
         for (const auto& context : contexts) stopObserving(context);
         snapshots_ = snapshots;
         rawSnapshots_ = rawSnapshots;
         pendingObservations_ = pending;
+        preparations_ = preparations;
+        visible_ = visible;
+        manualVisible_ = manualVisible;
+        activeKeys_ = activeKeys;
     } else {
         const auto snapshots = snapshots_;
         for (auto item = snapshots.cbegin(); item != snapshots.cend(); ++item)
@@ -1274,8 +1288,7 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
             else { *item = *current; ++item; }
         }
     }
-    if (!enabled()) { if (changedSnapshot) emit changed(); return; }
-    if (!modelReady_) return;
+    if (!modelReady_) { if (changedSnapshot) emit changed(); return; }
     if (!changedEvidence) return;
     QMap<QString, Incident> previousVisible;
     for (auto item = visible_.begin(); item != visible_.end();) {
@@ -1402,11 +1415,13 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
                 break;
             }
         }
+        if (!enabled() && (!records_.contains(key) || records_.value(key).answer["attempted"] == true)) continue;
         activeKeys.insert(key);
         Incident incident{key, context, code, kind, row["path"].toString(), language,
             provider_, model(), reasoning(), thinkSignature, related, false, evidence};
         if (!visible_.contains(context + '\n' + incident.path)) visible_.insert(context + '\n' + incident.path, incident);
-        if (records_.contains(key) || queued_.contains(key) || inFlight_ == key || retryAfter_.value(key) > QDateTime::currentDateTimeUtc()) continue;
+        if (!enabled() || records_.contains(key) || queued_.contains(key) || inFlight_ == key
+            || retryAfter_.value(key) > QDateTime::currentDateTimeUtc()) continue;
         queue_.enqueue(incident); queued_.insert(key);
     }
     activeKeys_[context] = activeKeys;
@@ -1554,7 +1569,7 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     }
     const auto found = visible_.constFind(context + '\n' + path);
     const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
-    const auto recognized = !hasDraftError && enabled() && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
+    const auto recognized = !hasDraftError && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
     const auto fallback = recognized ? std::optional<Incident>{} : manualIncident(context, path);
     if (!recognized && !fallback) return false;
     const auto incident = recognized ? *found : *fallback;
@@ -1806,7 +1821,7 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     dispatch();
 }
 QVariantMap IncidentAi::result(const QString& context, const QString& path) const {
-    const auto found = enabled() ? visible_.constFind(context + '\n' + path) : visible_.cend();
+    const auto found = visible_.constFind(context + '\n' + path);
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;
@@ -1817,7 +1832,7 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
         return inFlight_ == incident.key ? QVariantMap{{"pending", true}} : QVariantMap{{"failed", true}};
     if (record == records_.cend() || record->created.secsTo(QDateTime::currentDateTimeUtc()) >= cacheLifetimeSeconds) {
         if (retryAfter_.value(incident.key) > QDateTime::currentDateTimeUtc()) return {{"failed", true}};
-        if ((found == visible_.cend() || draft) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
+        if (((found == visible_.cend() || draft) || !enabled()) && !queued_.contains(incident.key) && inFlight_ != incident.key) return {};
         return {{"pending", queued_.contains(incident.key) || inFlight_ == incident.key}};
     }
     static const QRegularExpression citation(R"(\[(R[1-9][0-9]{0,3})\])");

@@ -353,6 +353,27 @@ void scenario(const QString& name) {
             "Re-enabling Auto did not reconsider another open context");
         return;
     }
+    if (name == "cached_answer_auto_off") {
+        const auto snapshot = rows();
+        const auto path = snapshot.at(2).toObject()["path"].toString();
+        {
+            podlord::IncidentAi ai(profile, endpoint);
+            require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+                && ai.setModel("local-test:9b") && ai.setEnabled(true), "Automatic model unavailable");
+            ai.observe("context", snapshot, "en");
+            require(QTest::qWaitFor([&] { return ai.result("context", path).contains("summary"); }, 2000),
+                "Initial automatic answer missing");
+            require(ai.setEnabled(false) && ai.result("context", path).contains("summary"),
+                "Turning off automatic requests hid the completed answer");
+        }
+        podlord::IncidentAi reopened(profile, endpoint);
+        require(QTest::qWaitFor([&] { return reopened.ready(); }, 2000) && !reopened.enabled(),
+            "Automatic analysis was unexpectedly enabled after restart");
+        reopened.observe("context", snapshot, "en");
+        require(QTest::qWaitFor([&] { return reopened.result("context", path).contains("summary"); }, 2000)
+            && server.chats == 1, "Stored answer was hidden or another request was sent while Auto was off");
+        return;
+    }
     if (name == "auto_timeout") {
         server.hold = true;
         podlord::IncidentAi ai(profile, endpoint, nullptr, {}, nullptr, 120);
