@@ -561,6 +561,7 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
     }
     it->syncTotal = 0; it->syncCompleted = 0;
     if (!it->initialized) it->progress = 0;
+    QList<Task> planned;
     if (!foreground && !it->collections.isEmpty()) {
         const auto now = now_();
         for (auto collection = it->collections.cbegin(); collection != it->collections.cend(); ++collection) {
@@ -570,7 +571,8 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
             const int seconds = stability == 0 ? 25 : std::min(live ? 180 : 900, (live ? 25 : 60) * (1 << stability));
             if (it->retryableFailures.contains(collection.key()) || collection->at.secsTo(now) < seconds) continue;
             Task task; task.id = id; task.path = collection.key(); task.collection = task.path; task.kind = collection->kind;
-            task.namespaced = collection->namespaced; task.deletable = collection->deletable; task.read = Read::List; enqueue(task);
+            task.namespaced = collection->namespaced; task.deletable = collection->deletable; task.read = Read::List;
+            planned.append(std::move(task));
         }
         for (auto failure = it->retryableFailures.cbegin(); failure != it->retryableFailures.cend(); ++failure) {
             Task task; task.id = id; task.path = failure.key(); task.collection = failure->collection;
@@ -578,22 +580,24 @@ bool ResourceClient::refreshSession(const QString& id, bool foreground) {
             task.read = failure->read == Read::Detail || failure->read == Read::Linked ? Read::Linked
                 : failure->read == Read::List ? Read::List : Read::Probe;
             it->blocked.remove(task.path);
-            enqueue(task);
+            planned.append(std::move(task));
         }
         if (!it->lastDiscovery.isValid() || it->lastDiscovery.addSecs(30 * 60) <= now) {
             it->lastDiscovery = now;
-            Task core; core.id = id; core.path = "/api"; enqueue(core);
-            Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
+            Task core; core.id = id; core.path = "/api";
+            Task groups = core; groups.path = "/apis"; groups.read = Read::Groups;
+            planned.append(std::move(core)); planned.append(std::move(groups));
         }
     } else {
         if (!foreground) for (auto failure = it->retryableFailures.cbegin(); failure != it->retryableFailures.cend(); ++failure)
             it->blocked.remove(failure.key());
         it->lastDiscovery = now_();
         Task core; core.id = id; core.path = "/api"; core.foreground = foreground;
-        enqueue(core);
-        Task groups = core; groups.path = "/apis"; groups.read = Read::Groups; enqueue(groups);
+        Task groups = core; groups.path = "/apis"; groups.read = Read::Groups;
+        planned.append(std::move(core)); planned.append(std::move(groups));
     }
-    if (!it->syncPending) it->progress = 1;
+    for (auto& task : planned) enqueue(std::move(task));
+    if (auto current = states_.find(id); current != states_.end() && !current->syncPending) current->progress = 1;
     scheduleSync(); return true;
 }
 bool ResourceClient::isVisible(const QString& id) const {

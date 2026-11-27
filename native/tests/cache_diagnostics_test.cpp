@@ -145,6 +145,31 @@ bool run(const QString& scenario) {
         return client.containsResource("metrics", podPath) && client.rows("metrics").size() == (staggeredMetrics ? 4 : 3)
             && requests == calls && client.synchronize() && requests == calls;
     }
+    if (scenario == "incremental_expiry") {
+        podlord::ReadSettings settings;
+        settings.collectionCacheHours = 1;
+        podlord::ClusterConnection connection;
+        connection.server = QUrl(QString("http://127.0.0.1:%1").arg(api.serverPort()));
+        connection.credentialId = "incremental-expiry";
+        podlord::ResourceClient client(nullptr, [&] { return reference; });
+        if (!client.configure(settings) || !client.open("cached", connection, {}) || !waitFor([&] {
+                return client.initialSyncComplete("cached") && !client.loading("cached")
+                    && client.rows("cached").size() == 3;
+            })) return false;
+        const auto fetchedAt = reference;
+        const int calls = requests;
+        bool armed = true, advanced = false;
+        QObject::connect(&client, &podlord::ResourceClient::changed, &client, [&](const QString& id) {
+            if (!armed || id != "cached" || !client.syncLoading(id)) return;
+            armed = false;
+            advanced = true;
+            reference = fetchedAt.addSecs(3600).addMSecs(1);
+        });
+        reference = fetchedAt.addSecs(3599);
+        if (!client.synchronize() || !advanced) return false;
+        return waitFor([&] { return !client.loading("cached") && client.rows("cached").size() == 3; })
+            && requests > calls && client.cacheDiagnostics().value("collections").toLongLong() == 3;
+    }
     if (scenario.startsWith("collection_ttl_")) {
         podlord::ReadSettings settings;
         if (scenario == "collection_ttl_short" || scenario == "collection_ttl_closed") settings.collectionCacheHours = 1;
@@ -172,6 +197,8 @@ bool run(const QString& scenario) {
         if (scenario == "collection_ttl_closed" || scenario == "collection_ttl_shorten_closed") {
             if (!client.close("cached")) return false;
         } else if (!client.showSession({})) return false;
+        // Isolate cache expiry from the automatic refresh of an open session.
+        if (!client.enableRequests(false)) return false;
         const auto calls = requests;
         if (scenario == "collection_ttl_invalid") {
             auto invalid = settings; invalid.collectionCacheHours = 0;
