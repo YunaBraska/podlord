@@ -459,6 +459,13 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                 return !item(window, "alertColorChoice")->isEnabled() && !item(window, "alertChooseColor")->isEnabled()
                     && !item(window, "alertColorMode")->isEnabled() && rules() == baseline && server.requests == 0;
             if (!click(window, "addAlert") || !type(window, "alertName", "Control regression") || !type(window, "alertExpression_0", "alpha")) return false;
+            if (mode == "color_motion_pair") {
+                if (!choose("alertAnimation", 2) || !choose("alertColorChoice", 0)) return false;
+                return item(window, "alertAnimation")->property("currentIndex").toInt() == 0
+                    && !item(window, "alertAnimation")->isEnabled()
+                    && item(window, "alertColor")->property("text").toString() == "none"
+                    && rules() == baseline && server.requests == 0;
+            }
             QString expectedColor = "#e3aa46", expectedMode = "no-match", expectedField = "name", expectedExpression = "alpha";
             if (mode.startsWith("boolean")) {
                 if (!choose("alertField_0", workspace.alerts()->fields().indexOf("problems"))) return false;

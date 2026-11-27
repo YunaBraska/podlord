@@ -319,7 +319,10 @@ Pane {
                                 model: [{id: "none", label: workspace.uiText["alert.color.none"]}, {id: "status", label: workspace.uiText["alert.color.status"]}, {id: "fresh", label: workspace.uiText["alert.color.fresh"]}, {id: "custom", label: workspace.uiText["alert.color.custom"]}]
                                 currentIndex: ["none", "status", "fresh"].includes(alertColorInput.text) ? ["none", "status", "fresh"].indexOf(alertColorInput.text) : 3
                                 Accessible.name: workspace.uiText["alert.color"]
-                                onActivated: alertColorInput.text = currentValue === "custom" ? (alertColorInput.text.startsWith("#") ? alertColorInput.text : "#e3aa46") : currentValue
+                                onActivated: {
+                                    if (currentValue === "none") animation.currentIndex = 0
+                                    alertColorInput.text = currentValue === "custom" ? (alertColorInput.text.startsWith("#") ? alertColorInput.text : "#e3aa46") : currentValue
+                                }
                             }
                             ActionButton {
                                 id: chooseColor
@@ -341,7 +344,7 @@ Pane {
                     }
                 }
                 FormRow {
-                    label: workspace.uiText["alert.animation"]; enabled: form.editable
+                    label: workspace.uiText["alert.animation"]; enabled: form.editable && alertColorInput.text !== "none"
                     GridLayout {
                         Layout.fillWidth: true
                         columns: width < 520 ? 1 : 2

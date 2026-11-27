@@ -155,6 +155,8 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
         || !modes.contains(value["colorMode"].toString()) || !modes.contains(value["animationMode"].toString())
         || !QStringList{"none", "blink", "pulse", "sweep", "outline"}.contains(value["animation"].toString())
         || !whole(value["colorSeconds"], 1, 60) || !whole(value["animationSeconds"], 1, 60) || !whole(value["zoom"], 0, 200) || !whole(value["soundMinimumMatches"], 1, std::numeric_limits<int>::max())) return Failure{StoreError::InvalidInput, "Choose valid color, animation, hold duration and zoom actions."};
+    if (value["animation"] != "none" && value["color"] == "none")
+        return Failure{StoreError::InvalidInput, "Choose a color for an animated alert."};
     bool sound = false; for (const auto& item : soundCatalog()) sound = sound || item.toMap()["id"].toString() == value["sound"].toString();
     if (!sound) return Failure{StoreError::InvalidInput, "Choose an available local sound."};
     if (!value["groups"].isArray() || value["groups"].toArray().isEmpty()) return Failure{StoreError::InvalidInput, "Add at least one matcher group."};
@@ -194,12 +196,16 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
 }
 namespace {
 Result<AlertCatalog> defaultAlerts() {
-    auto active=draft("default-active-view-pulse", "Active view pulse", "newInView", "true", "none", "pulse", "none", "Pulse active resources briefly when they enter the view.");
+    auto active=draft("default-active-view-pulse", "Active view pulse", "newInView", "true", "fresh", "pulse", "none", "Highlight and pulse active resources for 5 seconds when they enter the view.");
     active["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}})};
+    active["enabled"]=false;
+    active["colorMode"]="new-in-view";
+    auto recent=draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "pulse", "none", "Highlight and pulse recently changed resources green for 30 seconds.");
+    recent["animationMode"]="no-match";
     AlertCatalog result;
     for (const auto& value : {
         draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "attention", "Paint resources yellow or red while they have an active problem."),
-        draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "none", "none", "Highlight recently changed resources green for the freshness window."),
+        recent,
         active}) {
         const auto parsed = parseAlertRule(value);
         if (const auto* failure = std::get_if<Failure>(&parsed))
@@ -216,6 +222,20 @@ Result<AlertCatalog> decodeAlerts(const QJsonObject& root) {
     for (const auto& entry : root["rules"].toArray()) {
         if (!entry.isObject()) return Failure{StoreError::InvalidData, "Invalid alert record; existing data was retained."};
         auto value=entry.toObject();
+        if (value["enabled"].isBool() && value["id"]=="default-recent-change-color") {
+            auto legacy=result.rules[1].value;
+            legacy["enabled"]=value["enabled"];
+            legacy["animation"]="none"; legacy["animationMode"]="no-match";
+            legacy["description"]="Highlight recently changed resources green for the freshness window.";
+            if (value==legacy) { value=result.rules[1].value; value["enabled"]=legacy["enabled"]; }
+        } else if (value["enabled"].isBool() && value["id"]=="default-active-view-pulse") {
+            auto legacy=result.rules[2].value;
+            legacy["enabled"]=value["enabled"];
+            legacy["color"]="none"; legacy["colorMode"]="no-match";
+            legacy["description"]="Pulse active resources briefly when they enter the view.";
+            if (value==legacy) value=result.rules[2].value;
+        } else if (value["builtIn"]==false && value["color"]=="none" && value["animation"].isString()
+                   && value["animation"]!="none") value["color"]="#e3aa46";
         const auto parsed=parseAlertRule(value); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;
         auto rule=std::get<AlertRule>(parsed); const auto id=rule.value["id"].toString();
         if (ids.contains(id)) return Failure{StoreError::InvalidData, "Duplicate alert identity; existing data was retained."}; ids.insert(id);

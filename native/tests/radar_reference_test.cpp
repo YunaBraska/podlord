@@ -98,6 +98,7 @@ QMap<QString,QPointF> coordinates(QAbstractItemModel* tiles) {
 bool eventsOffLand() {
     const QString eventPath = "/api/v1/namespaces/default/events/observed-first";
     const QString eventOnlyPath = "/api/v1/namespaces/other/events/observed-second";
+    const QString otherPod = "/api/v1/namespaces/other/pods/other-pod";
     QJsonArray rows;
     for (int index = 0; index < 12; ++index) {
         const auto name = "pod-" + QString::number(index);
@@ -106,6 +107,8 @@ bool eventsOffLand() {
     }
     rows.append(QJsonObject{{"path", "/apis/example/v1/namespaces/default/events/custom"},
         {"name", "custom"}, {"namespace", "default"}, {"kind", "Event"}, {"uid", "custom"}});
+    rows.append(QJsonObject{{"path", otherPod}, {"name", "other-pod"}, {"namespace", "other"},
+        {"kind", "Pod"}, {"uid", "other-pod"}});
     podlord::ResourceTable table;
     podlord::ResourceFilter filter;
     filter.setSourceModel(&table);
@@ -119,6 +122,9 @@ bool eventsOffLand() {
         {"kind", "Event"}, {"uid", "event-2"}, {"kubernetesEvent", true}});
     if (!table.publish(rows, "local") || !QTest::qWaitFor([&] { return radar.tiles()->rowCount() == rows.size(); }, 3000)) return false;
     const auto withEvents = coordinates(radar.tiles());
+    const auto nearOther=(withEvents.value(eventOnlyPath)-withEvents.value(otherPod)).manhattanLength();
+    const auto nearDefault=(withEvents.value(eventOnlyPath)-withEvents.value("/api/v1/namespaces/default/pods/pod-0")).manhattanLength();
+    if (nearOther >= nearDefault) return setupFailure("Event was not placed beside its own namespace island");
     for (auto point = land.cbegin(); point != land.cend(); ++point) {
         if (point.value() != withEvents.value(point.key())) return setupFailure("Event changed resource island geometry");
         for (const auto& path : {eventPath, eventOnlyPath}) {

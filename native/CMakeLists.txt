@@ -180,7 +180,7 @@ if(BUILD_TESTING)
             set_tests_properties(native.ui.settings_inline_${scenario}_${style} PROPERTIES TIMEOUT 45
                 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
-        foreach(scenario boolean boolean_invalid color_status color_custom color_cancel hold once narrow locked narrow_motion)
+        foreach(scenario boolean boolean_invalid color_status color_custom color_cancel color_motion_pair hold once narrow locked narrow_motion)
             add_test(NAME native.alert_ui.reference_controls_${scenario}_${style} COMMAND alert_ui_test reference_controls_${scenario})
             set_tests_properties(native.alert_ui.reference_controls_${scenario}_${style} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=${style}")
         endforeach()
@@ -835,7 +835,7 @@ if(BUILD_TESTING)
     add_executable(alerts_store_test tests/alerts_store_test.cpp)
     add_executable(alert-lifecycle-test tests/alert_lifecycle_test.cpp)
     target_link_libraries(alert-lifecycle-test PRIVATE podlord_workspace Qt6::Test)
-    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid view_snapshot_pending session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline
+    foreach(scenario once_color once_animation duration_color duration_animation duration_survives_unmatch transfer_hold view_entry view_reentry view_expiry view_hidden view_false view_global view_repeat view_invalid view_snapshot_pending session_close criterion_search_regex criterion_namespace_exact criterion_or_fallback criterion_restart_limit recent_change_baseline default_recent_pulse
         criterion_text_prefix criterion_text_suffix criterion_text_alternative criterion_text_miss criterion_regex_miss criterion_image criterion_problem_true criterion_problem_false criterion_activity_true criterion_activity_false
         criterion_numeric_gt_miss criterion_numeric_gte criterion_numeric_lte criterion_numeric_exact criterion_multi_exact criterion_age_minutes criterion_age_missing criterion_p95 criterion_outlier
         reuse_age_forward reuse_age_backward reuse_freshness_expiry reuse_clock_back reuse_notifications reuse_catalog expiry_unowned)
@@ -849,9 +849,9 @@ if(BUILD_TESTING)
     target_link_libraries(alerts_store_test PRIVATE podlord_workspace)
     add_test(NAME native.alert_store.once COMMAND alerts_store_test once)
     set_tests_properties(native.alert_store.once PROPERTIES TIMEOUT 30)
-    foreach(scenario valid_to_draft_restart draft_round_trip draft_enable_requires_valid_matcher description_problem description_recent description_active obsolete_format locked_description missing relative restore repeat private conflict concurrent busy future extra_root duplicate locked malformed invalid_save symlink
+    foreach(scenario valid_to_draft_restart draft_round_trip draft_enable_requires_valid_matcher description_problem description_recent description_active default_motion legacy_builtin_upgrade obsolete_format locked_description missing relative restore repeat private conflict concurrent busy future extra_root duplicate locked malformed invalid_save symlink
         invalid_name invalid_groups invalid_group invalid_scope invalid_expression invalid_regex invalid_number invalid_duration invalid_boolean
-        invalid_extra invalid_missing invalid_color invalid_mode invalid_animation invalid_seconds invalid_fraction invalid_sound invalid_minimum invalid_opposed_comparison
+        invalid_extra invalid_missing invalid_color invalid_mode invalid_animation invalid_colorless_animation invalid_seconds invalid_fraction invalid_sound invalid_minimum invalid_opposed_comparison
         document_enabled_type document_builtin_type document_id_type document_id_empty document_name_type document_description_type
         document_color_type document_color_named document_color_hex document_color_mode_type document_animation_type document_animation_mode_type document_sound_type
         document_groups_type document_group_type document_criterion_type document_criterion_keys document_criterion_field_type document_criterion_expression_type document_criterion_empty

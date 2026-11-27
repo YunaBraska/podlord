@@ -125,6 +125,25 @@ bool run(const QString& scenario) {
     QSignalSpy sounds(&alerts, &Alerts::soundRequested);
     if (!waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;
     const auto builtins = alerts.rules();
+    if (scenario == "default_recent_pulse") {
+        if (builtins.size() != 3 || builtins[2].toMap()["enabled"].toBool()) return false;
+        auto problem=builtins[0].toMap(); problem["enabled"]=false;
+        if (!alerts.saveRule(problem) || !waitFor([&] { return !alerts.busy(); })) return false;
+        ClusterConnection connection;
+        connection.contextId="local-context";
+        connection.server=QUrl(QString("http://127.0.0.1:%1").arg(server.serverPort()));
+        if (!client.open("session", connection, {"default"}) || !alerts.showSession("session")) return false;
+        const QString path="/api/v1/namespaces/default/pods/worker";
+        if (!waitFor([&] { return client.initialSyncComplete("session"); })
+            || !alerts.setVisibleResources("session", {path}) || !alerts.effect(path).isEmpty()) return false;
+        ++server.version; now=now.addSecs(1);
+        if (!client.refresh("session") || !waitFor([&] {
+                const auto effect=alerts.effect(path);
+                return !client.syncLoading("session") && effect["color"]=="fresh" && effect["animation"]=="pulse";
+            })) return false;
+        now=now.addSecs(31);
+        return client.refresh("session") && waitFor([&] { return !client.syncLoading("session") && alerts.effect(path).isEmpty(); });
+    }
     for (int index = 1; index < builtins.size(); ++index) {
         auto disabled = builtins[index].toMap(); disabled["enabled"] = false;
         if (!alerts.saveRule(disabled) || !waitFor([&] { return !alerts.busy(); }) || !alerts.error().isEmpty()) return false;

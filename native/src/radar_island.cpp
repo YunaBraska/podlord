@@ -448,14 +448,15 @@ void RadarIsland::layout(QPromise<Terrain>& promise, QList<Row> rows, QString sc
                     local.insert(events[index].path,eventCoast[(qint64(index)*eventCoast.size()+eventCoast.size()/2)/events.size()]);
             }
             int left=0,right=0,top=0,bottom=0;
-            for (const auto& point:std::as_const(local)) {
+            // Events use the reserved coast, so their arrival cannot move existing land.
+            for (const auto& point:std::as_const(occupied)) {
                 left=std::min(left,point.x()); right=std::max(right,point.x());
                 top=std::min(top,point.y()); bottom=std::max(bottom,point.y());
             }
-            district.anchor={2-left,4-top};
+            district.anchor={3-left,3-top};
             for (const auto& row:district.rows) district.cells.append(local.value(row.path)+district.anchor);
-            district.width=right-left+5;
-            district.height=bottom-top+8;
+            district.width=right-left+7;
+            district.height=bottom-top+7;
             area+=district.width*district.height; maxWidth=std::max(maxWidth,district.width);
             cluster.districts.append(district);
         }
