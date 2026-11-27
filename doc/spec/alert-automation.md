@@ -50,10 +50,10 @@ Radar preview remains unavailable while synchronization is in progress.
 | Alert | Trigger | Action |
 |---|---|---|
 | Problem color | `problems=true` | status color, radar zoom, warning ping |
-| Recent change color | `recentlyChanged=true` | fresh color |
-| Active view pulse | `newInView=true` AND `activity=true` | bounded pulse |
+| Recent change color | `recentlyChanged=true` | fresh color for 30 seconds, pulse for 5 seconds |
+| Active view pulse | `newInView=true` AND `activity=true` | entry pulse for 5 seconds, disabled by default |
 
-The release catalog retains the three shipped definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal; there is no additional default restart-spike or CPU-p95 rule. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins stay enabled and locked by default.
+The release catalog retains the three shipped definitions. This product decision, confirmed on 2026-10-04, replaces the earlier four-rule proposal. Restart outlier and CPU percentile expressions remain custom-rule capabilities. Built-ins are locked. Problem color and Recent change color start enabled.
 
 Descriptions explain each action rather than showing a generic built-in marker:
 problem resources receive yellow/red, recent changes receive the agreed green

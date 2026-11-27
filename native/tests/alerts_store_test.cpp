@@ -22,7 +22,7 @@ bool run(const QString& scenario) {
     if (scenario=="default_motion") return original.rules.size()==3
         && original.rules[1].value["color"]=="fresh"
         && original.rules[1].value["animation"]=="pulse"
-        && original.rules[1].value["animationMode"]=="no-match"
+        && original.rules[1].value["animationMode"]=="duration"
         && original.rules[1].value["animationSeconds"]==5
         && !original.rules[2].value["enabled"].toBool()
         && original.rules[2].value["color"]!="none";
@@ -53,6 +53,21 @@ bool run(const QString& scenario) {
             && current.rules[2].value["color"]!="none"
             && current.rules.size()==4 && current.rules[3].value["color"]=="#e3aa46";
     }
+    if (scenario=="previous_builtin_upgrade") {
+        auto previous=original;
+        previous.rules[1].value["animationMode"]="no-match";
+        previous.rules[1].value["description"]="Highlight and pulse recently changed resources green for 30 seconds.";
+        QJsonArray rules;
+        for (const auto& rule : previous.rules) rules.append(rule.value);
+        if (!QDir().mkpath(profile)) return false;
+        QFile file(profile+"/alert-rules.json");
+        const auto bytes=QJsonDocument(QJsonObject{{"version",2},{"rules",rules},{"muted",false},{"reducedMotion",false}}).toJson();
+        if (!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size()) return false;
+        file.close();
+        const auto migrated=store.load();
+        return std::holds_alternative<podlord::AlertCatalog>(migrated)
+            && std::get<podlord::AlertCatalog>(migrated).rules[1].value==original.rules[1].value;
+    }
     if (scenario=="draft_round_trip" || scenario=="draft_enable_requires_valid_matcher") {
         auto draft=original.rules[0].value; draft["id"]="draft"; draft["name"]="Incomplete"; draft["builtIn"]=false; draft["enabled"]=false; draft["draft"]=true;
         draft["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field","name"},{"expression",""}}})};
@@ -68,13 +83,19 @@ bool run(const QString& scenario) {
     if (scenario.startsWith("description_")) {
         const QStringList descriptions{
             "Paint resources yellow or red while they have an active problem.",
-            "Highlight and pulse recently changed resources green for 30 seconds.",
+            "Highlight changed resources green for 30 seconds and pulse for 5 seconds.",
             "Highlight and pulse active resources for 5 seconds when they enter the view."};
         const auto index=scenario=="description_problem" ? 0 : scenario=="description_recent" ? 1 : 2;
         return original.rules[index].value["description"].toString()==descriptions[index] && !QFile::exists(profile);
     }
     auto desired=original;
     auto custom=original.rules[0].value; custom["id"]="custom"; custom["builtIn"]=false; custom["name"]="Custom";
+    if (scenario=="colorless_animation_default") {
+        custom["color"]="none"; custom["animation"]="pulse";
+        const auto parsed=podlord::parseAlertRule(custom);
+        return std::holds_alternative<podlord::AlertRule>(parsed)
+            && std::get<podlord::AlertRule>(parsed).value["color"]=="#e3aa46";
+    }
     if (scenario == "once") { custom["colorMode"] = "once"; custom["animationMode"] = "once"; }
     const auto parsed=podlord::parseAlertRule(custom); if (!std::holds_alternative<podlord::AlertRule>(parsed)) return false;
     desired.rules.append(std::get<podlord::AlertRule>(parsed));
@@ -107,7 +128,6 @@ bool run(const QString& scenario) {
         else if (field=="color") custom["color"]="bad";
         else if (field=="mode") custom["colorMode"]="bad";
         else if (field=="animation") custom["animation"]="bad";
-        else if (field=="colorless_animation") { custom["color"]="none"; custom["animation"]="pulse"; }
         else if (field=="seconds") custom["colorSeconds"]=0;
         else if (field=="fraction") custom["zoom"]=1.5;
         else if (field=="sound") custom["sound"]="remote-sound";

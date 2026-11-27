@@ -141,6 +141,16 @@ bool run(const QString& scenario) {
                 const auto effect=alerts.effect(path);
                 return !client.syncLoading("session") && effect["color"]=="fresh" && effect["animation"]=="pulse";
             })) return false;
+        now=now.addSecs(6);
+        if (!client.refresh("session") || !waitFor([&] {
+                const auto effect=alerts.effect(path);
+                return !client.syncLoading("session") && effect["color"]=="fresh" && !effect.contains("animation");
+            })) return false;
+        ++server.version; now=now.addSecs(1);
+        if (!client.refresh("session") || !waitFor([&] {
+                const auto effect=alerts.effect(path);
+                return !client.syncLoading("session") && effect["color"]=="fresh" && effect["animation"]=="pulse";
+            })) return false;
         now=now.addSecs(31);
         return client.refresh("session") && waitFor([&] { return !client.syncLoading("session") && alerts.effect(path).isEmpty(); });
     }

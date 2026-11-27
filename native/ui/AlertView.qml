@@ -320,8 +320,8 @@ Pane {
                                 currentIndex: ["none", "status", "fresh"].includes(alertColorInput.text) ? ["none", "status", "fresh"].indexOf(alertColorInput.text) : 3
                                 Accessible.name: workspace.uiText["alert.color"]
                                 onActivated: {
-                                    if (currentValue === "none") animation.currentIndex = 0
-                                    alertColorInput.text = currentValue === "custom" ? (alertColorInput.text.startsWith("#") ? alertColorInput.text : "#e3aa46") : currentValue
+                                    alertColorInput.text = currentValue === "custom" || (currentValue === "none" && animation.currentValue !== "none")
+                                        ? (alertColorInput.text.startsWith("#") ? alertColorInput.text : "#e3aa46") : currentValue
                                 }
                             }
                             ActionButton {
@@ -344,11 +344,11 @@ Pane {
                     }
                 }
                 FormRow {
-                    label: workspace.uiText["alert.animation"]; enabled: form.editable && alertColorInput.text !== "none"
+                    label: workspace.uiText["alert.animation"]; enabled: form.editable
                     GridLayout {
                         Layout.fillWidth: true
                         columns: width < 520 ? 1 : 2
-                        ComboBox { id: animation; objectName: "alertAnimation"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: view.animationOptions; textRole: "label"; valueRole: "id"; Accessible.name: "Radar animation" }
+                        ComboBox { id: animation; objectName: "alertAnimation"; Layout.fillWidth: true; Layout.minimumWidth: 0; model: view.animationOptions; textRole: "label"; valueRole: "id"; Accessible.name: "Radar animation"; onActivated: if (currentValue !== "none" && alertColorInput.text === "none") alertColorInput.text = "#e3aa46" }
                         RowLayout {
                             Layout.fillWidth: true
                             HoldMode { id: animationMode; objectName: "alertAnimationMode"; Accessible.name: "Animation hold mode" }

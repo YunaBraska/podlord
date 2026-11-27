@@ -147,6 +147,7 @@ QVariantList soundCatalog() { return bundledSounds(); }
 }
 Result<AlertRule> parseAlertRule(QJsonObject value) {
     if (value["sound"].isString()) value["sound"] = migratedSound(value["sound"].toString());
+    if (value["animation"].isString() && value["animation"] != "none" && value["color"] == "none") value["color"] = "#e3aa46";
     const QStringList keys{"id", "name", "description", "enabled", "builtIn", "draft", "groups", "color", "colorMode", "colorSeconds", "animation", "animationMode", "animationSeconds", "zoom", "sound", "soundMinimumMatches"};
     if (value.size() != keys.size()) return Failure{StoreError::InvalidInput, "An alert must contain exactly the supported fields."};
     for (const auto& key : keys) if (!value.contains(key)) return Failure{StoreError::InvalidInput, "An alert field is missing."};
@@ -155,8 +156,6 @@ Result<AlertRule> parseAlertRule(QJsonObject value) {
         || !modes.contains(value["colorMode"].toString()) || !modes.contains(value["animationMode"].toString())
         || !QStringList{"none", "blink", "pulse", "sweep", "outline"}.contains(value["animation"].toString())
         || !whole(value["colorSeconds"], 1, 60) || !whole(value["animationSeconds"], 1, 60) || !whole(value["zoom"], 0, 200) || !whole(value["soundMinimumMatches"], 1, std::numeric_limits<int>::max())) return Failure{StoreError::InvalidInput, "Choose valid color, animation, hold duration and zoom actions."};
-    if (value["animation"] != "none" && value["color"] == "none")
-        return Failure{StoreError::InvalidInput, "Choose a color for an animated alert."};
     bool sound = false; for (const auto& item : soundCatalog()) sound = sound || item.toMap()["id"].toString() == value["sound"].toString();
     if (!sound) return Failure{StoreError::InvalidInput, "Choose an available local sound."};
     if (!value["groups"].isArray() || value["groups"].toArray().isEmpty()) return Failure{StoreError::InvalidInput, "Add at least one matcher group."};
@@ -200,8 +199,8 @@ Result<AlertCatalog> defaultAlerts() {
     active["groups"]=QJsonArray{QJsonValue(QJsonArray{QJsonObject{{"field", "newInView"}, {"expression", "true"}}, QJsonObject{{"field", "activity"}, {"expression", "true"}}})};
     active["enabled"]=false;
     active["colorMode"]="new-in-view";
-    auto recent=draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "pulse", "none", "Highlight and pulse recently changed resources green for 30 seconds.");
-    recent["animationMode"]="no-match";
+    auto recent=draft("default-recent-change-color", "Recent change color", "recentlyChanged", "true", "fresh", "pulse", "none", "Highlight changed resources green for 30 seconds and pulse for 5 seconds.");
+    recent["animationMode"]="duration";
     AlertCatalog result;
     for (const auto& value : {
         draft("default-problem-color", "Problem color", "problems", "true", "status", "none", "attention", "Paint resources yellow or red while they have an active problem."),
@@ -227,15 +226,18 @@ Result<AlertCatalog> decodeAlerts(const QJsonObject& root) {
             legacy["enabled"]=value["enabled"];
             legacy["animation"]="none"; legacy["animationMode"]="no-match";
             legacy["description"]="Highlight recently changed resources green for the freshness window.";
-            if (value==legacy) { value=result.rules[1].value; value["enabled"]=legacy["enabled"]; }
+            auto previous=result.rules[1].value;
+            previous["enabled"]=value["enabled"];
+            previous["animationMode"]="no-match";
+            previous["description"]="Highlight and pulse recently changed resources green for 30 seconds.";
+            if (value==legacy || value==previous) { value=result.rules[1].value; value["enabled"]=legacy["enabled"]; }
         } else if (value["enabled"].isBool() && value["id"]=="default-active-view-pulse") {
             auto legacy=result.rules[2].value;
             legacy["enabled"]=value["enabled"];
             legacy["color"]="none"; legacy["colorMode"]="no-match";
             legacy["description"]="Pulse active resources briefly when they enter the view.";
             if (value==legacy) value=result.rules[2].value;
-        } else if (value["builtIn"]==false && value["color"]=="none" && value["animation"].isString()
-                   && value["animation"]!="none") value["color"]="#e3aa46";
+        }
         const auto parsed=parseAlertRule(value); if (const auto* failure=std::get_if<Failure>(&parsed)) return *failure;
         auto rule=std::get<AlertRule>(parsed); const auto id=rule.value["id"].toString();
         if (ids.contains(id)) return Failure{StoreError::InvalidData, "Duplicate alert identity; existing data was retained."}; ids.insert(id);
@@ -657,7 +659,12 @@ bool Alerts::dispatch() {
                     }
                 };
                 if (color != "none") startHold(colorMode, colorSeconds, false, state.colorUntil);
-                if (animation != "none") startHold(animationMode, animationSeconds, baseline, state.animationUntil);
+                if (animation != "none") {
+                    if (id == "default-recent-change-color" && changedAt.isValid() && changedAt.addSecs(animationSeconds) > now)
+                        state.animationUntil[key] = changedAt.addSecs(animationSeconds);
+                    else if (id != "default-recent-change-color")
+                        startHold(animationMode, animationSeconds, baseline, state.animationUntil);
+                }
             }
             if (count) matches.append(QVariantMap{{"id", id}, {"name", rule.value["name"].toString()}, {"count", count}, {"path", first}});
             if (changed && count>=rule.value["soundMinimumMatches"].toInt() && !catalog.muted && rule.value["sound"]!="none") presentation.sounds.append({id, rule.value["sound"].toString()});

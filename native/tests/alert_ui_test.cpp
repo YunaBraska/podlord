@@ -460,11 +460,18 @@ bool run(const QString& scenario, const QString& realConfig={}, const QString& c
                     && !item(window, "alertColorMode")->isEnabled() && rules() == baseline && server.requests == 0;
             if (!click(window, "addAlert") || !type(window, "alertName", "Control regression") || !type(window, "alertExpression_0", "alpha")) return false;
             if (mode == "color_motion_pair") {
-                if (!choose("alertAnimation", 2) || !choose("alertColorChoice", 0)) return false;
-                return item(window, "alertAnimation")->property("currentIndex").toInt() == 0
-                    && !item(window, "alertAnimation")->isEnabled()
-                    && item(window, "alertColor")->property("text").toString() == "none"
-                    && rules() == baseline && server.requests == 0;
+                if (!choose("alertColorChoice", 0) || !choose("alertAnimation", 2)) return false;
+                if (!click(window, "alertColorChoice")) return false;
+                QTest::keyClick(window, Qt::Key_Home);
+                QTest::keyClick(window, Qt::Key_Return);
+                if (item(window, "alertAnimation")->property("currentIndex").toInt() != 2
+                    || !item(window, "alertAnimation")->isEnabled()
+                    || item(window, "alertColor")->property("text").toString() != "#e3aa46"
+                    || !click(window, "saveAlert") || !settle()) return false;
+                return rules().size()==baseline.size()+1
+                    && rules().last().toMap()["color"]=="#e3aa46"
+                    && rules().last().toMap()["animation"]=="pulse"
+                    && server.requests == 0;
             }
             QString expectedColor = "#e3aa46", expectedMode = "no-match", expectedField = "name", expectedExpression = "alpha";
             if (mode.startsWith("boolean")) {

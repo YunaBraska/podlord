@@ -849,9 +849,9 @@ if(BUILD_TESTING)
     target_link_libraries(alerts_store_test PRIVATE podlord_workspace)
     add_test(NAME native.alert_store.once COMMAND alerts_store_test once)
     set_tests_properties(native.alert_store.once PROPERTIES TIMEOUT 30)
-    foreach(scenario valid_to_draft_restart draft_round_trip draft_enable_requires_valid_matcher description_problem description_recent description_active default_motion legacy_builtin_upgrade obsolete_format locked_description missing relative restore repeat private conflict concurrent busy future extra_root duplicate locked malformed invalid_save symlink
+    foreach(scenario valid_to_draft_restart draft_round_trip draft_enable_requires_valid_matcher description_problem description_recent description_active default_motion legacy_builtin_upgrade previous_builtin_upgrade colorless_animation_default obsolete_format locked_description missing relative restore repeat private conflict concurrent busy future extra_root duplicate locked malformed invalid_save symlink
         invalid_name invalid_groups invalid_group invalid_scope invalid_expression invalid_regex invalid_number invalid_duration invalid_boolean
-        invalid_extra invalid_missing invalid_color invalid_mode invalid_animation invalid_colorless_animation invalid_seconds invalid_fraction invalid_sound invalid_minimum invalid_opposed_comparison
+        invalid_extra invalid_missing invalid_color invalid_mode invalid_animation invalid_seconds invalid_fraction invalid_sound invalid_minimum invalid_opposed_comparison
         document_enabled_type document_builtin_type document_id_type document_id_empty document_name_type document_description_type
         document_color_type document_color_named document_color_hex document_color_mode_type document_animation_type document_animation_mode_type document_sound_type
         document_groups_type document_group_type document_criterion_type document_criterion_keys document_criterion_field_type document_criterion_expression_type document_criterion_empty

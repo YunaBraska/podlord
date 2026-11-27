@@ -996,7 +996,7 @@ bool execute(const QString& requestedScenario) {
             && !item(window,"mapImportSource")
             && !item(window,"resourcesWorkspaceButton")->isVisible() && !item(window,"eventsWorkspaceButton")->isVisible()
             && !item(window,"portForwardTasksButton")->isVisible() && !item(window,"mapBack")
-            && !item(window,"workspaceFooter")->isVisible()
+            && item(window,"workspaceFooter")->isVisible()
             && workspace.contexts().isEmpty() && workspace.currentSession().isEmpty() && server.requests.isEmpty() && saveShellFrame(window,scenario);
         if (!emptyVisible) return false;
         if (scenario == "map_empty" || scenario == "map_empty_phone") {
@@ -2546,7 +2546,7 @@ bool execute(const QString& requestedScenario) {
                         if (!control || !control->isVisible()) continue;
                         if (!displayedWithin(header,control) || qAbs(control->mapToScene({0,control->height()/2}).y()-y)>1) return false;
                     }
-                    return item(window,"workspaceFooter")->isVisible() == (size.width() >= 600 && size.height() >= 600);
+                    return item(window,"workspaceFooter")->isVisible();
                 }) || !saveShellFrame(window,scenario+"-"+QString::number(size.width())+"x"+QString::number(size.height()))) return false;
             }
             window->resize(1440, 920);
@@ -3052,16 +3052,14 @@ bool execute(const QString& requestedScenario) {
                 window->resize(size);
                 if (!waitFor([&] {
                     auto* footer = item(window, "workspaceFooter");
-                    if (!footer || qAbs(footer->height()-24) > 0.5) return false;
-                    const bool shown = size.width() >= 600 && size.height() >= 600;
-                    if (footer->isVisible() != shown) return false;
+                    if (!footer || footer->height() < 24 || !footer->isVisible()) return false;
                     const QRectF scene(0,0,window->width(),window->height());
                     for (const auto* name : {"resourceMatchCount", "syncStatus"}) {
                         auto* label = item(window, name);
-                        if (!label || (shown && (label->height() > 24 || !scene.adjusted(-0.5,-0.5,0.5,0.5).contains(label->mapRectToScene(label->boundingRect()))))) return false;
+                        if (!label || label->height() > footer->height() || !scene.adjusted(-0.5,-0.5,0.5,0.5).contains(label->mapRectToScene(label->boundingRect()))) return false;
                     }
                     return item(window, "resourceTable")->height() >= 32;
-                })) {
+                }) || !saveShellFrame(window, scenario+"-"+QString::number(size.width())+"x"+QString::number(size.height()))) {
                     for (const auto* name : {"workspaceToolbar", "workspaceFooter", "resourceMatchCount", "syncStatus", "resourceTable"}) {
                         auto* control = item(window, name);
                         const auto bounds = control->mapRectToScene(control->boundingRect());
@@ -3072,6 +3070,9 @@ bool execute(const QString& requestedScenario) {
                     return false;
                 }
             }
+            if (!click(window, item(window, "settingsWorkspaceButton"))
+                || !waitFor([&] { return workspace.workspacePage()=="settings" && item(window, "workspaceFooter")->isVisible(); })
+                || !saveShellFrame(window, scenario+"-settings")) return false;
             return server.requests.size() == calls;
         }
         if (scenario == "shell_touch") {
@@ -6845,9 +6846,18 @@ bool execute(const QString& requestedScenario) {
     if (scenario == "recover_sync") {
         if (!workspace.refresh() || !waitFor([&] { return text(window, "syncProblemMessage").contains("HTTP 400"); })) return false;
         const auto failureTime = QLocale::system().toString(reference.toLocalTime(), QLocale::ShortFormat);
-        return text(window, "syncProblemMessage").contains(failureTime)
-            && waitFor([&] { return !workspace.loading(); }) && workspace.refresh()
-            && waitFor([&] { return server.refresh >= 4 && !workspace.loading() && text(window, "syncProblemMessage").isEmpty(); });
+        if (!text(window, "syncProblemMessage").contains(failureTime)
+            || !waitFor([&] { return !workspace.loading(); })
+            || !click(window, item(window, "settingsWorkspaceButton"))) return false;
+        if (!waitFor([&] {
+                auto* footer=item(window, "workspaceFooter");
+                return workspace.workspacePage()=="settings" && footer && footer->isVisible()
+                    && displayedWithin(footer, item(window, "syncProblemMessage"))
+                    && displayedWithin(footer, item(window, "retryConnection"));
+            }) || !saveShellFrame(window, "recover-sync-footer")) return false;
+        return click(window, item(window, "retryConnection"))
+            && waitFor([&] { return server.refresh >= 4 && !workspace.loading() && text(window, "syncProblemMessage").isEmpty()
+                && !item(window, "retryConnection")->isVisible(); });
     }
     if (scenario == "retain") {
         if (!workspace.refresh()) return false;

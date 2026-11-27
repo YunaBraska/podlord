@@ -910,7 +910,7 @@ ApplicationWindow {
             readonly property bool navigating: window.searchOpen && (["resources", "events"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
             readonly property bool hasQuery: (workspace.workspacePage === "events" ? workspace.eventFilterText : workspace.filterText).trim() !== ""
             Layout.fillWidth: true
-            visible: !window.compactInspector && ((window.searchOpen && (["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))) || workspace.authenticationRequired || workspace.authenticationRunning) || (window.compactInspector && (workspace.authenticationRequired || workspace.authenticationRunning))
+            visible: !window.compactInspector && window.searchOpen && (["resources", "events", "dashboard"].indexOf(workspace.workspacePage) >= 0 || (workspace.workspacePage === "map" && !workspace.mapOverview))
             TextField {
                 id: resourceFilterInput
                 objectName: "resourceFilter"
@@ -949,14 +949,6 @@ ApplicationWindow {
             IconButton { objectName: "queryPrevious"; glyph: "Previous"; text: workspace.uiText["tooltip.previousMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(-1) }
             IconButton { objectName: "queryNext"; glyph: "Next"; text: workspace.uiText["tooltip.nextMatch"]; visible: queryRow.navigating; enabled: queryRow.hasQuery && queryRow.activeGrid && queryRow.activeGrid.count > 0; onClicked: queryRow.activeGrid.navigateRows(1) }
             SelectableText { objectName: "queryMatchCount"; visible: queryRow.navigating; text: queryRow.hasQuery && queryRow.activeGrid ? (queryRow.activeGrid.navigationIndex + 1) + "/" + queryRow.activeGrid.count : "0/0"; textFormat: Text.PlainText; color: workspace.appearanceColors.accent; Accessible.name: "Search match " + text }
-            FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy && !workspace.authenticationRunning; onClicked: authentication.open() }
-            FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            visible: workspace.authenticationInstruction !== "" && !workspace.authenticationChallenge.id
-            SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            IconButton { objectName: "openAuthenticationBrowser"; glyph: "External"; text: "Open sign-in page"; visible: workspace.authenticationBrowserAvailable; onClicked: workspace.openAuthenticationBrowser() }
         }
         Loader {
             id: mfaForm
@@ -1005,36 +997,6 @@ ApplicationWindow {
                 SelectableText { Layout.fillWidth: true; text: mfaCode.errorText; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: workspace.appearanceColors.danger }
             }
         }
-        SelectableText { objectName: "filterErrorMessage"; Layout.rightMargin: window.contentRightMargin; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap }
-        RowLayout {
-            Layout.fillWidth: true; Layout.rightMargin: window.contentRightMargin
-            visible: workspace.error !== "" || !!workspace.uiText[workspace.music.error]
-            SelectableText {
-                objectName: "errorMessage"; Layout.fillWidth: true
-                text: workspace.error && workspace.error === workspace.incidentAiDiagnostic.original
-                    ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
-                    : (workspace.error || workspace.uiText[workspace.music.error] || "")
-                textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap
-            }
-            IconButton {
-                objectName: "errorAiInfo"; glyph: "Info"
-                visible: workspace.error !== "" && workspace.error === workspace.incidentAiDiagnostic.original
-                    && !!workspace.incidentAiDiagnostic.cause
-                text: workspace.incidentAiDiagnostic.cause + "\n" + workspace.incidentAiDiagnostic.action
-            }
-        }
-        SelectableText {
-            objectName: "syncProblemMessage"; Layout.rightMargin: window.contentRightMargin
-            Layout.fillWidth: true; Layout.minimumWidth: 0
-            text: workspace.syncProblem; textFormat: Text.PlainText
-            visible: text !== ""; wrapMode: TextEdit.NoWrap; clip: true
-            color: workspace.appearanceColors.danger
-            ToolTip.visible: problemHover.hovered && contentWidth > width
-            ToolTip.delay: 700
-            ToolTip.text: text
-            HoverHandler { id: problemHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
-        }
-        FlatButton { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
         SplitView {
             id: workspaceSplit
             objectName: "workspaceSplit"
@@ -1233,16 +1195,51 @@ ApplicationWindow {
                 SplitView.maximumWidth: sidebar.compactFilterRail ? sidebar.collapsedFilterWidth : window.compactLandscape ? 320 : 720
             }
         }
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
             objectName: "workspaceFooter"
-            visible: !window.inputPriority && window.width >= 600 && window.height >= 600
-                && !["settings", "alerts"].includes(workspace.workspacePage)
-                && (workspace.totalResourceCount > 0 || (workspace.workspacePage === "map" && workspace.mapOverview && window.mapContexts.length > 0))
-            Layout.minimumHeight: Math.max(24, Math.ceil(workspace.textSizes.caption * 1.3) + 4); Layout.maximumHeight: Layout.minimumHeight; Layout.preferredHeight: Layout.minimumHeight
+            Layout.minimumHeight: 24
+            spacing: 2
             LayoutMirroring.enabled: workspace.uiRightToLeft; LayoutMirroring.childrenInherit: true
-            SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.workspacePage === "map" && workspace.mapOverview ? text : text + ", " + workspace.resourceCount + " matching resources" }
-            SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" && workspace.mapOverview ? "" : workspace.syncSummary; textFormat: Text.PlainText; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
+            RowLayout {
+                Layout.fillWidth: true; Layout.minimumHeight: 24; spacing: 6
+                SelectableText { objectName: "resourceMatchCount"; Layout.minimumWidth: 0; Layout.maximumWidth: window.width * 0.45; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.workspacePage === "map" ? (workspace.mapOverview ? "contexts: " + window.mapContexts.length : "matches: " + workspace.resourceCount + "/" + workspace.totalResourceCount ) : workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" ? "contexts: " + workspace.contexts.length : "visible: " + workspace.displayedResourceCount + "/" + workspace.totalResourceCount; Accessible.name: workspace.mapOverview || workspace.workspacePage === "settings" || workspace.workspacePage === "alerts" ? text : text + ", " + workspace.resourceCount + " matching resources" }
+                SelectableText { objectName: "syncStatus"; Layout.fillWidth: true; Layout.minimumWidth: 0; font.pixelSize: workspace.textSizes.caption; wrapMode: TextEdit.NoWrap; clip: true; text: workspace.syncSummary; textFormat: Text.PlainText; ToolTip.visible: syncHover.hovered && contentWidth > width; ToolTip.delay: 700; ToolTip.text: text; HoverHandler { id: syncHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad } }
+                FlatButton { objectName: "authenticationButton"; text: "Authenticate"; visible: workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy; onClicked: authentication.open() }
+                FlatButton { objectName: "cancelAuthentication"; text: "Cancel login"; visible: workspace.authenticationRunning; onClicked: workspace.cancelAuthentication() }
+                IconButton { objectName: "retryConnection"; glyph: "Reset"; text: "Retry connection"; visible: workspace.currentSession !== "" && workspace.syncProblem !== "" && !workspace.authenticationRequired && !workspace.authenticationRunning; enabled: !workspace.busy; onClicked: workspace.refresh() }
+                FlatButton { objectName: "reloadSavedViews"; text: "Reload saved filters and sorts"; visible: workspace.viewStateFailed; enabled: !workspace.busy; onClicked: workspace.reloadSavedViews() }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: workspace.authenticationInstruction !== "" && !workspace.authenticationChallenge.id
+                SelectableText { objectName: "authenticationInstruction"; Layout.fillWidth: true; text: workspace.authenticationInstruction; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+                IconButton { objectName: "openAuthenticationBrowser"; glyph: "External"; text: "Open sign-in page"; visible: workspace.authenticationBrowserAvailable; onClicked: workspace.openAuthenticationBrowser() }
+            }
+            SelectableText { objectName: "filterErrorMessage"; Layout.fillWidth: true; text: workspace.filterError; textFormat: Text.PlainText; color: workspace.appearanceColors.danger; visible: text !== ""; wrapMode: Text.Wrap }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: workspace.error !== "" || !!workspace.uiText[workspace.music.error]
+                SelectableText {
+                    objectName: "errorMessage"; Layout.fillWidth: true
+                    text: workspace.error && workspace.error === workspace.incidentAiDiagnostic.original
+                        ? (workspace.incidentAiDiagnostic.summary || workspace.uiText["error.kubeconfigExecEnv"])
+                        : (workspace.error || workspace.uiText[workspace.music.error] || "")
+                    textFormat: Text.PlainText; color: workspace.appearanceColors.danger; wrapMode: Text.Wrap
+                }
+                IconButton {
+                    objectName: "errorAiInfo"; glyph: "Info"
+                    visible: workspace.error !== "" && workspace.error === workspace.incidentAiDiagnostic.original
+                        && !!workspace.incidentAiDiagnostic.cause
+                    text: workspace.incidentAiDiagnostic.cause + "\n" + workspace.incidentAiDiagnostic.action
+                }
+            }
+            SelectableText {
+                objectName: "syncProblemMessage"; Layout.fillWidth: true; Layout.minimumWidth: 0
+                text: workspace.syncProblem; textFormat: Text.PlainText
+                visible: text !== ""; wrapMode: Text.Wrap
+                color: workspace.appearanceColors.danger
+            }
         }
     }
     ResourceSidebar {
