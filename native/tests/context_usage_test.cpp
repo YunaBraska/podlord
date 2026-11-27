@@ -309,6 +309,12 @@ bool scenario(const QString& name) {
         CHECK(requests == 0);
         CHECK(restored.mapOverview());
         CHECK(catalog.open(QIODevice::ReadOnly) && catalog.readAll() == before);
+        if (name == "restart") {
+            CHECK(!restored.currentSession().isEmpty());
+            CHECK(restored.setWorkspacePage("settings") && restored.setWorkspacePage("map"));
+            CHECK(!restored.mapOverview());
+            CHECK(wait([&] { return requests > 0 && !restored.loading() && restored.initialSyncComplete(); }));
+        }
     }
     return true;
 }

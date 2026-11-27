@@ -2183,7 +2183,8 @@ bool Workspace::setWorkspacePage(const QString& page) {
     client_.showSession(page=="map" && mapOverview() ? QString{} : active_,viewId_);
     if (page=="dashboard") publishDashboard();
     emit changed();
-    if ((page=="resources" || page=="events" || page=="ports" || page=="dashboard") && !active_.isEmpty() && !client_.connection(active_)) return resolve(active_);
+    if (((page=="map" && !mapOverview()) || page=="resources" || page=="events" || page=="ports" || page=="dashboard")
+        && !active_.isEmpty() && !client_.connection(active_)) return resolve(active_);
     return true;
 }
 bool Workspace::rememberRadarView(const QVariantMap& view) {
