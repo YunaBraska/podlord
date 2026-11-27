@@ -85,7 +85,9 @@ public:
                                 : "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"},
                             {"token_type", "Bearer"}, {"expires_in", shortLived ? 60 : 3600}}).toJson(QJsonDocument::Compact);
                     } else if (line.startsWith("GET /v1/models ")) {
-                        if (!header.contains("Authorization: Bearer private-access")) { code = 401; payload = "{}"; }
+                        ++modelRequests;
+                        if (failCatalog) { code = 503; payload = "{}"; }
+                        else if (!header.contains("Authorization: Bearer private-access")) { code = 401; payload = "{}"; }
                         else payload = QJsonDocument(QJsonObject{{"models", QJsonArray{
                             QJsonObject{{"slug", "gpt-test"}, {"display_name", "Test model"}, {"visibility", "list"}, {"max_input_tokens", 9000}},
                             QJsonObject{{"slug", "hidden"}, {"display_name", "Hidden"}, {"visibility", "hidden"}}}}}).toJson(QJsonDocument::Compact);
@@ -126,6 +128,8 @@ public:
     bool shortLived = false;
     bool holdRefresh = false;
     bool holdResponse = false;
+    bool failCatalog = false;
+    int modelRequests = 0;
     QTcpSocket* heldRefresh = nullptr;
     QTcpSocket* heldResponse = nullptr;
     QByteArray heldRefreshPayload;
@@ -293,6 +297,19 @@ void scenario(const QString& name) {
         "Wrong account or hidden model shown");
     require(client.models().first().toMap().value("contextTokens").toLongLong() == 9000,
         "Advertised ChatGPT context capacity was lost");
+    if (name == "catalog_transient") {
+        boundary.failCatalog = true;
+        client.refreshModels();
+        require(QTest::qWaitFor([&] { return boundary.modelRequests == 2
+            && client.status() == "ChatGPT model catalog is unavailable."; }, 2000)
+            && client.models().size() == 1 && client.models().first().toMap().value("slug") == "gpt-test",
+            "Temporary catalog failure discarded the last valid model list");
+        boundary.failCatalog = false;
+        client.refreshModels();
+        require(QTest::qWaitFor([&] { return boundary.modelRequests == 3 && client.status().isEmpty(); }, 2000)
+            && client.models().size() == 1, "Model catalog did not recover");
+        return;
+    }
     if (name == "cancel_during_refresh") {
         boundary.holdRefresh = true;
         QString cancelledAnswer, cancelledError;

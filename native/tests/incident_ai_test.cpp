@@ -374,6 +374,35 @@ void scenario(const QString& name) {
             && server.chats == 1, "Stored answer was hidden or another request was sent while Auto was off");
         return;
     }
+    if (name == "cached_answer_manual_refresh") {
+        const auto snapshot = rows();
+        const auto path = snapshot.at(2).toObject()["path"].toString();
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && ai.setEnabled(true), "Automatic model unavailable");
+        ai.observe("context", snapshot, "en");
+        require(QTest::qWaitFor([&] { return server.chats == 1
+            && ai.result("context", path).contains("summary"); }, 2000), "Initial answer missing");
+        require(ai.setEnabled(false), "Could not disable automatic analysis");
+        server.hold = true;
+        require(ai.refresh("context", path)
+            && QTest::qWaitFor([&] { return server.chats == 2; }, 2000), "Manual refresh did not start");
+        auto updated = snapshot;
+        updated.append(QJsonObject{{"kind", "Node"}, {"name", "unrelated"}, {"uid", "unrelated"},
+            {"path", "/api/v1/nodes/unrelated"}, {"status", "Ready"}});
+        ai.observe("context", updated, "en", true);
+        require(ai.result("context", path).value("pending").toBool()
+            && !ai.status("context").contains("canceled", Qt::CaseInsensitive),
+            "A background observation canceled the manual analysis while Auto was off");
+        server.hold = false;
+        const QByteArray body = R"({"message":{"content":"{\"summary\":\"Manual answer.\",\"cause\":\"Unknown.\",\"action\":\"Check events.\"}"}})";
+        server.held->write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+            + QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        server.held->disconnectFromHost();
+        require(QTest::qWaitFor([&] { return ai.result("context", path).value("summary").toString() == "Manual answer."; }, 2000)
+            && server.chats == 2, "Manual answer was lost or automatic analysis restarted");
+        return;
+    }
     if (name == "auto_timeout") {
         server.hold = true;
         podlord::IncidentAi ai(profile, endpoint, nullptr, {}, nullptr, 120);

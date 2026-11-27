@@ -412,7 +412,7 @@ void ChatGptClient::refreshModels() {
             if (clientId != activeClientId_) { if (connected()) refreshModels(); return; }
             const auto document = QJsonDocument::fromJson(bytes);
             if (!ok || !document.isObject() || bytes.size() > 1024 * 1024) {
-                models_.clear(); status_ = "ChatGPT model catalog is unavailable."; emit changed(); return;
+                status_ = "ChatGPT model catalog is unavailable."; emit changed(); return;
             }
             QVariantList models;
             for (const auto& value : document.object().value("models").toArray()) {

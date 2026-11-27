@@ -1283,6 +1283,14 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
     if (changedEvidence && changedSnapshot) {
         for (auto item = manualVisible_.begin(); item != manualVisible_.end();) {
             if (item->context != context) { ++item; continue; }
+            if (inFlight_ == item->key || queued_.contains(item->key)) {
+                const bool present = std::any_of(safeRows.cbegin(), safeRows.cend(), [&](const auto& value) {
+                    return value.toObject()["path"] == item->path;
+                });
+                if (present) { ++item; continue; }
+                item = manualVisible_.erase(item);
+                continue;
+            }
             const auto current = manualIncident(context, item->path);
             if (!current) item = manualVisible_.erase(item);
             else { *item = *current; ++item; }
@@ -1429,11 +1437,17 @@ void IncidentAi::observePrepared(const QString& context, const QString& language
     QQueue<Incident> retained;
     while (!queue_.isEmpty()) {
         const auto incident = queue_.dequeue();
-        if (incident.context == context && !activeKeys.contains(incident.key)) queued_.remove(incident.key);
+        const auto manual = manualVisible_.constFind(context + '\n' + incident.path);
+        if (incident.context == context && !activeKeys.contains(incident.key)
+            && !(incident.manual && manual != manualVisible_.cend() && manual->key == incident.key))
+            queued_.remove(incident.key);
         else retained.enqueue(incident);
     }
     queue_ = std::move(retained);
-    if (inFlightContext_ == context && !activeKeys.contains(inFlight_)) {
+    const bool manualInFlight = std::any_of(manualVisible_.cbegin(), manualVisible_.cend(), [&](const auto& incident) {
+        return incident.context == context && incident.key == inFlight_;
+    });
+    if (inFlightContext_ == context && !activeKeys.contains(inFlight_) && !manualInFlight) {
         contextStatus_.remove(context);
         if (activeReply_) activeReply_->abort();
         chatgpt_.cancelAnalysis(); claude_.cancelAnalysis(); openrouter_.cancelAnalysis();
@@ -1542,12 +1556,19 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
 void IncidentAi::prepareManual(const QString& context, const QString& path) {
     const auto id = context + '\n' + path;
     const auto automatic = visible_.constFind(id);
+    const auto previous = manualVisible_.constFind(id);
+    const bool hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
+    const bool previousDraft = previous != manualVisible_.cend()
+        && std::any_of(previous->related.cbegin(), previous->related.cend(), [](const auto& signal) {
+            return signal.startsWith("Local YAML draft check:");
+        });
+    if (previous != manualVisible_.cend() && !hasDraftError && !previousDraft
+        && (inFlight_ == previous->key || queued_.contains(previous->key) || records_.contains(previous->key))) return;
     if (automatic != visible_.cend() && activeKeys_.value(context).contains(automatic->key)) {
         if (manualVisible_.remove(id)) emit changed();
         return;
     }
     const auto current = manualIncident(context, path);
-    const auto previous = manualVisible_.constFind(id);
     if (!current) {
         if (previous != manualVisible_.cend()) { manualVisible_.remove(id); emit changed(); }
         return;
@@ -1569,7 +1590,8 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     }
     const auto found = visible_.constFind(context + '\n' + path);
     const auto hasDraftError = draftError_ && draftError_->context == context && draftError_->path == path;
-    const auto recognized = !hasDraftError && found != visible_.cend() && activeKeys_.value(context).contains(found->key);
+    const auto recognized = enabled() && !hasDraftError && found != visible_.cend()
+        && activeKeys_.value(context).contains(found->key);
     const auto fallback = recognized ? std::optional<Incident>{} : manualIncident(context, path);
     if (!recognized && !fallback) return false;
     const auto incident = recognized ? *found : *fallback;
@@ -1590,6 +1612,7 @@ bool IncidentAi::refresh(const QString& context, const QString& path) {
     }
     queue_ = std::move(retained);
     Incident requested = incident; requested.manual = true;
+    contextStatus_.remove(context);
     queue_.prepend(requested); queued_.insert(requested.key);
     dispatch(); emit changed();
     return true;
@@ -1675,8 +1698,8 @@ void IncidentAi::dispatch() {
         if (next.path == "diagnostic/exec-env") {
             if (!diagnostic_ || diagnostic_->key != next.key) continue;
         } else if (next.manual && !activeKeys_.value(next.context).contains(next.key)) {
-            const auto current = manualIncident(next.context, next.path);
-            if (!current || current->key != next.key) continue;
+            const auto current = manualVisible_.constFind(next.context + '\n' + next.path);
+            if (current == manualVisible_.cend() || current->key != next.key) continue;
         }
         incident = next; found = true; break;
     }
@@ -1740,11 +1763,11 @@ void IncidentAi::complete(Incident incident, const QString& rawAnswer, const QSt
     inFlight_.clear(); inFlightContext_.clear();
     const auto currentThink = provider_ != "ollama" || thinkValue_.isUndefined()
         ? QString("default") : thinkValue_.toVariant().toString();
-    const auto currentManual = incident.manual ? manualIncident(incident.context, incident.path) : std::optional<Incident>{};
+    const auto currentManual = manualVisible_.constFind(incident.context + '\n' + incident.path);
     if ((incident.path == "diagnostic/exec-env" && (!diagnostic_ || diagnostic_->key != incident.key))
         || (incident.path != "diagnostic/exec-env" && !incident.manual && (!enabled() || !activeKeys_.value(incident.context).contains(incident.key)))
         || (incident.path != "diagnostic/exec-env" && incident.manual && !activeKeys_.value(incident.context).contains(incident.key)
-            && (!currentManual || currentManual->key != incident.key))
+            && (currentManual == manualVisible_.cend() || currentManual->key != incident.key))
         || provider_ != incident.provider || model() != incident.model || reasoning() != incident.reasoning
         || currentThink != incident.thinkSignature) { dispatch(); return; }
     const auto answer = QJsonDocument::fromJson(rawAnswer.toUtf8()).object();
@@ -1825,7 +1848,8 @@ QVariantMap IncidentAi::result(const QString& context, const QString& path) cons
     const auto manual = manualVisible_.constFind(context + '\n' + path);
     if (found == visible_.cend() && manual == manualVisible_.cend()) return {};
     const auto draft = draftError_ && draftError_->context == context && draftError_->path == path;
-    const auto& incident = (draft && manual != manualVisible_.cend()) || found == visible_.cend() ? *manual : *found;
+    const auto& incident = ((draft || !enabled()) && manual != manualVisible_.cend())
+        || found == visible_.cend() ? *manual : *found;
     const auto record = records_.constFind(incident.key);
     if (record != records_.cend() && record->created.secsTo(QDateTime::currentDateTimeUtc()) < cacheLifetimeSeconds
         && record->answer["attempted"] == true)
