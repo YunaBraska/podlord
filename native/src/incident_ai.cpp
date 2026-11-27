@@ -1462,7 +1462,7 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
     QJsonObject selected;
     for (const auto& value : snapshot->first) {
         const auto row = value.toObject();
-        if (row["path"] == path && !row["kubernetesEvent"].toBool()) { selected = row; break; }
+        if (row["path"] == path) { selected = row; break; }
     }
     const auto kind = selected["kind"].toString();
     const auto name = selected["name"].toString();
@@ -1474,6 +1474,8 @@ std::optional<IncidentAi::Incident> IncidentAi::manualIncident(const QString& co
     QString code;
     for (const auto& issue : selected["issue"].toString().split(',', Qt::SkipEmptyParts))
         if (knownCode(issue.trimmed())) { code = issue.trimmed(); break; }
+    if (code.isEmpty() && selected["kubernetesEvent"].toBool()
+        && knownCode(selected["eventReason"].toString())) code = selected["eventReason"].toString();
     if (code.isEmpty() && knownCode(selected["status"].toString())) code = selected["status"].toString();
     if (code.isEmpty()) code = "Manual review";
     QSet<QString> observations;

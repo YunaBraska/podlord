@@ -105,6 +105,34 @@ void scenario(const QString& name) {
     server.hold = name == "cancel" || name == "close" || name == "resolve" || name == "status_isolated";
     server.failure = name == "failure";
     server.malformed = name == "malformed";
+    if (name == "manual_event") {
+        podlord::IncidentAi ai(profile, endpoint);
+        require(QTest::qWaitFor([&] { return ai.models().contains("local-test:9b"); }, 2000)
+            && ai.setModel("local-test:9b") && QTest::qWaitFor([&] { return ai.ready(); }, 2000),
+            "Manual Event model unavailable");
+        auto snapshot = rows();
+        auto event = snapshot.at(3).toObject();
+        event["name"] = "pull-warning";
+        event["namespace"] = "team";
+        event["path"] = "/api/v1/namespaces/team/events/pull-warning";
+        event["eventType"] = "Warning";
+        event["eventReason"] = "FailedToRetrieveImagePullSecret";
+        event["eventTargetUid"] = "pod-one";
+        event["eventMessage"] = "token=private-value image pull failed";
+        snapshot.replace(3, event);
+        const auto path = event["path"].toString();
+        ai.observe("context", snapshot, "en");
+        ai.prepareManual("context", path);
+        require(server.chats == 0 && !ai.requestPreview("context", path).isEmpty(),
+            "Selected Event has no manual AI request");
+        require(ai.refresh("context", path) && QTest::qWaitFor([&] {
+            return server.chats == 1 && !ai.result("context", path).value("summary").toString().isEmpty();
+        }, 2000), "Selected Event analysis did not become visible");
+        require(server.submitted.contains("FailedToRetrieveImagePullSecret")
+            && server.submitted.contains("pod-one") && !server.submitted.contains("private-value"),
+            "Event analysis lost linked evidence or leaked its raw message");
+        return;
+    }
     if (name == "auto_backlog") {
         server.hold = true;
         podlord::IncidentAi ai(profile, endpoint);
