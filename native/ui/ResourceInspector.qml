@@ -89,7 +89,19 @@ Pane {
         SelectableText { objectName: "inspectorResourceName"; Layout.fillWidth: true; Layout.minimumWidth: 0; text: (workspace.overviewFields.find(field => field.id === "kind")?.value || "") + "/" + workspace.inspectorName; textFormat: Text.PlainText; font.bold: true; wrapMode: TextEdit.NoWrap; clip: true; Accessible.name: "Inspecting " + text }
         IconButton { objectName: "refreshInspector"; glyph: "Reset"; text: "Refresh detail"; enabled: !workspace.authenticationRequired; onClicked: workspace.refreshInspector() }
         IconButton { objectName: "deleteResource"; glyph: "Trash"; destructive: true; text: "Review deletion of " + workspace.inspectorName; enabled: workspace.canDeleteResource; onClicked: workspace.previewDeletion() }
-        IconButton { objectName: "preparePortForward"; glyph: "Service"; text: "Port forward " + workspace.inspectorName; visible: workspace.canPortForward; enabled: workspace.canPortForward; onClicked: workspace.preparePortForward() }
+        IconButton {
+            objectName: "preparePortForward"
+            readonly property bool forwarded: {
+                workspace.portForwards
+                return workspace.hasPortForwardPath(workspace.inspectorPath)
+            }
+            glyph: forwarded ? "External" : "Service"
+            activeIndicator: forwarded
+            glyphColor: forwarded ? workspace.appearanceColors.accent : workspace.appearanceColors.text
+            text: (forwarded ? "Manage port forward " : "Port forward ") + workspace.inspectorName
+            visible: workspace.canPortForward || forwarded
+            onClicked: workspace.preparePortForward()
+        }
         IconButton { objectName: "closeInspector"; glyph: "Close"; text: "Close inspector"; onClicked: workspace.closeInspector() }
     }
     Flow {

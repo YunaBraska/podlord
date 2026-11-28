@@ -398,22 +398,26 @@ bool run(const QString& scenario, const QString& configPath) {
         int row = -1;
         for (int index = 0; index < model->rowCount(); ++index)
             if (model->data(model->index(index, 0), Qt::UserRole).toString() == selected) { row = index; break; }
-        const auto cell = QString("cell_%1_0").arg(row);
+        const auto action = "forwardResource_" + selected;
         if (scenario == "resource_table_stopped") {
-            return row >= 0 && waitFor([&] { return named(qPrintable(cell)) && named(qPrintable(cell))->isVisible(); })
-                && podlord::test::clickVisible(window, cell, Qt::RightButton)
-                && waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "menuInspector") != nullptr; })
-                && !podlord::test::visibleItem(window->contentItem(), "menuPortForward") && upgrades == 0;
+            return row >= 0 && !podlord::test::visibleItem(window->contentItem(), action) && upgrades == 0;
         }
-        if (row < 0 || !waitFor([&] { return named(qPrintable(cell)) && named(qPrintable(cell))->isVisible(); })
-            || !podlord::test::clickVisible(window, cell, Qt::RightButton)
-            || !waitFor([&] { return named("menuPortForward") && named("menuPortForward")->isVisible(); })
-            || !click("menuPortForward") || workspace.inspectorPath() != selected) {
-            std::fputs("Resource table did not prepare its selected port forward.\n", stderr); return false;
+        const auto resourceFrame = qEnvironmentVariable("PODLORD_RESOURCE_TABLE_FRAME");
+        if (!resourceFrame.isEmpty()) {
+            QTest::mouseMove(window, {window->width() / 2, window->height() / 2});
+            if (!window->grabWindow().save(resourceFrame)) return false;
+        }
+        if (row < 0 || !waitFor([&] { return named(qPrintable(action)) && named(qPrintable(action))->isVisible(); })
+            || !click(qPrintable(action)) || workspace.inspectorPath() != selected) {
+            std::fputs("Resource table port-forward button did not prepare its selected target.\n", stderr); return false;
         }
     } else if (!click("preparePortForward")) { std::fputs("Forward prepare control could not be clicked.\n",stderr); return false; }
     auto* local = named("portForwardLocal"); auto* remote = named("portForwardRemote");
     if (!local || !remote) { std::fputs("Forward port controls are missing.\n",stderr); return false; }
+    if (!named("portForwardFromLabel") || named("portForwardFromLabel")->property("text") != "From port"
+        || !named("portForwardToLabel") || named("portForwardToLabel")->property("text") != "To port") {
+        std::fputs("Forward port labels are incorrect.\n", stderr); return false;
+    }
     if (scenario.startsWith("resource_table_") && remote->property("text").toString() != (service ? "80" : "8080")) {
         std::fputs("Resource table did not suggest the target TCP port.\n", stderr); return false;
     }
@@ -423,6 +427,8 @@ bool run(const QString& scenario, const QString& configPath) {
             std::fputs("Forward dialog did not finish opening.\n",stderr); return false;
         }
     }
+    const auto dialogFrame = qEnvironmentVariable("PODLORD_PORT_FORWARD_DIALOG_FRAME");
+    if (!dialogFrame.isEmpty() && !window->grabWindow().save(dialogFrame)) return false;
     QString localText = QString::number(localPort);
     if (scenario == "invalid") localText = "65536";
     if (scenario == "invalid_empty") localText.clear();
@@ -484,6 +490,13 @@ bool run(const QString& scenario, const QString& configPath) {
     }
     if (!waitFor([&] { return workspace.property("portForwards").toList().size() == 1 && !workspace.loading(); }, real ? 60000 : 15000)) {
         std::fprintf(stderr,"Forward transport did not become active: %s / %s\n",qPrintable(workspace.error()),qPrintable(workspace.portForwardError())); return false;
+    }
+    if (scenario.startsWith("resource_table_")) {
+        const auto action = "forwardResource_" + selected;
+        if (!waitFor([&] { return named(qPrintable(action)) && named(qPrintable(action))->property("activeIndicator").toBool(); })
+            || !named("preparePortForward") || !named("preparePortForward")->property("activeIndicator").toBool()) {
+            std::fputs("Active port-forward icons did not update in the table and inspector.\n", stderr); return false;
+        }
     }
     if (scenario == "switch") {
         if (!workspace.openContext(source->contexts.last().id) || !waitFor([&] { return !workspace.busy(); }) || !workspace.property("portForwards").toList().isEmpty()) return false;

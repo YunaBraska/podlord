@@ -45,13 +45,13 @@ TableLayouts defaultTableLayouts(const TableSchemas& schemas) {
         TableLayout layout;
         for (const auto& id : table.value()) layout.append({id});
         if (table.key()=="resource" && table.value().contains("status") && table.value().contains("createdAt")) {
-            const QStringList order{"status","kind","name","namespace","cluster","cpu","memory","storage","createdAt","ready","restarts","node","image","owner","issue","uid"};
-            const QMap<QString,int> widths{{"status",140},{"kind",150},{"name",280},{"namespace",150},{"cluster",180},{"cpu",90},{"memory",95},{"storage",95},{"createdAt",90},{"ready",90},{"restarts",95},{"node",190},{"image",230},{"owner",220},{"issue",240},{"uid",280}};
+            const QStringList order{"portForward","status","kind","name","namespace","cluster","cpu","memory","storage","createdAt","ready","restarts","node","image","owner","issue","uid"};
+            const QMap<QString,int> widths{{"portForward",52},{"status",140},{"kind",150},{"name",280},{"namespace",150},{"cluster",180},{"cpu",90},{"memory",95},{"storage",95},{"createdAt",90},{"ready",90},{"restarts",95},{"node",190},{"image",230},{"owner",220},{"issue",240},{"uid",280}};
             std::stable_sort(layout.begin(),layout.end(),[&](const auto& a,const auto& b) {
                 const auto rank=[&](const QString& id) { const auto index=order.indexOf(id); return index<0 ? order.size() : index; };
                 return rank(a.id)<rank(b.id);
             });
-            for (auto& column:layout) { column.width=widths.value(column.id,170); column.visible=column.id!="issue" && column.id!="uid"; }
+            for (auto& column:layout) { column.width=widths.value(column.id,170); column.visible=column.id!="issue" && column.id!="uid"; column.pinned=column.id=="portForward"; }
         }
         if (table.key() == "event" && table.value().contains("eventTargetName")) {
             const QStringList order{"eventType", "name", "eventReason", "owner", "namespace", "eventMessage", "eventTime", "eventCount", "eventTargetName"};
@@ -129,6 +129,12 @@ Result<TableLayouts> TableLayoutStore::load() const {
     TableLayouts result;
     for (auto table = schemas_.cbegin(); table != schemas_.cend(); ++table) {
         auto layout = decode(values.value(table.key()), table.value());
+        if (!layout && table.key() == "resource" && table.value().contains("portForward")) {
+            auto olderFields = table.value();
+            olderFields.removeAll("portForward");
+            layout = decode(values.value(table.key()), olderFields);
+            if (layout) layout->prepend({"portForward", true, true, 52});
+        }
         if (!layout && table.key() == "inspectorLink" && table.value().contains("resource") && table.value().contains("message")) {
             // Preserve widths, visibility, pins and relative order from older Links layouts.
             layout = decode(values.value(table.key()), {"from", "relation", "to", "namespace", "status"});

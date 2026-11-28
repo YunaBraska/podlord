@@ -246,7 +246,7 @@ if(BUILD_TESTING)
         add_test(NAME native.ui.table_${scenario} COMMAND workspace_ui_test table_${scenario})
         set_tests_properties(native.ui.table_${scenario} PROPERTIES TIMEOUT 45 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
-    foreach(scenario reject_obsolete_format reference_defaults reference_saved event_time_upgrade
+    foreach(scenario reject_obsolete_format reference_defaults reference_saved event_time_upgrade resource_forward_upgrade
             )
         add_test(NAME native.table_layout.${scenario} COMMAND table_layout_test ${scenario})
         set_tests_properties(native.table_layout.${scenario} PROPERTIES TIMEOUT 30)

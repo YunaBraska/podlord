@@ -38,11 +38,21 @@ bool Workspace::canPortForwardPath(const QString& path) const {
         && row["apiVersion"] == "v1" && !row["namespace"].toString().isEmpty() && !row["uid"].toString().isEmpty()
         && (row["kind"] == "Service" || (row["kind"] == "Pod" && row["status"] == "Running"));
 }
+bool Workspace::hasPortForwardPath(const QString& path) const {
+    if (path.isEmpty() || active_.isEmpty()) return false;
+    const auto uid = client_.resource(active_, path)["uid"].toString();
+    if (uid.isEmpty()) return false;
+    for (const auto& value : client_.portForwards(active_)) {
+        const auto forward = value.toMap();
+        if (forward["path"] == path && forward["uid"] == uid) return true;
+    }
+    return false;
+}
 bool Workspace::preparePortForward() {
     return preparePortForwardPath(inspectorPath());
 }
 bool Workspace::preparePortForwardPath(const QString& path) {
-    if (!canPortForwardPath(path) || (path != inspectorPath() && !inspectPath(path))) return false;
+    if ((!canPortForwardPath(path) && !hasPortForwardPath(path)) || (path != inspectorPath() && !inspectPath(path))) return false;
     const auto row = client_.resource(active_, path);
     int remote = row["defaultTcpPort"].toInt(8080);
     const auto spec = client_.document(active_, path)["spec"].toObject();
@@ -66,7 +76,11 @@ bool Workspace::preparePortForwardPath(const QString& path) {
         }
     }
     portForwardTarget_ = {{"session", active_}, {"path", path}, {"uid", row["uid"].toString()}, {"kind", row["kind"].toString()},
-        {"name", row["name"].toString()}, {"namespace", row["namespace"].toString()}, {"title", title()}, {"localPort", local}, {"remotePort", remote}, {"existingId", existing}};
+        {"name", row["name"].toString()}, {"namespace", row["namespace"].toString()}, {"title", title()},
+        {"clusterColor", appearanceIdentity(appearance_, row["cluster"].toString())},
+        {"namespaceColor", appearanceIdentity(appearance_, row["namespace"].toString())},
+        {"kindColor", appearanceIdentity(appearance_, row["kind"].toString())},
+        {"localPort", local}, {"remotePort", remote}, {"existingId", existing}};
     error_.clear(); emit changed(); return true;
 }
 bool Workspace::cancelPreparedPortForward() { portForwardTarget_.clear(); emit changed(); return true; }

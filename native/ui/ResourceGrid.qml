@@ -299,7 +299,8 @@ ColumnLayout {
             required property int column
             hoverEnabled: true
             readonly property bool pinned: TableView.view === pinnedHeader
-            readonly property bool sortable: grid.sortableColumns < 0 || column < grid.sortableColumns
+            readonly property bool forwardColumn: grid.prefix === "resource" && model.display === "Port"
+            readonly property bool sortable: !forwardColumn && (grid.sortableColumns < 0 || column < grid.sortableColumns)
             readonly property string heading: grid.prefix === "inspectorLink" && column === 5 ? workspace.uiText["inspector.resource"]
                 : grid.prefix === "inspectorLink" && column === 6 ? workspace.uiText["inspector.messages"] : model.display
             objectName: (pinned ? "pinnedHeader_" : grid.prefix === "resource" ? "header_" : grid.prefix + "Header_") + column
@@ -308,7 +309,7 @@ ColumnLayout {
             implicitHeight: Math.max(38, Math.ceil(workspace.textSizes.body * 1.3) + 12)
             font.pixelSize: workspace.textSizes.body
             font.bold: true
-            leftPadding: 10; rightPadding: 10
+            leftPadding: forwardColumn ? 20 : 10; rightPadding: forwardColumn ? 20 : 10
             background: Rectangle {
                 color: parent.down || parent.hovered ? grid.colors.raised : grid.colors.panel
                 border.color: parent.activeFocus ? grid.colors.accent : grid.colors.border
@@ -319,10 +320,10 @@ ColumnLayout {
                     Accessible.ignored: true
                     visible: ["alert", "diagnostic", "audit"].indexOf(grid.prefix) < 0
                     Layout.preferredWidth: 12; Layout.preferredHeight: 12
-                    kind: ({Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
+                    kind: ({Port:"Service",Status:"Event",Kind:"CustomResourceDefinition",Name:"Pod",Namespace:"Namespace",Cluster:"Cluster",CPU:"Node",Memory:"ConfigMap",Storage:"PersistentVolume",Age:"CronJob",Ready:"Service",Restarts:"Event",Node:"Node",Image:"ConfigMap",Owner:"Deployment"})[model.display] || "Event"
                     fill: grid.colors.accent
                 }
-                Label { Layout.fillWidth: true; text: heading; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
+                Label { Layout.fillWidth: true; visible: !parent.parent.forwardColumn; text: heading; textFormat: Text.PlainText; font: parent.parent.font; color: grid.colors.accent; elide: Text.ElideRight; Accessible.ignored: true }
                 SelectableText { visible: grid.sortColumn === column; text: grid.sortDirection.toLowerCase().indexOf("asc") === 0 ? "▲" : "▼"; color: grid.colors.accent; font.pixelSize: workspace.textSizes.small; Accessible.ignored: true }
             }
             focusPolicy: sortable ? Qt.StrongFocus : Qt.NoFocus

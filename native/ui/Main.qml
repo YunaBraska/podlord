@@ -233,20 +233,27 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         property bool stopMode: !!workspace.portForwardTarget.existingId
         contentItem: ColumnLayout {
-            SelectableText { Layout.fillWidth: true; text: (workspace.portForwardTarget.title || "") + "\n" + (workspace.portForwardTarget.namespace || "") + " / " + (workspace.portForwardTarget.kind || "") + " / " + (workspace.portForwardTarget.name || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; Accessible.name: "Port-forward target: " + text }
-            SelectableText { Layout.fillWidth: true; text: "Only this device can access 127.0.0.1. Closing this tab stops its forwards."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; text: workspace.portForwardTarget.title || ""; visible: text !== ""; color: workspace.portForwardTarget.clusterColor || workspace.appearanceColors.text }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                SelectableText { text: workspace.portForwardTarget.namespace || ""; color: workspace.portForwardTarget.namespaceColor || workspace.appearanceColors.text }
+                SelectableText { text: "/" }
+                SelectableText { text: workspace.portForwardTarget.kind || ""; color: workspace.portForwardTarget.kindColor || workspace.appearanceColors.text }
+                SelectableText { text: "/" }
+                SelectableText { Layout.fillWidth: true; Layout.minimumWidth: 0; text: workspace.portForwardTarget.name || ""; color: workspace.appearanceColors.text }
+            }
             RowLayout {
                 visible: !portForwardDialog.stopMode
-                SelectableText { text: "Local TCP port" }
+                SelectableText { objectName: "portForwardFromLabel"; text: "From port" }
                 TextField { id: forwardLocal; objectName: "portForwardLocal"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Local TCP port, 1 through 65535" }
             }
             RowLayout {
                 visible: !portForwardDialog.stopMode
-                SelectableText { text: "Target TCP port" }
+                SelectableText { objectName: "portForwardToLabel"; text: "To port" }
                 TextField { id: forwardRemote; objectName: "portForwardRemote"; Layout.fillWidth: true; inputMethodHints: Qt.ImhDigitsOnly; Accessible.name: "Pod or Service TCP port, 1 through 65535" }
             }
-            SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "This tab already has a forward for this resource. Stop it to release the local port."; textFormat: Text.PlainText; wrapMode: Text.Wrap }
-            SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " -> target:" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
+            SelectableText { Layout.fillWidth: true; visible: portForwardDialog.stopMode; text: "127.0.0.1:" + workspace.portForwardTarget.localPort + " → " + workspace.portForwardTarget.kind + ":" + workspace.portForwardTarget.remotePort; textFormat: Text.PlainText; wrapMode: Text.Wrap }
             SelectableText { Layout.fillWidth: true; text: workspace.error; visible: text !== ""; textFormat: Text.PlainText; wrapMode: Text.Wrap }
         }
         footer: DialogButtonBox {
@@ -1028,7 +1035,6 @@ ApplicationWindow {
                     SplitView.fillHeight: visible; SplitView.minimumHeight: visible ? Math.min(120, workspaceSplit.height * 0.25) : 0
                 ResourceGrid {
                     id: resourceGrid
-                    property string menuPath: ""
                     anchors.fill: parent
                     visible: workspace.workspacePage === "resources"
                     inlineTools: false
@@ -1040,11 +1046,27 @@ ApplicationWindow {
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }
                     onInspectRequested: function(path) { workspace.inspectPath(path) }
-                    contextActions: workspace.canPortForwardPath(menuPath) ? [tablePortForward] : []
-                    onContextRequested: function(path) { menuPath = path }
+                    accessoryColumns: [workspace.resourceColumns.find(column => column.id === "portForward")?.column ?? -1]
+                    accessibleAccessoryCells: true
+                    cellAccessory: Component {
+                        IconButton {
+                            readonly property string path: parent.identity
+                            readonly property bool forwarded: {
+                                workspace.portForwards
+                                return workspace.hasPortForwardPath(path)
+                            }
+                            objectName: "forwardResource_" + path
+                            anchors.centerIn: parent
+                            glyph: forwarded ? "External" : "Service"
+                            activeIndicator: forwarded
+                            glyphColor: forwarded ? workspace.appearanceColors.accent : workspace.appearanceColors.text
+                            text: forwarded ? "Manage port forward" : "Port forward"
+                            visible: forwarded || workspace.canPortForwardPath(path)
+                            onClicked: workspace.preparePortForwardPath(path)
+                        }
+                    }
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
-                    Action { id: tablePortForward; objectName: "menuPortForward"; text: "Port forward"; onTriggered: workspace.preparePortForwardPath(resourceGrid.menuPath) }
                 }
                 Item {
                     anchors.fill: parent

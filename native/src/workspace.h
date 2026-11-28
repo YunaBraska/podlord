@@ -68,8 +68,8 @@ public:
         int sortColumn = -1;
     };
     explicit ResourceTable(QObject* parent = nullptr,
-                           QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"},
-                           QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID"}, QString identityField = "path", bool preserveInputOrder = false);
+                           QStringList fields = {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid", "portForward"},
+                           QStringList captions = {"Name", "Kind", "Namespace", "Status", "Node", "Image", "Cluster", "CPU", "Memory", "Storage", "Age", "Ready", "Restarts", "Owner", "Issue", "UID", "Port"}, QString identityField = "path", bool preserveInputOrder = false);
     int rowCount(const QModelIndex& parent = {}) const override;
     int columnCount(const QModelIndex& parent = {}) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
@@ -374,6 +374,7 @@ public:
     Q_INVOKABLE bool stopContainerTerminal();
     bool canPortForward() const;
     Q_INVOKABLE bool canPortForwardPath(const QString& path) const;
+    Q_INVOKABLE bool hasPortForwardPath(const QString& path) const;
     QVariantMap portForwardTarget() const { return portForwardTarget_; }
     QVariantList portForwards() const { return client_.portForwards(active_); }
     QAbstractItemModel* portTable() { return &ports_; }

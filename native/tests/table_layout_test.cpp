@@ -35,6 +35,19 @@ bool scenario(const QString& name) {
     const auto profile = temporary.filePath("profile"), path = QDir(profile).filePath("table-layouts.json");
     const TableLayoutStore store(profile, schemas);
     auto layout = defaults.value("resource");
+    if (name == "resource_forward_upgrade") {
+        const TableSchemas expanded{{"resource", {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid", "portForward"}}};
+        const TableLayoutStore upgraded(profile, expanded);
+        auto old = defaultTableLayouts({{"resource", {"name", "kind", "namespace", "status", "node", "image", "cluster", "cpu", "memory", "storage", "createdAt", "ready", "restarts", "owner", "issue", "uid"}}}).value("resource");
+        old[0].width = 205;
+        old[2].pinned = true;
+        const auto bytes = QJsonDocument(QJsonObject{{"version", 10}, {"layouts", QJsonObject{{"resource", input(old)}}}}).toJson();
+        if (!QDir().mkpath(profile) || !write(path, bytes)) return false;
+        const auto loaded = upgraded.load();
+        if (!std::holds_alternative<TableLayouts>(loaded)) return false;
+        auto expected = old; expected.prepend({"portForward", true, true, 52});
+        return std::get<TableLayouts>(loaded).value("resource") == expected && read(path) == bytes;
+    }
     if (name == "inspector_link_upgrade") {
         const TableSchemas expanded{{"inspectorLink", {"from", "relation", "to", "namespace", "status", "resource", "message"}}};
         const TableLayoutStore upgraded(profile, expanded);
