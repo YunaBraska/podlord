@@ -347,7 +347,7 @@ Pane {
                     y: (grid.height - height) / 2
                     visible: radarPane.expanded && grid.count === 0 && grid.height >= implicitHeight + 8
                     width: Math.min(320, parent.width - 24)
-                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.loading ? "Loading resources..." : workspace.totalResourceCount === 0 ? "No resources to display." : "No matching resources."
+                    text: workspace.currentSession === "" ? "Import a kubeconfig and open a context." : workspace.authenticationRunning ? "Signing in…" : workspace.loading ? "Loading resources..." : workspace.totalResourceCount === 0 ? "No resources to display." : "No matching resources."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter

@@ -163,9 +163,17 @@ public:
                         || mode_ == "discovery_bad_json" && path == "/.well-known/openid-configuration"
                         || mode_ == "browser_jwks_bad_json" && path == "/jwks"
                         ? QByteArray("{invalid") : QJsonDocument(response).toJson(QJsonDocument::Compact);
-                    socket->write("HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
-                        + QByteArray::number(body.size()) + "\r\n\r\n" + body);
-                    socket->disconnectFromHost();
+                    const auto reply = "HTTP/1.1 " + QByteArray::number(status) + " Result\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "
+                        + QByteArray::number(body.size()) + "\r\n\r\n" + body;
+                    if (mode_ == "browser_slow_token" && path == "/token") {
+                        QTimer::singleShot(21000, socket, [socket, reply] {
+                            socket->write(reply);
+                            socket->disconnectFromHost();
+                        });
+                    } else {
+                        socket->write(reply);
+                        socket->disconnectFromHost();
+                    }
                 });
                 connect(socket, &QTcpSocket::disconnected, socket, &QObject::deleteLater);
             }
@@ -531,6 +539,8 @@ bool browserFlow(const QString& scenario) {
         if (scenario == "browser_loopback_de" && (!callback.contains("lang=\"de\"")
             || !callback.contains("PodLord schließt sie ab"))) return false;
     } else if (!QDesktopServices::openUrl(redirect)) return false;
+    if (scenario == "browser_slow_token"
+        && (login.instruction() != "Completing sign-in…" || login.browserAvailable())) return false;
     if (scenario == "browser_bad_state" || scenario == "browser_duplicate_state") {
         QTest::qWait(50);
         if (result.has_value() || identity.tokenRequests != 0) return false;
@@ -538,15 +548,19 @@ bool browserFlow(const QString& scenario) {
         if (!QDesktopServices::openUrl(redirect)) return false;
     }
     if ((scenario == "browser_replay" || scenario == "browser_google_replay") && !QDesktopServices::openUrl(redirect)) return false;
-    if (!waitFor([&] { return result.has_value(); })) return false;
+    if (!waitFor([&] { return result.has_value(); }, scenario == "browser_slow_token" ? 30000 : 16000)) return false;
     if (scenario == "browser_denied" || scenario == "browser_missing_code" || scenario == "browser_space_code"
         || scenario == "browser_control_code" || scenario == "browser_empty_code" || scenario == "browser_duplicate_error"
         || scenario == "browser_long_code" || scenario == "browser_duplicate_code" || scenario == "browser_code_and_error")
         return std::holds_alternative<podlord::Failure>(*result) && identity.tokenRequests == 0 && identity.jwksRequests == 0;
     if (scenario == "browser_bad_nonce")
         return std::holds_alternative<podlord::Failure>(*result) && identity.tokenRequests == 1 && identity.jwksRequests == 1;
-    if (scenario == "browser_jwks_server_error" || scenario == "browser_jwks_bad_json")
-        return std::holds_alternative<podlord::Failure>(*result) && identity.tokenRequests == 1 && identity.jwksRequests == 1;
+    if (scenario == "browser_jwks_server_error" || scenario == "browser_jwks_bad_json") {
+        const auto* failure = std::get_if<podlord::Failure>(&*result);
+        return failure && identity.tokenRequests == 1 && identity.jwksRequests == 1
+            && (scenario != "browser_jwks_server_error"
+                || (failure->message.contains("HTTP 503") && failure->message.contains("token verification")));
+    }
     if (scenario == "browser_missing_id_token" || scenario == "browser_missing_access_token"
         || scenario == "browser_short_lifetime" || scenario == "browser_long_lifetime")
         return std::holds_alternative<podlord::Failure>(*result) && identity.tokenRequests == 1 && identity.jwksRequests == 0;
@@ -607,6 +621,24 @@ bool workspaceOidc(const QString& scenario) {
     }
     if (!waitFor([&] { return browser.opened == 1 && workspace.authenticationRunning(); })
         || !workspace.authenticationRequired() || button->isVisible()) return false;
+    if (scenario == "workspace_auto_success") {
+        auto* instruction = find(find, window->contentItem(), "authenticationInstruction");
+        auto* cancel = find(find, window->contentItem(), "cancelAuthentication");
+        auto* browserButton = find(find, window->contentItem(), "openAuthenticationBrowser");
+        auto* emptyRadar = find(find, window->contentItem(), "emptyRadar");
+        if (!instruction || !cancel || !browserButton || !instruction->isVisible()
+            || !cancel->isVisible() || !browserButton->isVisible() || !emptyRadar
+            || emptyRadar->property("text").toString() != "Signing in…") return false;
+        const auto center = [window](QQuickItem* item) {
+            return item->mapToItem(window->contentItem(), QPointF(0, item->height() / 2)).y();
+        };
+        if (qAbs(center(instruction) - center(cancel)) > 8
+            || qAbs(center(instruction) - center(browserButton)) > 8) return false;
+        window->setWidth(420);
+        if (!waitFor([&] { return window->contentItem()->width() == 420; }, 1000)
+            || !waitFor([&] { return instruction->width() >= 160; }, 1000)
+            || cancel->mapToItem(window->contentItem(), QPointF(cancel->width(), 0)).x() > window->width()) return false;
+    }
     const QUrlQuery authorization(browser.last);
     identity.expectedRedirect = authorization.queryItemValue("redirect_uri", QUrl::FullyDecoded);
     identity.expectedNonce = authorization.queryItemValue("nonce", QUrl::FullyDecoded);

@@ -281,7 +281,7 @@ void NativeOidcLogin::send(const QUrl& url, const QByteArray& body, std::functio
     if (done_ || !safeUrl(url)) { finish(invalidLogin()); return; }
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
-    request.setTransferTimeout(20000);
+    request.setTransferTimeout(60000);
     request.setRawHeader("Accept", "application/json");
     if (!body.isEmpty()) request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
     auto* reply = body.isEmpty() ? network_.get(request) : network_.post(request, body);
@@ -289,15 +289,26 @@ void NativeOidcLogin::send(const QUrl& url, const QByteArray& body, std::functio
     connect(reply, &QNetworkReply::downloadProgress, this, [reply](qint64 received, qint64) {
         if (received > 65536) { reply->setProperty("oversized", true); reply->abort(); }
     });
-    connect(reply, &QNetworkReply::finished, this, [this, reply, done = std::move(done)] {
+    const QString phase = url == tokenEndpoint_ ? "token exchange" : url == jwksEndpoint_ ? "token verification"
+        : body.isEmpty() ? "provider discovery" : "device authorization";
+    connect(reply, &QNetworkReply::finished, this, [this, reply, phase, done = std::move(done)] {
         if (done_ || pending_ != reply) { reply->deleteLater(); return; }
         pending_ = nullptr;
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const auto bytes = reply->read(65537);
+        const auto networkError = reply->error();
+        const auto bytes = reply->isOpen() ? reply->read(65537) : QByteArray{};
         const bool failed = reply->property("oversized").toBool() || bytes.size() > 65536 || reply->bytesAvailable() > 0
-            || status < 200 || status >= 500 || (reply->error() != QNetworkReply::NoError && status < 400);
+            || status < 200 || status >= 500 || (networkError != QNetworkReply::NoError && status < 400);
         reply->deleteLater();
-        if (failed) { finish(Failure{StoreError::ReadFailed, "OIDC sign-in could not contact the identity provider. Confirm another attempt to retry."}); return; }
+        if (failed) {
+            const QString message = networkError == QNetworkReply::TimeoutError
+                ? "Sign-in timed out during " + phase + ". Retry login."
+                : status >= 500 ? "Identity provider returned HTTP " + QString::number(status)
+                    + " during " + phase + ". Retry login."
+                : "Sign-in failed during " + phase + ". Retry login.";
+            finish(Failure{StoreError::ReadFailed, message});
+            return;
+        }
         QJsonParseError error;
         const auto document = QJsonDocument::fromJson(bytes, &error);
         if (error.error != QJsonParseError::NoError || !document.isObject()) { finish(invalidLogin()); return; }
@@ -407,7 +418,7 @@ void NativeOidcLogin::requestDevice(const QUrl& endpoint) {
         deviceCode_ = code; interval_ = std::max(5, interval);
         deadline_ = QDateTime::currentDateTimeUtc().addSecs(lifetime);
         browserUrl_ = complete.isEmpty() ? verification : complete;
-        instruction_ = "Open " + verification.toString() + " in your browser and enter code " + userCode + ".";
+        instruction_ = "Sign-in code: " + userCode + " · " + verification.toString();
         emit instructionChanged();
         if (done_) return;
         openBrowser();
@@ -461,6 +472,9 @@ void NativeOidcLogin::handleRedirect(const QUrl& url) {
         {"redirect_uri", redirectUri_.toString()}, {"client_id", oidc.clientId}, {"code_verifier", codeVerifier_}};
     if (!oidc.clientSecret.isEmpty()) fields.append({"client_secret", oidc.clientSecret});
     codeVerifier_.clear();
+    browserUrl_.clear();
+    instruction_ = "Completing sign-in…";
+    emit instructionChanged();
     send(tokenEndpoint_, form(fields), [this](int status, const QJsonObject& object) { acceptToken(status, object); });
 }
 void NativeOidcLogin::poll() {

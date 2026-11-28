@@ -1271,7 +1271,7 @@ if(BUILD_TESTING)
             signed_jwks_long_exponent signed_jwks_zero_exponent signed_jwks_bad_exponent signed_jwks_empty_exponent
             signed_jwks_leading_zero)
         list(APPEND oidc_scenarios workspace_auto_success workspace_auto_failure workspace_auto_token_rejected workspace_auto_expiry workspace_confirmation
-            browser_valid browser_loopback_success browser_loopback_de browser_bad_state browser_bad_nonce browser_denied browser_replay
+            browser_valid browser_slow_token browser_loopback_success browser_loopback_de browser_bad_state browser_bad_nonce browser_denied browser_replay
             browser_access_token browser_cancel browser_missing_auth browser_jwks_server_error browser_jwks_bad_json
             browser_missing_id_token browser_missing_access_token browser_short_lifetime browser_long_lifetime
             browser_with_secret browser_wrong_path browser_fragment browser_empty_code browser_control_code browser_duplicate_error
@@ -1282,11 +1282,16 @@ if(BUILD_TESTING)
         set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 25
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic")
     endforeach()
+    set_tests_properties(native.authentication.oidc_browser_slow_token PROPERTIES TIMEOUT 35)
     foreach(scenario live_zitadel_device live_zitadel_invalid_client live_zitadel_browser
             live_zitadel_device_full live_zitadel_device_id_token_full live_zitadel_browser_full)
         add_test(NAME native.authentication.oidc_${scenario} COMMAND native-oidc-test ${scenario})
-        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 20 SKIP_RETURN_CODE 77
+        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES TIMEOUT 90 SKIP_RETURN_CODE 77
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Basic" LABELS real-idp)
+    endforeach()
+    foreach(scenario workspace_auto_success workspace_auto_failure workspace_auto_token_rejected workspace_auto_expiry
+            workspace_confirmation live_zitadel_browser live_zitadel_browser_full)
+        set_tests_properties(native.authentication.oidc_${scenario} PROPERTIES RESOURCE_LOCK oidc_loopback_callback)
     endforeach()
     foreach(scenario success authenticated_transport_failure cancel_confirmation cancel_running invalid_json array_json wrong_kind wrong_status token_type certificate_type key_type expiration_type bad_certificate bad_key wrong_version missing_status no_credentials bad_token expired bad_date failed_exit failed_start large_output v1beta1 relative_command invalid_mode requires_stdin invalid_args invalid_env mixed_credentials compact_inspector_401 retry_401 expiry cache_reopen restore shared_running shared_401 shutdown_running)
         add_test(NAME native.authentication.${scenario} COMMAND authentication_ui_test ${scenario})
