@@ -142,7 +142,7 @@ bool run(const QString& scenario, const QString& configPath) {
     const QString servicePath = "/api/v1/namespaces/" + ns + "/services/" + serviceName;
     const QString selected = service ? servicePath : podPath;
     QJsonObject pod{{"apiVersion", "v1"}, {"kind", "Pod"}, {"metadata", QJsonObject{{"name", podName}, {"namespace", ns}, {"uid", "pod-uid"}, {"resourceVersion", "1"}, {"labels", QJsonObject{{"app", "echo"}}}}},
-        {"status", QJsonObject{{"phase", scenario == "terminal" ? "Succeeded" : "Running"}}},
+        {"status", QJsonObject{{"phase", scenario == "terminal" || scenario == "resource_table_stopped" ? "Succeeded" : "Running"}}},
         {"spec", QJsonObject{{"containers", QJsonArray{QJsonObject{{"name", "echo"}, {"image", "external-test"}, {"ports", QJsonArray{QJsonObject{{"name", "http"}, {"containerPort", 8080}}}}}}}}}};
     QJsonObject svc{{"apiVersion", "v1"}, {"kind", "Service"}, {"metadata", QJsonObject{{"name", serviceName}, {"namespace", ns}, {"uid", "service-uid"}, {"resourceVersion", "1"}}},
         {"spec", QJsonObject{{"selector", scenario == "selector" ? QJsonObject{} : QJsonObject{{"app", "echo"}}}, {"ports", QJsonArray{QJsonObject{{"port", 80}, {"targetPort", scenario == "service_numeric" ? QJsonValue(8080) : QJsonValue("http")}, {"protocol", scenario == "udp" ? "UDP" : "TCP"}}}}}}};
@@ -364,7 +364,7 @@ bool run(const QString& scenario, const QString& configPath) {
     if (!waitFor([&] { return !workspace.busy() && workspace.table()->rowCount() >= 2 && !workspace.loading(); }, real ? 120000 : 15000)) {
         std::fprintf(stderr,"Forward setup resource cache did not settle: rows=%d, %s / %s\n",workspace.table()->rowCount(),qPrintable(workspace.error()),qPrintable(workspace.status())); return false;
     }
-    if (!workspace.inspectPath(selected) || !waitFor([&] { return (scenario == "pod_get_forbidden" || workspace.canEditYaml()) && !workspace.loading(); }, real ? 60000 : 15000)) {
+    if (!scenario.startsWith("resource_table_") && (!workspace.inspectPath(selected) || !waitFor([&] { return (scenario == "pod_get_forbidden" || workspace.canEditYaml()) && !workspace.loading(); }, real ? 60000 : 15000))) {
         std::fprintf(stderr,"Forward setup did not obtain its fresh target: %s / %s\n",qPrintable(workspace.error()),qPrintable(workspace.inspectorStatus())); return false;
     }
     const auto named = [&](const char* name) -> QQuickItem* {
@@ -387,14 +387,36 @@ bool run(const QString& scenario, const QString& configPath) {
     const auto click = [&](const char* name) {
         return podlord::test::clickVisible(window, QString::fromLatin1(name));
     };
-    if (!named("preparePortForward")) { std::fputs("Missing native Inspector port-forward action.\n", stderr); return false; }
+    if (!scenario.startsWith("resource_table_") && !named("preparePortForward")) { std::fputs("Missing native Inspector port-forward action.\n", stderr); return false; }
     if (scenario == "terminal") return !named("preparePortForward")->isEnabled() && upgrades == 0;
     QTcpServer reserve;
     if (!reserve.listen(QHostAddress::LocalHost)) return false;
     const auto localPort = reserve.serverPort();
-    if (!click("preparePortForward")) { std::fputs("Forward prepare control could not be clicked.\n",stderr); return false; }
+    if (scenario.startsWith("resource_table_")) {
+        if (!workspace.inspectorPath().isEmpty() || !workspace.setWorkspacePage("resources")) return false;
+        auto* model = workspace.visibleResourceTable();
+        int row = -1;
+        for (int index = 0; index < model->rowCount(); ++index)
+            if (model->data(model->index(index, 0), Qt::UserRole).toString() == selected) { row = index; break; }
+        const auto cell = QString("cell_%1_0").arg(row);
+        if (scenario == "resource_table_stopped") {
+            return row >= 0 && waitFor([&] { return named(qPrintable(cell)) && named(qPrintable(cell))->isVisible(); })
+                && podlord::test::clickVisible(window, cell, Qt::RightButton)
+                && waitFor([&] { return podlord::test::visibleItem(window->contentItem(), "menuInspector") != nullptr; })
+                && !podlord::test::visibleItem(window->contentItem(), "menuPortForward") && upgrades == 0;
+        }
+        if (row < 0 || !waitFor([&] { return named(qPrintable(cell)) && named(qPrintable(cell))->isVisible(); })
+            || !podlord::test::clickVisible(window, cell, Qt::RightButton)
+            || !waitFor([&] { return named("menuPortForward") && named("menuPortForward")->isVisible(); })
+            || !click("menuPortForward") || workspace.inspectorPath() != selected) {
+            std::fputs("Resource table did not prepare its selected port forward.\n", stderr); return false;
+        }
+    } else if (!click("preparePortForward")) { std::fputs("Forward prepare control could not be clicked.\n",stderr); return false; }
     auto* local = named("portForwardLocal"); auto* remote = named("portForwardRemote");
     if (!local || !remote) { std::fputs("Forward port controls are missing.\n",stderr); return false; }
+    if (scenario.startsWith("resource_table_") && remote->property("text").toString() != (service ? "80" : "8080")) {
+        std::fputs("Resource table did not suggest the target TCP port.\n", stderr); return false;
+    }
     if (real || scenario == "form_refresh") {
         auto* dialog = window->findChild<QObject*>(QStringLiteral("portForwardDialog"));
         if (!dialog || !waitFor([&] { return dialog->property("opened").toBool(); })) {

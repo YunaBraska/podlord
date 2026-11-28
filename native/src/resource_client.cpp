@@ -118,6 +118,18 @@ QJsonObject summary(const QJsonObject& object, const QString& path, const QStrin
         {"uid", metadata["uid"]}, {"resourceVersion", metadata["resourceVersion"]},
         {"createdAt", metadata["creationTimestamp"]}, {"status", status}, {"activity", false}, {"problemSeverity", 0},
         {"node", spec["nodeName"]}, {"image", images.join(", ")}, {"containers", containers}, {"owners", owners}};
+    if (version == "v1" && (kind == "Pod" || kind == "Service")) {
+        const auto ports = kind == "Service" ? spec["ports"].toArray()
+            : (spec["containers"].toArray().isEmpty() ? QJsonArray{} : spec["containers"].toArray().first().toObject()["ports"].toArray());
+        for (const auto& value : ports) {
+            const auto port = value.toObject();
+            const auto number = port[kind == "Service" ? "port" : "containerPort"].toInteger(-1);
+            if (number > 0 && number <= 65535 && port["protocol"].toString("TCP") == "TCP") {
+                result["defaultTcpPort"] = number;
+                break;
+            }
+        }
+    }
     if (version.startsWith("cluster.x-k8s.io/") && kind == "Cluster") {
         const auto endpoint = spec["controlPlaneEndpoint"].toObject();
         if (!endpoint["host"].toString().isEmpty() && endpoint["port"].toInt() > 0)

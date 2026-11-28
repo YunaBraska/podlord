@@ -1028,6 +1028,7 @@ ApplicationWindow {
                     SplitView.fillHeight: visible; SplitView.minimumHeight: visible ? Math.min(120, workspaceSplit.height * 0.25) : 0
                 ResourceGrid {
                     id: resourceGrid
+                    property string menuPath: ""
                     anchors.fill: parent
                     visible: workspace.workspacePage === "resources"
                     inlineTools: false
@@ -1039,8 +1040,11 @@ ApplicationWindow {
                     emptyText: workspace.currentSession === "" ? workspace.uiText["resource.emptyMessage"] : workspace.loading ? workspace.uiText["resource.loadingMessage"] : workspace.uiText["resource.noMatchingMessage"]
                     onSortRequested: function(column) { workspace.sortColumn(column) }
                     onInspectRequested: function(path) { workspace.inspectPath(path) }
+                    contextActions: workspace.canPortForwardPath(menuPath) ? [tablePortForward] : []
+                    onContextRequested: function(path) { menuPath = path }
                     onCopyRequested: function(row, column) { workspace.copyCell(row, column) }
                     onCopyPathRequested: function(path, column) { workspace.copyPathCell(path, column, false) }
+                    Action { id: tablePortForward; objectName: "menuPortForward"; text: "Port forward"; onTriggered: workspace.preparePortForwardPath(resourceGrid.menuPath) }
                 }
                 Item {
                     anchors.fill: parent

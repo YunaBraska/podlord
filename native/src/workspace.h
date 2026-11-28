@@ -373,6 +373,7 @@ public:
     Q_INVOKABLE bool startContainerTerminal(const QString& container, const QString& shell);
     Q_INVOKABLE bool stopContainerTerminal();
     bool canPortForward() const;
+    Q_INVOKABLE bool canPortForwardPath(const QString& path) const;
     QVariantMap portForwardTarget() const { return portForwardTarget_; }
     QVariantList portForwards() const { return client_.portForwards(active_); }
     QAbstractItemModel* portTable() { return &ports_; }
@@ -385,6 +386,7 @@ public:
     Q_INVOKABLE bool copyPortValue(const QString& token, int column);
     QString portForwardError() const { return client_.portForwardError(active_); }
     Q_INVOKABLE bool preparePortForward();
+    Q_INVOKABLE bool preparePortForwardPath(const QString& path);
     Q_INVOKABLE bool cancelPreparedPortForward();
     Q_INVOKABLE bool startPreparedPortForward(const QString& localPort, const QString& remotePort);
     Q_INVOKABLE bool stopPreparedPortForward();

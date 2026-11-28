@@ -30,16 +30,22 @@ bool Workspace::copyPortValue(const QString& token, int column) {
     return false;
 }
 bool Workspace::canPortForward() const {
-    const auto row = client_.resource(active_, inspectorPath());
-    return !busy_ && !authenticationRequired() && !authenticationRunning() && client_.containsResource(active_, inspectorPath())
+    return canPortForwardPath(inspectorPath());
+}
+bool Workspace::canPortForwardPath(const QString& path) const {
+    const auto row = client_.resource(active_, path);
+    return !busy_ && !authenticationRequired() && !authenticationRunning() && client_.containsResource(active_, path)
         && row["apiVersion"] == "v1" && !row["namespace"].toString().isEmpty() && !row["uid"].toString().isEmpty()
         && (row["kind"] == "Service" || (row["kind"] == "Pod" && row["status"] == "Running"));
 }
 bool Workspace::preparePortForward() {
-    if (!canPortForward()) return false;
-    const auto row = client_.resource(active_, inspectorPath());
-    int remote = 8080;
-    const auto spec = inspectorDocument_["spec"].toObject();
+    return preparePortForwardPath(inspectorPath());
+}
+bool Workspace::preparePortForwardPath(const QString& path) {
+    if (!canPortForwardPath(path) || (path != inspectorPath() && !inspectPath(path))) return false;
+    const auto row = client_.resource(active_, path);
+    int remote = row["defaultTcpPort"].toInt(8080);
+    const auto spec = client_.document(active_, path)["spec"].toObject();
     const auto containers = spec["containers"].toArray();
     const auto ports = row["kind"] == "Service" ? spec["ports"].toArray()
         : (containers.isEmpty() ? QJsonArray{} : containers.first().toObject()["ports"].toArray());
@@ -55,11 +61,11 @@ bool Workspace::preparePortForward() {
     QString existing;
     for (const auto& value : client_.portForwards(active_)) {
         const auto forward = value.toMap();
-        if (forward["path"] == inspectorPath() && forward["uid"].toString() == row["uid"].toString()) {
+        if (forward["path"] == path && forward["uid"].toString() == row["uid"].toString()) {
             existing = forward["id"].toString(); local = forward["localPort"].toInt(); remote = forward["remotePort"].toInt(); break;
         }
     }
-    portForwardTarget_ = {{"session", active_}, {"path", inspectorPath()}, {"uid", row["uid"].toString()}, {"kind", row["kind"].toString()},
+    portForwardTarget_ = {{"session", active_}, {"path", path}, {"uid", row["uid"].toString()}, {"kind", row["kind"].toString()},
         {"name", row["name"].toString()}, {"namespace", row["namespace"].toString()}, {"title", title()}, {"localPort", local}, {"remotePort", remote}, {"existingId", existing}};
     error_.clear(); emit changed(); return true;
 }
